@@ -662,6 +662,41 @@ gpt_params_context gpt_params_parser_init(gpt_params & params, llama_example ex,
         }
     ).set_env("LLAMA_ARG_CTX_SIZE"));
     add_opt(llama_arg(
+        {"-w", "--world", "--world-size"}, "N",
+        format("number of devices to use (default: %d)", params.n_world),
+        [](gpt_params & params, int value) {
+            params.n_world = value;
+        }
+    ).set_env("LLAMA_ARG_N_WORLD"));
+    add_opt(llama_arg(
+        {"-r", "--rank", "--my-rank"}, "N",
+        format("my rank for distributed inference (default: %d)", params.rank),
+        [](gpt_params & params, int value) {
+            params.rank = value;
+        }
+    ).set_env("LLAMA_ARG_RANK"));
+    add_opt(llama_arg(
+        {"-lw", "--layer-window", "--n-layer-window"}, "N",
+        format("number of layers to process in each compute (default: %d)", params.n_layer_window),
+        [](gpt_params & params, int value) {
+            params.n_layer_window = value;
+        }
+    ).set_env("LLAMA_ARG_N_LAYER_WINDOW"));
+    add_opt(llama_arg(
+        {"-mip", "--master", "--master-ip"}, "IPAddress",
+        format("ip address of the master node (default: %s)", params.master_ip.c_str()),
+        [](gpt_params & params, const std::string & value) {
+            params.master_ip = value;
+        }
+    ).set_env("LLAMA_ARG_MASTER_IP"));
+    add_opt(llama_arg(
+        {"-nip", "--next", "--next-node", "--next-ip", "--next-node-ip"}, "IPAddress",
+        format("ip address of the next node (default: %s)", params.next_node_ip.c_str()),
+        [](gpt_params & params, const std::string & value) {
+            params.next_node_ip = value;
+        }
+    ).set_env("LLAMA_ARG_NEXT_NODE_IP"));
+    add_opt(llama_arg(
         {"-n", "--predict", "--n-predict"}, "N",
         format("number of tokens to predict (default: %d, -1 = infinity, -2 = until context filled)", params.n_predict),
         [](gpt_params & params, int value) {

@@ -262,6 +262,14 @@ MK_CFLAGS    = -std=c11   -fPIC
 MK_CXXFLAGS  = -std=c++11 -fPIC
 MK_NVCCFLAGS = -std=c++11
 
+ifeq ($(UNAME_S),Darwin)
+    MK_CPPFLAGS += -I/opt/homebrew/include
+    MK_LDFLAGS  += -L/opt/homebrew/lib -lzmq
+else ifeq ($(UNAME_S),Linux)
+    MK_CPPFLAGS += -I/usr/local/include
+    MK_LDFLAGS  += -L/usr/local/lib -lzmq
+endif
+
 ifdef LLAMA_NO_CCACHE
 GGML_NO_CCACHE := 1
 DEPRECATE_WARNING := 1

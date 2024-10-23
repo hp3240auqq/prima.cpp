@@ -142,6 +142,11 @@ struct gpt_sampler_params {
 };
 
 struct gpt_params {
+    int32_t n_world               =     1; // number of devices to use
+    int32_t rank                  =     0; // my rank for distributed inference
+    int32_t n_layer_window        =    32; // number of layers to process in each compute
+    std::string master_ip         = "localhost"; // ip address of the master node
+    std::string next_node_ip      = "localhost"; // ip address of my next node
     int32_t n_predict             =    -1; // new tokens to predict
     int32_t n_ctx                 =     0; // context size
     int32_t n_batch               =  2048; // logical batch size for prompt processing (must be >=32 to use BLAS)
@@ -229,8 +234,7 @@ struct gpt_params {
     bool   multiple_choice  = false;  // compute TruthfulQA score over random tasks from datafile supplied in prompt
     size_t multiple_choice_tasks = 0; // number of tasks to use when computing the TruthfulQA score. If 0, all tasks will be computed
 
-    bool   kl_divergence    = false; // compute KL divergence
-
+    bool kl_divergence     = false; // compute KL divergence
     bool usage             = false; // print usage
     bool use_color         = false; // use color to distinguish generations and inputs
     bool special           = false; // enable special token output

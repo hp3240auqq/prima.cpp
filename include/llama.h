@@ -276,6 +276,9 @@ extern "C" {
     };
 
     struct llama_model_params {
+        uint32_t n_world; // number of nodes
+        uint32_t rank; // my node rank
+        uint32_t n_layer_window; // number of layers to kept each time
         int32_t n_gpu_layers; // number of layers to store in VRAM
         enum llama_split_mode split_mode; // how to split the model across multiple GPUs
 
@@ -312,12 +315,17 @@ extern "C" {
     // NOTE: changing the default values of parameters marked as [EXPERIMENTAL] may cause crashes or incorrect results in certain configurations
     //       https://github.com/ggerganov/llama.cpp/pull/7544
     struct llama_context_params {
-        uint32_t n_ctx;             // text context, 0 = from model
-        uint32_t n_batch;           // logical maximum batch size that can be submitted to llama_decode
-        uint32_t n_ubatch;          // physical maximum batch size
-        uint32_t n_seq_max;         // max number of sequences (i.e. distinct states for recurrent models)
-        int32_t  n_threads;         // number of threads to use for generation
-        int32_t  n_threads_batch;   // number of threads to use for batch processing
+        uint32_t    n_world;           // world size
+        uint32_t    rank;              // my rank
+        uint32_t    n_layer_window;    // number of layers to process in each compute
+        char *      master_ip;         // ip address of the master node
+        char *      next_node_ip;      // ip address of the next node
+        uint32_t    n_ctx;             // text context, 0 = from model
+        uint32_t    n_batch;           // logical maximum batch size that can be submitted to llama_decode
+        uint32_t    n_ubatch;          // physical maximum batch size
+        uint32_t    n_seq_max;         // max number of sequences (i.e. distinct states for recurrent models)
+        int32_t     n_threads;         // number of threads to use for generation
+        int32_t     n_threads_batch;   // number of threads to use for batch processing
 
         enum llama_rope_scaling_type rope_scaling_type; // RoPE scaling type, from `enum llama_rope_scaling_type`
         enum llama_pooling_type      pooling_type;      // whether to pool (sum) embedding results by sequence id
@@ -417,6 +425,9 @@ extern "C" {
               struct llama_model_params   params);
 
     LLAMA_API void llama_free_model(struct llama_model * model);
+
+    LLAMA_API void llama_init_sockets(struct llama_context * ctx, uint32_t n_world, uint32_t my_rank);
+    LLAMA_API void llama_free_sockets(struct llama_context * ctx, char ** msg);
 
     // TODO: rename to llama_init_from_model
     LLAMA_API struct llama_context * llama_new_context_with_model(

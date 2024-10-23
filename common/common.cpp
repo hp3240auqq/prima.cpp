@@ -872,6 +872,8 @@ struct llama_init_result llama_init_from_gpt_params(gpt_params & params) {
         return iparams;
     }
 
+    llama_init_sockets(lctx, cparams.n_world, cparams.rank);
+
     if (!params.control_vectors.empty()) {
         if (params.control_vector_layer_start <= 0) params.control_vector_layer_start = 1;
         if (params.control_vector_layer_end   <= 0) params.control_vector_layer_end   = llama_n_layer(model);
@@ -924,28 +926,34 @@ struct llama_init_result llama_init_from_gpt_params(gpt_params & params) {
     if (params.warmup) {
         LOG_WRN("%s: warming up the model with an empty run - please wait ... (--no-warmup to disable)\n", __func__);
 
+        const uint32_t my_rank = cparams.rank;
         std::vector<llama_token> tmp;
-        llama_token bos = llama_token_bos(model);
-        llama_token eos = llama_token_eos(model);
-        // some models (e.g. T5) don't have a BOS token
-        if (bos != LLAMA_TOKEN_NULL) {
-            tmp.push_back(bos);
-        }
-        if (eos != LLAMA_TOKEN_NULL) {
-            tmp.push_back(eos);
-        }
-        if (tmp.empty()) {
-            tmp.push_back(0);
-        }
 
-        if (llama_model_has_encoder(model)) {
-            llama_encode(lctx, llama_batch_get_one(tmp.data(), tmp.size(), 0, 0));
-            llama_token decoder_start_token_id = llama_model_decoder_start_token(model);
-            if (decoder_start_token_id == -1) {
-                decoder_start_token_id = bos;
+        if (my_rank == 0) {
+            llama_token bos = llama_token_bos(model);
+            llama_token eos = llama_token_eos(model);
+            // some models (e.g. T5) don't have a BOS token
+            if (bos != LLAMA_TOKEN_NULL) {
+                tmp.push_back(bos);
             }
-            tmp.clear();
-            tmp.push_back(decoder_start_token_id);
+            if (eos != LLAMA_TOKEN_NULL) {
+                tmp.push_back(eos);
+            }
+            if (tmp.empty()) {
+                tmp.push_back(0);
+            }
+
+            if (llama_model_has_encoder(model)) {
+                throw std::runtime_error("this model is currently not supported");
+
+                llama_encode(lctx, llama_batch_get_one(tmp.data(), tmp.size(), 0, 0));
+                llama_token decoder_start_token_id = llama_model_decoder_start_token(model);
+                if (decoder_start_token_id == -1) {
+                    decoder_start_token_id = bos;
+                }
+                tmp.clear();
+                tmp.push_back(decoder_start_token_id);
+            }
         }
         if (llama_model_has_decoder(model)) {
             llama_decode(lctx, llama_batch_get_one(tmp.data(), std::min(tmp.size(), (size_t) params.n_batch), 0, 0));
@@ -976,6 +984,9 @@ struct llama_model_params llama_model_params_from_gpt_params(const gpt_params & 
     if (params.n_gpu_layers != -1) {
         mparams.n_gpu_layers = params.n_gpu_layers;
     }
+    mparams.n_world         = params.n_world;
+    mparams.rank            = params.rank;
+    mparams.n_layer_window  = params.n_layer_window;
     mparams.rpc_servers     = params.rpc_servers.c_str();
     mparams.main_gpu        = params.main_gpu;
     mparams.split_mode      = params.split_mode;
@@ -1024,6 +1035,22 @@ static ggml_type kv_cache_type_from_str(const std::string & s) {
 
 struct llama_context_params llama_context_params_from_gpt_params(const gpt_params & params) {
     auto cparams = llama_context_default_params();
+
+    cparams.n_world           = params.n_world;
+    cparams.rank              = params.rank;
+    cparams.n_layer_window    = params.n_layer_window;
+
+    if (cparams.master_ip != nullptr) {
+        delete[] cparams.master_ip;
+    }
+    cparams.master_ip         = new char[params.master_ip.length() + 1];
+    std::strcpy(cparams.master_ip, params.master_ip.c_str());
+
+    if (cparams.next_node_ip != nullptr) {
+        delete[] cparams.next_node_ip;
+    }
+    cparams.next_node_ip      = new char[params.next_node_ip.length() + 1];
+    std::strcpy(cparams.next_node_ip, params.next_node_ip.c_str());
 
     cparams.n_ctx             = params.n_ctx;
     cparams.n_seq_max         = params.n_parallel;
