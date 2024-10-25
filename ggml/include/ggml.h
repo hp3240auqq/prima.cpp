@@ -2077,17 +2077,19 @@ extern "C" {
             float                 wd); // weight decay
 
     // graph allocation in a context
-    GGML_API struct ggml_cgraph * ggml_new_graph       (struct ggml_context * ctx); // size = GGML_DEFAULT_GRAPH_SIZE, grads = false
-    GGML_API struct ggml_cgraph * ggml_new_graph_custom(struct ggml_context * ctx, size_t size, bool grads);
-    GGML_API struct ggml_cgraph * ggml_graph_dup       (struct ggml_context * ctx, struct ggml_cgraph * cgraph);
-    GGML_API void                 ggml_graph_cpy       (struct ggml_cgraph * src, struct ggml_cgraph * dst);
-    GGML_API void                 ggml_graph_reset     (struct ggml_cgraph * cgraph); // set regular grads + optimizer momenta to 0, set loss grad to 1
-    GGML_API void                 ggml_graph_clear     (struct ggml_cgraph * cgraph);
+    GGML_API struct ggml_cgraph *  ggml_new_graph       (struct ggml_context * ctx); // size = GGML_DEFAULT_GRAPH_SIZE, grads = false
+    GGML_API struct ggml_cgraph *  ggml_new_graph_custom(struct ggml_context * ctx, size_t size, bool grads);
+    GGML_API struct ggml_cgraph *  ggml_graph_dup       (struct ggml_context * ctx, struct ggml_cgraph * cgraph);
+    GGML_API void                  ggml_graph_cpy       (struct ggml_cgraph * src, struct ggml_cgraph * dst);
+    GGML_API void                  ggml_graph_reset     (struct ggml_cgraph * cgraph); // set regular grads + optimizer momenta to 0, set loss grad to 1
+    GGML_API void                  ggml_graph_clear     (struct ggml_cgraph * cgraph);
 
     GGML_API int                   ggml_graph_size   (struct ggml_cgraph * cgraph);
     GGML_API struct ggml_tensor *  ggml_graph_node   (struct ggml_cgraph * cgraph, int i); // if i < 0, returns nodes[n_nodes + i]
+    GGML_API struct ggml_tensor *  ggml_graph_leaf   (struct ggml_cgraph * cgraph, int i); // if i < 0, returns leafs[n_leafs + i]
     GGML_API struct ggml_tensor ** ggml_graph_nodes  (struct ggml_cgraph * cgraph);
     GGML_API int                   ggml_graph_n_nodes(struct ggml_cgraph * cgraph);
+    GGML_API int                   ggml_graph_n_leafs(struct ggml_cgraph * cgraph);
 
     GGML_API void   ggml_graph_add_node(struct ggml_cgraph * cgraph, struct ggml_tensor * tensor);
 

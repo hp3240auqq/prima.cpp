@@ -318,6 +318,7 @@ extern "C" {
         uint32_t    n_world;           // world size
         uint32_t    rank;              // my rank
         uint32_t    n_layer_window;    // number of layers to process in each compute
+        bool        unload;            // whether to unload layer weights after use
         char *      master_ip;         // ip address of the master node
         char *      next_node_ip;      // ip address of the next node
         uint32_t    n_ctx;             // text context, 0 = from model

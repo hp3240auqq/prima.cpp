@@ -1039,6 +1039,7 @@ struct llama_context_params llama_context_params_from_gpt_params(const gpt_param
     cparams.n_world           = params.n_world;
     cparams.rank              = params.rank;
     cparams.n_layer_window    = params.n_layer_window;
+    cparams.unload            = params.unload;
 
     if (cparams.master_ip != nullptr) {
         delete[] cparams.master_ip;

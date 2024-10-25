@@ -147,6 +147,7 @@ struct gpt_params {
     int32_t n_layer_window        =    32; // number of layers to process in each compute
     std::string master_ip         = "localhost"; // ip address of the master node
     std::string next_node_ip      = "localhost"; // ip address of my next node
+    bool    unload                = false; // unload layer weights after use or not
     int32_t n_predict             =    -1; // new tokens to predict
     int32_t n_ctx                 =     0; // context size
     int32_t n_batch               =  2048; // logical batch size for prompt processing (must be >=32 to use BLAS)
