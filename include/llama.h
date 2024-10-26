@@ -278,7 +278,7 @@ extern "C" {
     struct llama_model_params {
         uint32_t n_world; // number of nodes
         uint32_t rank; // my node rank
-        uint32_t n_layer_window; // number of layers to kept each time
+        uint32_t n_layer_window[32]; // number of layers to kept each time
         int32_t n_gpu_layers; // number of layers to store in VRAM
         enum llama_split_mode split_mode; // how to split the model across multiple GPUs
 
@@ -317,7 +317,7 @@ extern "C" {
     struct llama_context_params {
         uint32_t    n_world;           // world size
         uint32_t    rank;              // my rank
-        uint32_t    n_layer_window;    // number of layers to process in each compute
+        uint32_t    n_layer_window[32];// number of layers to process in each compute
         bool        unload;            // whether to unload layer weights after use
         char *      master_ip;         // ip address of the master node
         char *      next_node_ip;      // ip address of the next node

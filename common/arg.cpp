@@ -677,9 +677,36 @@ gpt_params_context gpt_params_parser_init(gpt_params & params, llama_example ex,
     ).set_env("LLAMA_ARG_RANK"));
     add_opt(llama_arg(
         {"-lw", "--layer-window", "--n-layer-window"}, "N",
-        format("number of layers to process in each compute (default: %d)", params.n_layer_window),
-        [](gpt_params & params, int value) {
-            params.n_layer_window = value;
+        format("number of layers to process in each compute (e.g., 16,16)"),
+        [](gpt_params & params, const std::string & value) {
+            uint32_t result[32] = {0};
+            size_t index = 0;
+            std::stringstream ss(value);
+            std::string item;
+
+            while (std::getline(ss, item, ',')) {
+                try {
+                    int num = std::stoi(item);
+                    
+                    if (num <= 0) { 
+                        throw std::runtime_error("All values in --n-layer-window must be non-zero positive integers");
+                    }
+
+                    if (index >= 32) {
+                        throw std::runtime_error("Too many values in --n-layer-window (maximum is 32)");
+                    }
+
+                    result[index++] = static_cast<uint32_t>(num);
+                } catch (const std::invalid_argument &) {
+                    throw std::runtime_error("Non-integer value found in --n-layer-window");
+                }
+            }
+
+            if (index == 0) {
+                throw std::runtime_error("Input cannot be empty");
+            }
+
+            std::copy(std::begin(result), std::end(result), params.n_layer_window);
         }
     ).set_env("LLAMA_ARG_N_LAYER_WINDOW"));
     add_opt(llama_arg(

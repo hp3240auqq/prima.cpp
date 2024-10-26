@@ -2565,7 +2565,7 @@ static_assert(std::is_trivially_copyable<llama_hparams>::value, "llama_hparams m
 struct llama_cparams {
     uint32_t n_world;
     uint32_t rank;
-    uint32_t n_layer_window;
+    uint32_t n_layer_window[32];
     bool     unload;
     uint32_t n_ctx;           // context size used during inference
     uint32_t n_batch;
@@ -3619,25 +3619,52 @@ static bool this_layer_is_mine(
                          uint32_t layer_id, 
                          uint32_t n_world, 
                          uint32_t my_rank, 
-                         uint32_t n_layer_window) {
-    return (layer_id / n_layer_window) % n_world == my_rank;
+                         const uint32_t * n_layer_window) {
+    uint32_t cumulative_layers = 0;
+    uint32_t rank = 0;
+    while (true) {
+        cumulative_layers += n_layer_window[rank];
+        if (layer_id < cumulative_layers) {
+            return rank == my_rank;
+        }
+        rank = (rank + 1) % n_world;
+    }
 }
 
-static int64_t map_layer_to_local_id(
-                         int64_t layer_id, 
-                         uint32_t n_world, 
-                         uint32_t my_rank, 
-                         uint32_t n_layer_window) {
+static int32_t map_layer_to_local_id(
+    uint32_t layer_id, 
+    uint32_t n_world, 
+    uint32_t my_rank, 
+    const uint32_t* n_layer_window) 
+{
     if (!this_layer_is_mine(layer_id, n_world, my_rank, n_layer_window)) {
         return -1;
     }
-    // map layer_id to kvcache_id.
-    // example: For n_world=2 and n_layer_window=4, rank 0 handles layers 0-3, 8-11, 16-19, while rank 1 handles layers 4-7, 12-15, 20-23.
-    // on rank 0, layer_id should map to kvcache_id as follows: 0-3 -> 0-3, 8-11 -> 4-7, 16-19 -> 8-11.
-    // on rank 1, layer_id should map to kvcache_id as follows: 4-7 -> 0-3, 12-15 -> 4-7, 20-23 -> 8-11.
-    int64_t cycle_size = n_world * n_layer_window;
-    int64_t local_offset = (layer_id / cycle_size) * n_layer_window;
-    return (layer_id % cycle_size) % n_layer_window + local_offset;
+    
+    uint32_t cycle_size = 0;
+    for (uint32_t i = 0; i < n_world; ++i) {
+        cycle_size += n_layer_window[i];
+    }
+
+    uint32_t cycle_offset = layer_id % cycle_size;
+    uint32_t cumulative_layers = 0;
+    uint32_t local_offset = (layer_id / cycle_size) * n_layer_window[my_rank];
+
+    for (uint32_t rank = 0; rank < n_world; ++rank) {
+        uint32_t window_size = n_layer_window[rank];
+
+        if (cycle_offset < cumulative_layers + window_size) {
+            if (rank == my_rank) {
+                return cycle_offset - cumulative_layers + local_offset;
+            } else {
+                return -1;
+            }
+        }
+        
+        cumulative_layers += window_size;
+    }
+
+    return -1;
 }
 
 //
@@ -3657,7 +3684,7 @@ static bool llama_kv_cache_init(
     const int64_t  n_layer               = hparams.n_layer;
     const uint32_t n_world               = cparams.n_world;
     const uint32_t my_rank               = cparams.rank;
-    const uint32_t n_layer_window        = cparams.n_layer_window;
+    const uint32_t * n_layer_window      = cparams.n_layer_window;
 
     cache.has_shift = false;
     cache.recurrent = llama_model_is_recurrent(&model);
@@ -3672,20 +3699,24 @@ static bool llama_kv_cache_init(
 
     // count used buffer types
     std::map<ggml_backend_buffer_type_t, int> buft_layer_count;
-    int64_t  local_i;
+    int32_t  local_i;
     uint32_t my_layers = 0;
 
     for (int64_t i = 0; i < n_layer; ++i) {
         if (!this_layer_is_mine(i, n_world, my_rank, n_layer_window)) {
             continue;
         }
-        my_layers++;
+        
         local_i = map_layer_to_local_id(i, n_world, my_rank, n_layer_window);
+        GGML_ASSERT(local_i != -1);
+
         if (offload) {
             buft_layer_count[model.buft_layer[local_i].buft]++;
         } else {
             buft_layer_count[llama_default_buffer_type_cpu(model, true)]++;
         }
+
+        my_layers++;
     }
 
     // create a context for each buffer type
@@ -3714,13 +3745,14 @@ static bool llama_kv_cache_init(
             continue;
         }
         int local_i = map_layer_to_local_id(i, n_world, my_rank, n_layer_window);
+        GGML_ASSERT(local_i != -1);
         
         const uint32_t n_embd_k_gqa = hparams.n_embd_k_gqa(i) + hparams.n_embd_k_s();
         const uint32_t n_embd_v_gqa = hparams.n_embd_v_gqa(i) + hparams.n_embd_v_s();
 
         struct ggml_context * ctx = offload ? ctx_map.at(model.buft_layer[local_i].buft) : cache.ctxs.front();
-        ggml_tensor * k = ggml_new_tensor_1d(ctx, type_k, n_embd_k_gqa*kv_size);  
-        ggml_tensor * v = ggml_new_tensor_1d(ctx, type_v, n_embd_v_gqa*kv_size);  
+        ggml_tensor * k = ggml_new_tensor_1d(ctx, type_k, n_embd_k_gqa * kv_size);  
+        ggml_tensor * v = ggml_new_tensor_1d(ctx, type_v, n_embd_v_gqa * kv_size);  
         ggml_format_name(k, "cache_k_l%d", i);
         ggml_format_name(v, "cache_v_l%d", i);
         cache.k_l.push_back(k);
@@ -5102,11 +5134,11 @@ struct llama_model_loader {
 
     // Returns false if cancelled by progress_callback
     bool load_all_data(
-            struct ggml_context * ctx,
-            llama_buf_map & bufs,
-            llama_mlocks * lmlocks,
+            struct ggml_context   * ctx,
+            llama_buf_map         & bufs,
+            llama_mlocks          * lmlocks,
             llama_progress_callback progress_callback,
-            void * progress_callback_user_data) {
+            void                  * progress_callback_user_data) {
         GGML_ASSERT(size_data != 0 && "call init_mappings() first");
 
         std::vector<no_init<uint8_t>> read_buf;
@@ -5134,7 +5166,7 @@ struct llama_model_loader {
             }
 
             auto * buft = ggml_backend_buffer_get_type(buf);
-            auto * dev = ggml_backend_buft_get_device(buft);
+            auto * dev  = ggml_backend_buft_get_device(buft);
             if (!dev) {
                 LLAMA_LOG_DEBUG("%s: no device found for buffer type %s for async uploads\n", fn,
                     ggml_backend_buft_name(buft));
@@ -7022,17 +7054,17 @@ static void llm_load_print_meta(llama_model_loader & ml, llama_model & model) {
 
 // Returns false if cancelled by progress_callback
 static bool llm_load_tensors(
-        llama_model_loader & ml,
-        llama_model & model,
-        uint32_t n_world,
-        uint32_t my_rank,
-        uint32_t n_layer_window,
-        int n_gpu_layers,
-        enum llama_split_mode split_mode,
-        int main_gpu,
-        bool use_mlock,
+        llama_model_loader   &  ml,
+        llama_model          &  model,
+        uint32_t                n_world,
+        uint32_t                my_rank,
+        const uint32_t       *  n_layer_window,
+        int                     n_gpu_layers,
+        enum llama_split_mode   split_mode,
+        int                     main_gpu,
+        bool                    use_mlock,
         llama_progress_callback progress_callback,
-        void * progress_callback_user_data) {
+        void                  * progress_callback_user_data) {
     auto & hparams = model.hparams;
 
     // check if the value of main_gpu is valid
@@ -7045,12 +7077,8 @@ static bool llm_load_tensors(
     model.split_mode     = split_mode;
     model.main_gpu       = main_gpu;
     model.n_gpu_layers   = n_gpu_layers;
-
-    const int n_layer    = hparams.n_layer;
+    int n_layer          = hparams.n_layer;
     bool use_mmap_buffer = true;
-
-    // there is very little benefit to offloading the input layer, so always keep it on the CPU
-    model.buft_input = llama_default_buffer_type_cpu(model, true);
 
     int my_layers = 0;
     for (int i = 0; i < n_layer; ++i) {
@@ -7062,8 +7090,11 @@ static bool llm_load_tensors(
 
     for (int i = 0; i < n_layer; ++i) {
         if (this_layer_is_mine(i, n_world, my_rank, n_layer_window)) {
-            int local_i = map_layer_to_local_id(i, n_world, my_rank, n_layer_window);
-            if (i % (int)n_layer_window >= (int)n_layer_window - n_gpu_layers) {
+            int32_t local_i = map_layer_to_local_id(i, n_world, my_rank, n_layer_window);
+            int32_t window_size = static_cast<int32_t>(n_layer_window[my_rank]);
+            GGML_ASSERT(local_i != -1);
+
+            if (local_i % window_size >= window_size - n_gpu_layers) {
                 LLAMA_LOG_INFO("Layer %i assigned to gpu (cache index %i)\n", i, local_i);
                 model.buft_layer[local_i] = llama_default_buffer_type_offload(model, main_gpu);
             } else {
@@ -7073,13 +7104,18 @@ static bool llm_load_tensors(
         }
     }
 
-    // assign the output layer
-    if (my_rank == 0 && n_gpu_layers > (int)n_layer_window) {
-        LLAMA_LOG_INFO("Layer output assigned to gpu\n");
-        model.buft_output = llama_default_buffer_type_offload(model, main_gpu);
-    } else {
-        LLAMA_LOG_INFO("Layer output assigned to cpu\n");
-        model.buft_output = llama_default_buffer_type_cpu(model, true);
+    // assign the output layer (locate on node 0 only)
+    if (my_rank == 0) {
+        // there is very little benefit to offloading the input layer, so always keep it on the CPU
+        model.buft_input = llama_default_buffer_type_cpu(model, true);
+
+        if (n_gpu_layers > (int)n_layer_window[0]) {
+            LLAMA_LOG_INFO("Layer output assigned to gpu\n");
+            model.buft_output = llama_default_buffer_type_offload(model, main_gpu);
+        } else {
+            LLAMA_LOG_INFO("Layer output assigned to cpu\n");
+            model.buft_output = llama_default_buffer_type_cpu(model, true);
+        }
     }
 
     // count used buffer types
@@ -7099,7 +7135,7 @@ static bool llm_load_tensors(
     size_t ctx_size = ggml_tensor_overhead()*(ml.n_tensors + 1); // +1 for models where tok_embd is duplicated as output
 
     // for moe merged tensors
-    ctx_size += ggml_tensor_overhead()*n_layer*3;
+    ctx_size += ggml_tensor_overhead() * my_layers * 3;
 
     std::map<ggml_backend_buffer_type_t, ggml_context *> ctx_map;
     for (auto & it : buft_layer_count) {
@@ -7149,8 +7185,8 @@ static bool llm_load_tensors(
             ctx_output_split = ctx_map.at(model.buft_output.buft_matrix);
         }
 
-        auto ctx_for_layer       = [&](int local_i) { return ctx_map.at(model.buft_layer[local_i].buft); };
-        auto ctx_for_layer_split = [&](int local_i) { return ctx_map.at(model.buft_layer[local_i].buft_matrix); };
+        auto ctx_for_layer       = [&](int i) { return ctx_map.at(model.buft_layer[i].buft); };
+        auto ctx_for_layer_split = [&](int i) { return ctx_map.at(model.buft_layer[i].buft_matrix); };
 
         model.layers.resize(my_layers);
 
@@ -7201,25 +7237,23 @@ static bool llm_load_tensors(
                         layer.bv = ml.create_tensor(ctx_layer, tn(LLM_TENSOR_ATTN_V,   "bias", i), {n_embd_gqa}, llama_model_loader::TENSOR_NOT_REQUIRED);
                         layer.bo = ml.create_tensor(ctx_layer, tn(LLM_TENSOR_ATTN_OUT, "bias", i), {n_embd},     llama_model_loader::TENSOR_NOT_REQUIRED);
 
-                        layer.ffn_norm = ml.create_tensor(ctx_layer, tn(LLM_TENSOR_FFN_NORM, "weight", i), {n_embd});
-
+                        layer.ffn_norm   = ml.create_tensor(ctx_layer, tn(LLM_TENSOR_FFN_NORM,   "weight", i), {n_embd});
                         layer.rope_freqs = ml.create_tensor(ctx_layer, tn(LLM_TENSOR_ROPE_FREQS, "weight"), {n_rot/2}, llama_model_loader::TENSOR_NOT_REQUIRED | (i != 0 ? llama_model_loader::TENSOR_DUPLICATED : 0));
 
                         if (n_expert == 0) {
                             layer.ffn_gate = ml.create_tensor(ctx_split, tn(LLM_TENSOR_FFN_GATE, "weight", i), {n_embd,   n_ff});
-                            layer.ffn_down = ml.create_tensor(ctx_split, tn(LLM_TENSOR_FFN_DOWN, "weight", i), {  n_ff, n_embd});
+                            layer.ffn_down = ml.create_tensor(ctx_split, tn(LLM_TENSOR_FFN_DOWN, "weight", i), {n_ff,   n_embd});
                             layer.ffn_up   = ml.create_tensor(ctx_split, tn(LLM_TENSOR_FFN_UP,   "weight", i), {n_embd,   n_ff});
 
                             // optional MLP bias
-                            layer.ffn_gate_b = ml.create_tensor(ctx_layer, tn(LLM_TENSOR_FFN_GATE, "bias", i), {n_ff}, llama_model_loader::TENSOR_NOT_REQUIRED);
+                            layer.ffn_gate_b = ml.create_tensor(ctx_layer, tn(LLM_TENSOR_FFN_GATE, "bias", i), {n_ff},   llama_model_loader::TENSOR_NOT_REQUIRED);
                             layer.ffn_down_b = ml.create_tensor(ctx_layer, tn(LLM_TENSOR_FFN_DOWN, "bias", i), {n_embd}, llama_model_loader::TENSOR_NOT_REQUIRED);
-                            layer.ffn_up_b   = ml.create_tensor(ctx_layer, tn(LLM_TENSOR_FFN_UP,   "bias", i), {n_ff}, llama_model_loader::TENSOR_NOT_REQUIRED);
+                            layer.ffn_up_b   = ml.create_tensor(ctx_layer, tn(LLM_TENSOR_FFN_UP,   "bias", i), {n_ff},   llama_model_loader::TENSOR_NOT_REQUIRED);
                         } else {
-                            layer.ffn_gate_inp = ml.create_tensor(ctx_layer, tn(LLM_TENSOR_FFN_GATE_INP, "weight", i), {n_embd, n_expert});
-
-                            layer.ffn_gate_exps = ml.create_tensor(ctx_split, tn(LLM_TENSOR_FFN_GATE_EXPS, "weight", i), {n_embd,   n_ff, n_expert}, llama_model_loader::TENSOR_NOT_REQUIRED);
+                            layer.ffn_gate_inp  = ml.create_tensor(ctx_layer, tn(LLM_TENSOR_FFN_GATE_INP,  "weight", i), {n_embd, n_expert});
+                            layer.ffn_gate_exps = ml.create_tensor(ctx_split, tn(LLM_TENSOR_FFN_GATE_EXPS, "weight", i), {n_embd, n_ff, n_expert}, llama_model_loader::TENSOR_NOT_REQUIRED);
                             if (layer.ffn_gate_exps) {
-                                layer.ffn_down_exps = ml.create_tensor(ctx_split, tn(LLM_TENSOR_FFN_DOWN_EXPS, "weight", i), {  n_ff, n_embd, n_expert});
+                                layer.ffn_down_exps = ml.create_tensor(ctx_split, tn(LLM_TENSOR_FFN_DOWN_EXPS, "weight", i), {n_ff,   n_embd, n_expert});
                                 layer.ffn_up_exps   = ml.create_tensor(ctx_split, tn(LLM_TENSOR_FFN_UP_EXPS,   "weight", i), {n_embd,   n_ff, n_expert});
                             } else {
                                 // merge split expert into a single tensor for compatibility with older models
@@ -7231,7 +7265,7 @@ static bool llm_load_tensors(
                                 ggml_type type_up   = ml.require_tensor_meta(tn(LLM_TENSOR_FFN_UP_EXP,   "weight", i, 0).c_str())->type;
 
                                 layer.ffn_gate_exps = ggml_new_tensor_3d(ctx_split, type_gate, n_embd,   n_ff, n_expert);
-                                layer.ffn_down_exps = ggml_new_tensor_3d(ctx_split, type_down,   n_ff, n_embd, n_expert);
+                                layer.ffn_down_exps = ggml_new_tensor_3d(ctx_split, type_down, n_ff,   n_embd, n_expert);
                                 layer.ffn_up_exps   = ggml_new_tensor_3d(ctx_split, type_up,   n_embd,   n_ff, n_expert);
 
                                 ggml_set_name(layer.ffn_gate_exps, tn(LLM_TENSOR_FFN_GATE_EXPS, "weight", i).c_str());
@@ -7240,9 +7274,9 @@ static bool llm_load_tensors(
 
                                 for (uint32_t x = 0; x < n_expert; ++x) {
                                     // the individual experts are loaded into a view of the merged tensor
-                                    ml.create_tensor_as_view(ctx_split, layer.ffn_gate_exps, tn(LLM_TENSOR_FFN_GATE_EXP, "weight", i, x), { n_embd, n_ff }, layer.ffn_gate_exps->nb[2]*x);
-                                    ml.create_tensor_as_view(ctx_split, layer.ffn_down_exps, tn(LLM_TENSOR_FFN_DOWN_EXP, "weight", i, x), { n_ff, n_embd }, layer.ffn_down_exps->nb[2]*x);
-                                    ml.create_tensor_as_view(ctx_split, layer.ffn_up_exps,   tn(LLM_TENSOR_FFN_UP_EXP,   "weight", i, x), { n_embd, n_ff }, layer.ffn_up_exps->nb[2]*x);
+                                    ml.create_tensor_as_view(ctx_split, layer.ffn_gate_exps, tn(LLM_TENSOR_FFN_GATE_EXP, "weight", i, x), {n_embd, n_ff}, layer.ffn_gate_exps->nb[2] * x);
+                                    ml.create_tensor_as_view(ctx_split, layer.ffn_down_exps, tn(LLM_TENSOR_FFN_DOWN_EXP, "weight", i, x), {n_ff, n_embd}, layer.ffn_down_exps->nb[2] * x);
+                                    ml.create_tensor_as_view(ctx_split, layer.ffn_up_exps,   tn(LLM_TENSOR_FFN_UP_EXP,   "weight", i, x), {n_embd, n_ff}, layer.ffn_up_exps->nb[2] * x);
                                 }
                             }
                         }
@@ -9031,8 +9065,8 @@ static bool llm_load_tensors(
 
     // load tensor data
     for (auto & it : ctx_bufs) {
-        ggml_context * ctx = it.first;
-        auto & bufs = it.second;
+        ggml_context * ctx  = it.first;
+        auto         & bufs = it.second;
         if (!ml.load_all_data(ctx, bufs, use_mlock ? &model.mlock_mmaps : NULL, progress_callback, progress_callback_user_data)) {
             return false;
         }
@@ -9188,13 +9222,13 @@ static void llm_build_kv_store(
                     int32_t   kv_head,
          const llm_build_cb & cb,
                     int       il) {
-    const int64_t  n_ctx          = cparams.n_ctx;
-    const uint32_t n_world        = cparams.n_world;
-    const uint32_t my_rank        = cparams.rank;
-    const uint32_t n_layer_window = cparams.n_layer_window;
-    const int      local_il       = map_layer_to_local_id(il, n_world, my_rank, n_layer_window);
-    const int64_t  n_embd_k_gqa   = hparams.n_embd_k_gqa(il);
-    const int64_t  n_embd_v_gqa   = hparams.n_embd_v_gqa(il);
+    const int64_t    n_ctx          = cparams.n_ctx;
+    const uint32_t   n_world        = cparams.n_world;
+    const uint32_t   my_rank        = cparams.rank;
+    const uint32_t * n_layer_window = cparams.n_layer_window;
+    const int        local_il       = map_layer_to_local_id(il, n_world, my_rank, n_layer_window);
+    const int64_t    n_embd_k_gqa   = hparams.n_embd_k_gqa(il);
+    const int64_t    n_embd_v_gqa   = hparams.n_embd_v_gqa(il);
 
     GGML_ASSERT(kv.size == n_ctx);
 
@@ -9554,7 +9588,7 @@ static struct ggml_tensor * llm_build_kqv(
     const llama_cparams & cparams        = lctx.cparams;
     const uint32_t        n_world        = cparams.n_world;
     const uint32_t        my_rank        = cparams.rank;
-    const uint32_t        n_layer_window = cparams.n_layer_window;
+    const uint32_t      * n_layer_window = cparams.n_layer_window;
     
     const int     local_il      = map_layer_to_local_id(il, n_world, my_rank, n_layer_window);
     const int64_t n_ctx         = cparams.n_ctx;
@@ -10513,9 +10547,9 @@ struct llm_build_context {
         struct ggml_tensor * inpL = nullptr;
         struct ggml_tensor * inpB = nullptr;
 
-        const uint32_t n_world        = this->cparams.n_world;
-        const uint32_t my_rank        = this->cparams.rank;
-        const uint32_t n_layer_window = this->cparams.n_layer_window;
+        const uint32_t   n_world        = this->cparams.n_world;
+        const uint32_t   my_rank        = this->cparams.rank;
+        const uint32_t * n_layer_window = this->cparams.n_layer_window;
 
         if (my_rank == 0) {
             // inp_embd - contains the input embedding
@@ -16365,34 +16399,35 @@ static struct ggml_cgraph * llama_build_graph_k_shift(llama_context & lctx) {
     return result;
 }
 
-static uint32_t map_layer_to_subgf_id(uint32_t i, uint32_t my_rank, uint32_t n_world, uint32_t n_layer, uint32_t n_layer_window) {
-    uint32_t global_layer_offset = my_rank * n_layer_window;
-    uint32_t step = n_world * n_layer_window;
-    if (i < n_layer) {
-        uint32_t relative_layer = i % step;
-        if (relative_layer >= global_layer_offset && relative_layer < global_layer_offset + n_layer_window) {
-            return i / step;
-        }
+static int32_t map_layer_to_subgf_id(uint32_t i, uint32_t my_rank, uint32_t n_world, const uint32_t * n_layer_window) {
+    if (!this_layer_is_mine(i, n_world, my_rank, n_layer_window)) {
+        return -1;
     }
-    return -1;
+
+    uint32_t total_window_size = 0;
+    for (uint32_t rank = 0; rank < n_world; ++rank) {
+        total_window_size += n_layer_window[rank];
+    }
+    return i / total_window_size;
 }
 
 static std::vector<struct ggml_cgraph *> llama_build_graph(
          llama_context & lctx,
     const llama_ubatch & batch,
                   bool   worst_case) {
-    const auto &   model          = lctx.model;
-    const uint32_t n_world        = lctx.cparams.n_world;
-    const uint32_t my_rank        = lctx.cparams.rank;
-    const uint32_t n_layer_window = lctx.cparams.n_layer_window;
-    const uint32_t n_layer        = lctx.model.hparams.n_layer;
+    const auto &     model          = lctx.model;
+    const uint32_t   n_world        = lctx.cparams.n_world;
+    const uint32_t   my_rank        = lctx.cparams.rank;
+    const uint32_t * n_layer_window = lctx.cparams.n_layer_window;
+    const uint32_t   n_layer        = lctx.model.hparams.n_layer;
 
     // this callback allows us to apply custom logic to each tensor (e.g. ggml-alloc, offloading, etc.)
     llm_build_cb cb = [&](struct ggml_tensor * cur, const char * name, int il) {
         int sub_gf_id = 0;
         if (il >= 0) {
             ggml_format_name(cur, "%s-%d", name, il);
-            sub_gf_id = map_layer_to_subgf_id(il, my_rank, n_world, n_layer, n_layer_window); 
+            sub_gf_id = map_layer_to_subgf_id(il, my_rank, n_world, n_layer_window);
+            GGML_ASSERT(sub_gf_id != -1);
         } else {
             ggml_set_name(cur, name);
         }
@@ -16406,7 +16441,7 @@ static std::vector<struct ggml_cgraph *> llama_build_graph(
 
         // norm may be automatically assigned to the backend of the previous layer, increasing data transfer between backends
         // FIXME: fix in ggml_backend_sched
-        const bool full_offload = lctx.model.n_gpu_layers > (int)n_layer_window;
+        const bool full_offload = lctx.model.n_gpu_layers > (int)n_layer_window[0];
         if (batch.n_tokens < 32 || full_offload) {
             if (il != -1 && strcmp(name, "norm") == 0) {
                 for (auto * backend : lctx.backends) {
@@ -18250,6 +18285,8 @@ static void llama_kv_cache_update_internal(struct llama_context & lctx) {
 
     // apply K-shift if needed
     if (lctx.model.hparams.rope_type != LLAMA_ROPE_TYPE_NONE && lctx.kv_self.has_shift) {
+        throw std::runtime_error("shift not supported\n");
+
         if (lctx.model.arch == LLM_ARCH_DEEPSEEK2) { // not supported due to MLA
             GGML_ABORT("Deepseek2 does not support K-shift");
         }
@@ -18290,6 +18327,8 @@ static void llama_kv_cache_update_internal(struct llama_context & lctx) {
 
     // reserve a worst case graph again
     if (need_reserve) {
+        throw std::runtime_error("reserve not supported\n");
+
         // TODO: extract to a function
         // build worst-case graph
         uint32_t n_seqs = 1; // TODO: worst-case number of sequences
@@ -18299,7 +18338,7 @@ static void llama_kv_cache_update_internal(struct llama_context & lctx) {
         std::vector<ggml_cgraph *> gf = llama_build_graph(lctx, ubatch, true);
 
         // initialize scheduler with the worst-case graph
-        ggml_backend_sched_reset(lctx.sched.at(0)); // todo.
+        ggml_backend_sched_reset(lctx.sched[0]); // todo.
 
         bool ok = true;
         GGML_ASSERT(lctx.sched.size() == gf.size());
@@ -19405,7 +19444,7 @@ struct llama_model_params llama_model_default_params() {
     struct llama_model_params result = {
         /*.n_world                     =*/ 1,
         /*.rank                        =*/ 0,
-        /*.n_layer_window              =*/ 32,
+        /*.n_layer_window              =*/ {32},
         /*.n_gpu_layers                =*/ 0,
         /*.split_mode                  =*/ LLAMA_SPLIT_MODE_LAYER,
         /*.main_gpu                    =*/ 0,
@@ -19432,7 +19471,7 @@ struct llama_context_params llama_context_default_params() {
     struct llama_context_params result = {
         /*.n_world                     =*/ 1,
         /*.rank                        =*/ 0,
-        /*.n_layer_window              =*/ 32,
+        /*.n_layer_window              =*/ {32},
         /*.unload                      =*/ false,
         /*.master_ip                   =*/ nullptr,
         /*.next_node_ip                =*/ nullptr,
@@ -19736,7 +19775,7 @@ struct llama_context * llama_new_context_with_model(
 
     cparams.n_world          = params.n_world;
     cparams.rank             = params.rank;
-    cparams.n_layer_window   = params.n_layer_window;
+    std::copy(std::begin(params.n_layer_window), std::end(params.n_layer_window), cparams.n_layer_window);
     cparams.unload           = params.unload;
     cparams.n_seq_max        = std::max(1u, params.n_seq_max);
     cparams.n_threads        = params.n_threads;
@@ -19808,21 +19847,19 @@ struct llama_context * llama_new_context_with_model(
         cparams.causal_attn = params.attention_type == LLAMA_ATTENTION_TYPE_CAUSAL;
     }
 
-    LLAMA_LOG_INFO("\n");
-    LLAMA_LOG_INFO("%s: n_world    = %u\n",     __func__, cparams.n_world);
-    LLAMA_LOG_INFO("%s: rank       = %u\n",     __func__, cparams.rank);
-    LLAMA_LOG_INFO("%s: n_layer_win= %u\n",     __func__, cparams.n_layer_window);
-    LLAMA_LOG_INFO("%s: n_ctx      = %u\n",     __func__, cparams.n_ctx);
-    LLAMA_LOG_INFO("%s: n_batch    = %u\n",     __func__, cparams.n_batch);
-    LLAMA_LOG_INFO("%s: n_ubatch   = %u\n",     __func__, cparams.n_ubatch);
-    LLAMA_LOG_INFO("%s: flash_attn = %d\n",     __func__, cparams.flash_attn);
-    LLAMA_LOG_INFO("%s: freq_base  = %.1f\n",   __func__, cparams.rope_freq_base);
-    LLAMA_LOG_INFO("%s: freq_scale = %g\n",     __func__, cparams.rope_freq_scale);
-
     ctx->master_ip    = params.master_ip;
     ctx->next_node_ip = params.next_node_ip;
 
     LLAMA_LOG_INFO("\n");
+    LLAMA_LOG_INFO("%s: n_world      = %u\n",     __func__, cparams.n_world);
+    LLAMA_LOG_INFO("%s: rank         = %u\n",     __func__, cparams.rank);
+    LLAMA_LOG_INFO("%s: win_size     = %u\n",     __func__, cparams.n_layer_window[cparams.rank]);
+    LLAMA_LOG_INFO("%s: n_ctx        = %u\n",     __func__, cparams.n_ctx);
+    LLAMA_LOG_INFO("%s: n_batch      = %u\n",     __func__, cparams.n_batch);
+    LLAMA_LOG_INFO("%s: n_ubatch     = %u\n",     __func__, cparams.n_ubatch);
+    LLAMA_LOG_INFO("%s: flash_attn   = %d\n",     __func__, cparams.flash_attn);
+    LLAMA_LOG_INFO("%s: freq_base    = %.1f\n",   __func__, cparams.rope_freq_base);
+    LLAMA_LOG_INFO("%s: freq_scale   = %g\n",     __func__, cparams.rope_freq_scale);
     LLAMA_LOG_INFO("%s: master_ip    = %s\n",   __func__, ctx->master_ip.c_str());
     LLAMA_LOG_INFO("%s: next_node_ip = %s\n",   __func__, ctx->next_node_ip.c_str());
 
@@ -20041,8 +20078,7 @@ struct llama_context * llama_new_context_with_model(
         }
 
         // graph outputs buffer, reserve for rank 0 only
-        const uint32_t my_rank = params.rank;
-        if (my_rank == 0) {
+        if (params.rank == 0) {
             // resized during inference when a batch uses more outputs
             if (llama_output_reserve(*ctx, params.n_seq_max) < params.n_seq_max) {
                 LLAMA_LOG_ERROR("%s: failed to reserve initial output buffer\n", __func__);
@@ -20118,7 +20154,7 @@ struct llama_context * llama_new_context_with_model(
             ctx->sched.resize(gf.size());
             
             // prefetch the first subgraph weights
-            manage_graph_tensors(gf.front(), POSIX_MADV_WILLNEED, true);
+            manage_graph_tensors(gf.front(), POSIX_MADV_WILLNEED, false);
 
             // initialize scheduler with the worst-case graph
             bool ok = true;
@@ -20138,7 +20174,7 @@ struct llama_context * llama_new_context_with_model(
 
                 size_t total_size = 0;
                 for (size_t j = 0; j < ctx->sched.size(); j++) {
-                    total_size += ggml_backend_sched_get_buffer_size(ctx->sched.at(j), backend);
+                    total_size += ggml_backend_sched_get_buffer_size(ctx->sched[j], backend);
                 }
                 if (total_size > 1) {
                     LLAMA_LOG_INFO("%s: %10s compute buffer size = %8.2f MiB (in total)\n", __func__,

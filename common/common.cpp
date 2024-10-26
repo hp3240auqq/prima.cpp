@@ -858,7 +858,6 @@ struct llama_init_result llama_init_from_gpt_params(gpt_params & params) {
 
         if (!ok) {
             llama_free_model(model);
-
             return iparams;
         }
     }
@@ -986,7 +985,6 @@ struct llama_model_params llama_model_params_from_gpt_params(const gpt_params & 
     }
     mparams.n_world         = params.n_world;
     mparams.rank            = params.rank;
-    mparams.n_layer_window  = params.n_layer_window;
     mparams.rpc_servers     = params.rpc_servers.c_str();
     mparams.main_gpu        = params.main_gpu;
     mparams.split_mode      = params.split_mode;
@@ -994,6 +992,7 @@ struct llama_model_params llama_model_params_from_gpt_params(const gpt_params & 
     mparams.use_mmap        = params.use_mmap;
     mparams.use_mlock       = params.use_mlock;
     mparams.check_tensors   = params.check_tensors;
+    std::copy(std::begin(params.n_layer_window), std::end(params.n_layer_window), mparams.n_layer_window);
     if (params.kv_overrides.empty()) {
         mparams.kv_overrides = NULL;
     } else {
@@ -1036,10 +1035,10 @@ static ggml_type kv_cache_type_from_str(const std::string & s) {
 struct llama_context_params llama_context_params_from_gpt_params(const gpt_params & params) {
     auto cparams = llama_context_default_params();
 
-    cparams.n_world           = params.n_world;
-    cparams.rank              = params.rank;
-    cparams.n_layer_window    = params.n_layer_window;
-    cparams.unload            = params.unload;
+    cparams.n_world         = params.n_world;
+    cparams.rank            = params.rank;
+    cparams.unload          = params.unload;
+    std::copy(std::begin(params.n_layer_window), std::end(params.n_layer_window), cparams.n_layer_window);
 
     if (cparams.master_ip != nullptr) {
         delete[] cparams.master_ip;

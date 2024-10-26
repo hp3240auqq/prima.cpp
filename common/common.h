@@ -144,7 +144,7 @@ struct gpt_sampler_params {
 struct gpt_params {
     int32_t n_world               =     1; // number of devices to use
     int32_t rank                  =     0; // my rank for distributed inference
-    int32_t n_layer_window        =    32; // number of layers to process in each compute
+    uint32_t n_layer_window[32]   =  {32}; // layer window size on each node
     std::string master_ip         = "localhost"; // ip address of the master node
     std::string next_node_ip      = "localhost"; // ip address of my next node
     bool    unload                = false; // unload layer weights after use or not

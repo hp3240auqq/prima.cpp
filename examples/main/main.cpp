@@ -142,9 +142,20 @@ int main(int argc, char ** argv) {
     if (!gpt_params_parse(argc, argv, params, LLAMA_EXAMPLE_MAIN, print_usage)) {
         return 1;
     }
-    const uint32_t n_world = params.n_world;
-    const uint32_t my_rank = params.rank;
+    const uint32_t n_world  = params.n_world;
+    const uint32_t my_rank  = params.rank;
+
+    // check if --n-layer-window and --world is matched
+    uint32_t non_zero_count = 0;
+    size_t size = sizeof(params.n_layer_window) / sizeof(params.n_layer_window[0]);
+    for (size_t i = 0; i < size; ++i) {
+        if (params.n_layer_window[i] != 0) {
+            ++non_zero_count;
+        }
+    }
+
     GGML_ASSERT(!(n_world == 1 && my_rank > 0));
+    GGML_ASSERT(non_zero_count == n_world && "Number of non-zero values in --n-layer-window must equal --world");
 
     gpt_init();
 
