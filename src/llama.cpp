@@ -17685,7 +17685,6 @@ static int llama_decode_internal(
         
         for (size_t i = 0; i < (size_t)gf.size(); ++i) {
             sub_gf  = gf[i];
-            next_gf = gf[(i + 1) % gf.size()];
 
             if (n_world > 1 && !(my_rank == 0 && i == 0) && !(my_rank == 0 && is_last_l)) {
                 // receive data from previous nodes
