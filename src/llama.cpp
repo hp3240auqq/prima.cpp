@@ -16419,7 +16419,6 @@ static std::vector<struct ggml_cgraph *> llama_build_graph(
     const uint32_t   n_world        = lctx.cparams.n_world;
     const uint32_t   my_rank        = lctx.cparams.rank;
     const uint32_t * n_layer_window = lctx.cparams.n_layer_window;
-    const uint32_t   n_layer        = lctx.model.hparams.n_layer;
 
     // this callback allows us to apply custom logic to each tensor (e.g. ggml-alloc, offloading, etc.)
     llm_build_cb cb = [&](struct ggml_tensor * cur, const char * name, int il) {
@@ -17444,6 +17443,10 @@ static float is_graph_loaded(struct ggml_cgraph * cgraph) {
 }
 
 static void manage_graph_tensors(struct ggml_cgraph * cgraph, int advice, bool force = false) {
+    size_t first = SIZE_MAX;
+    size_t last  = 0;
+    long page_size = sysconf(_SC_PAGESIZE);
+
     for (int i = 0; i < ggml_graph_n_leafs(cgraph); i++) {
         struct ggml_tensor * cur = ggml_graph_leaf(cgraph, i);
 
@@ -17451,26 +17454,25 @@ static void manage_graph_tensors(struct ggml_cgraph * cgraph, int advice, bool f
             continue;
         }
 
-        void * addr      = (void *)cur->data;
-        size_t size      = ggml_nbytes(cur);
-        size_t first     = (size_t)addr;
-        size_t last      = first + size;
-        long   page_size = sysconf(_SC_PAGESIZE);
+        size_t addr = reinterpret_cast<size_t>(cur->data);
+        first = std::min(first, addr);
+        last  = std::max(last,  addr + ggml_nbytes(cur));
+    }
 
-        // align addr 
-        llama_mmap::align_range(&first, &last, page_size);
-        size_t len = std::max(last - first, static_cast<size_t>(page_size));
+    // align addr 
+    llama_mmap::align_range(&first, &last, page_size);
+    size_t len = std::max(last - first, static_cast<size_t>(page_size));
 
-        // hint to load memory
-        posix_madvise((void *)first, len, advice);
+    // hint to load memory
+    posix_madvise(reinterpret_cast<void *>(first), len, advice);
 
-        // if advice is POSIX_MADV_WILLNEED, force to prefetch data
-        if (force && advice == POSIX_MADV_WILLNEED) {
-            volatile char * ptr = (volatile char *)first;
-            for (size_t off = 0; off < len; off += page_size) {
-                volatile char data = ptr[off];
-                (void)data;
-            }
+    // if advice is POSIX_MADV_WILLNEED, force to prefetch data
+    if (force && advice == POSIX_MADV_WILLNEED) {
+        // coarse-grained prefetch
+        char * ptr = reinterpret_cast<char *>(first);
+        for (size_t off = 0; off < len; off += page_size * 32) {
+            volatile char data = ptr[off];
+            (void)data;
         }
     }
 }
@@ -17674,7 +17676,6 @@ static int llama_decode_internal(
         }
 
         ggml_cgraph  * sub_gf    = nullptr;
-        ggml_cgraph  * next_gf   = nullptr;
         const uint32_t n_layer   = hparams.n_layer;
         const char   * layer_str = nullptr;
         int            cur_l     = -1;
@@ -17687,26 +17688,24 @@ static int llama_decode_internal(
             next_gf = gf[(i + 1) % gf.size()];
 
             if (n_world > 1 && !(my_rank == 0 && i == 0) && !(my_rank == 0 && is_last_l)) {
-                {   // receive data from previous nodes
-                    timer(llama_recv_tensors);
-                    input_tensors tensors;
-                    const bool is_out_embd = my_rank == 0 && i == (size_t)gf.size() - 1;
-                    tensors.sub_gf_out = is_out_embd ? lctx.out_embd : lctx.backend_embd;
-                    tensors.inp_pos = lctx.inp_pos;
-                    llama_recv_tensors(*lctx.recv_socket, &tensors);
-                
-                    is_last_l = my_rank == 0 && i == (size_t)gf.size() - 1;
-                    size_t buff_size = tensors.sub_gf_out->ne[0] * tensors.sub_gf_out->ne[1] * ggml_element_size(tensors.sub_gf_out);
-                    if (!is_last_l) { 
-                        memcpy(ubatch.backend_embd, tensors.sub_gf_out->data, buff_size);
-                    } else { 
-                        memcpy(ubatch.out_embd, tensors.sub_gf_out->data, buff_size);
-                    }
-                    if (my_rank != 0 && i == 0) {
-                        buff_size = tensors.inp_pos->ne[0] * ggml_element_size(tensors.inp_pos);
-                        memcpy(ubatch.pos, tensors.inp_pos->data, buff_size);
-                    }   
+                // receive data from previous nodes
+                input_tensors tensors;
+                const bool is_out_embd = my_rank == 0 && i == (size_t)gf.size() - 1;
+                tensors.sub_gf_out = is_out_embd ? lctx.out_embd : lctx.backend_embd;
+                tensors.inp_pos = lctx.inp_pos;
+                llama_recv_tensors(*lctx.recv_socket, &tensors);
+            
+                is_last_l = my_rank == 0 && i == (size_t)gf.size() - 1;
+                size_t buff_size = tensors.sub_gf_out->ne[0] * tensors.sub_gf_out->ne[1] * ggml_element_size(tensors.sub_gf_out);
+                if (!is_last_l) { 
+                    memcpy(ubatch.backend_embd, tensors.sub_gf_out->data, buff_size);
+                } else { 
+                    memcpy(ubatch.out_embd, tensors.sub_gf_out->data, buff_size);
                 }
+                if (my_rank != 0 && i == 0) {
+                    buff_size = tensors.inp_pos->ne[0] * ggml_element_size(tensors.inp_pos);
+                    memcpy(ubatch.pos, tensors.inp_pos->data, buff_size);
+                }   
             }
 
             llama_set_inputs(lctx, ubatch);
@@ -17749,8 +17748,11 @@ static int llama_decode_internal(
                 timer(manage_graph_tensors);
                 if (n_world != 1) {
                     manage_graph_tensors(sub_gf,  POSIX_MADV_DONTNEED);
-                    if (!(my_rank == 0 && is_last_l)) {
-                        manage_graph_tensors(next_gf, POSIX_MADV_WILLNEED, true);
+
+                    int next_gf_id = (i + 1) % gf.size();
+                    manage_graph_tensors(gf[next_gf_id], POSIX_MADV_WILLNEED, true);
+                    if (my_rank == 0 && (is_last_l || (next_gf_id == (int)gf.size() - 1))) {
+                        manage_graph_tensors(gf[0], POSIX_MADV_WILLNEED, true);
                     }
                 }
             }
@@ -20140,7 +20142,7 @@ struct llama_context * llama_new_context_with_model(
                 }
             }
 
-            for (int i = 0; i < 10; ++i) {
+            for (int i = 0; i < 20; ++i) {
                 ctx->sched.push_back(ggml_backend_sched_new(ctx->backends.data(), backend_buft.data(), ctx->backends.size(), max_nodes, pipeline_parallel));
             }
             
@@ -20151,6 +20153,7 @@ struct llama_context * llama_new_context_with_model(
             llama_ubatch ubatch = { true, n_tokens, n_tokens / n_seqs, n_seqs, &token, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr};
             std::vector<ggml_cgraph *> gf = llama_build_graph(*ctx, ubatch, true);
 
+            GGML_ASSERT(gf.size() <= 20 && "Number of subgraphs exceeds the maximum number of schedulers\n");
             ctx->sched.resize(gf.size());
             
             // prefetch the first subgraph weights
