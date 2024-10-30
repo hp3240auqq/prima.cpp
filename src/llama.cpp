@@ -26,6 +26,7 @@
 
 // TODO: replace with ggml API call
 #define QK_K 256
+#define MAX_SCHEDULERS 32
 
 #ifdef __has_include
     #if __has_include(<unistd.h>)
@@ -3619,9 +3620,9 @@ static bool this_layer_is_mine(
                          uint32_t layer_id, 
                          uint32_t n_world, 
                          uint32_t my_rank, 
-                         const uint32_t * n_layer_window) {
+                 const uint32_t * n_layer_window) {
     uint32_t cumulative_layers = 0;
-    uint32_t rank = 0;
+    uint32_t rank = 1;
     while (true) {
         cumulative_layers += n_layer_window[rank];
         if (layer_id < cumulative_layers) {
@@ -3635,8 +3636,7 @@ static int32_t map_layer_to_local_id(
     uint32_t layer_id, 
     uint32_t n_world, 
     uint32_t my_rank, 
-    const uint32_t* n_layer_window) 
-{
+    const uint32_t* n_layer_window) {
     if (!this_layer_is_mine(layer_id, n_world, my_rank, n_layer_window)) {
         return -1;
     }
@@ -3650,21 +3650,17 @@ static int32_t map_layer_to_local_id(
     uint32_t cumulative_layers = 0;
     uint32_t local_offset = (layer_id / cycle_size) * n_layer_window[my_rank];
 
-    for (uint32_t rank = 0; rank < n_world; ++rank) {
+    for (uint32_t rank = 1; rank < n_world; ++rank) {
         uint32_t window_size = n_layer_window[rank];
-
         if (cycle_offset < cumulative_layers + window_size) {
             if (rank == my_rank) {
                 return cycle_offset - cumulative_layers + local_offset;
-            } else {
-                return -1;
             }
         }
-        
         cumulative_layers += window_size;
     }
 
-    return -1;
+    return cycle_offset - cumulative_layers + local_offset;
 }
 
 //
@@ -7104,18 +7100,12 @@ static bool llm_load_tensors(
         }
     }
 
-    // assign the output layer (locate on node 0 only)
+    // assign the input and output layers on CPU by default
     if (my_rank == 0) {
-        // there is very little benefit to offloading the input layer, so always keep it on the CPU
         model.buft_input = llama_default_buffer_type_cpu(model, true);
-
-        if (n_gpu_layers > (int)n_layer_window[0]) {
-            LLAMA_LOG_INFO("Layer output assigned to gpu\n");
-            model.buft_output = llama_default_buffer_type_offload(model, main_gpu);
-        } else {
-            LLAMA_LOG_INFO("Layer output assigned to cpu\n");
-            model.buft_output = llama_default_buffer_type_cpu(model, true);
-        }
+        model.buft_output = llama_default_buffer_type_cpu(model, true);
+        LLAMA_LOG_INFO("Layer input assigned to cpu\n");
+        LLAMA_LOG_INFO("Layer output assigned to cpu\n");
     }
 
     // count used buffer types
@@ -7132,7 +7122,7 @@ static bool llm_load_tensors(
     }
 
     // create one context per buffer type
-    size_t ctx_size = ggml_tensor_overhead()*(ml.n_tensors + 1); // +1 for models where tok_embd is duplicated as output
+    size_t ctx_size = ggml_tensor_overhead() * (ml.n_tensors + 1); // +1 for models where tok_embd is duplicated as output
 
     // for moe merged tensors
     ctx_size += ggml_tensor_overhead() * my_layers * 3;
@@ -8974,7 +8964,7 @@ static bool llm_load_tensors(
         }
     }
 
-    ml.init_mappings(false, use_mlock ? &model.mlock_mmaps : nullptr);  // disable prefetch here
+    ml.init_mappings(false, use_mlock ? &model.mlock_mmaps : nullptr);
     model.mappings.reserve(ml.mappings.size());
 
     // create the backend buffers
@@ -10532,10 +10522,6 @@ struct llm_build_context {
     }
 
     std::vector<ggml_cgraph *> build_llama() {
-        // create a vector to hold sub-graphs
-        std::vector<struct ggml_cgraph *> sub_gfs;
-        struct ggml_cgraph * sub_gf = ggml_new_graph_custom(ctx0, llama_model_max_nodes(model), false);
-
         // mutable variable, needed during the last layer of the computation to skip unused tokens
         int32_t n_tokens = this->n_tokens;
 
@@ -10543,20 +10529,30 @@ struct llm_build_context {
         GGML_ASSERT(n_embd_head   == hparams.n_embd_head_k);
         GGML_ASSERT(n_embd_head   == hparams.n_rot);
 
-        struct ggml_tensor * cur  = nullptr;
-        struct ggml_tensor * inpL = nullptr;
-        struct ggml_tensor * inpB = nullptr;
-
-        const uint32_t   n_world        = this->cparams.n_world;
-        const uint32_t   my_rank        = this->cparams.rank;
-        const uint32_t * n_layer_window = this->cparams.n_layer_window;
+        // create a vector to hold sub-graphs
+        std::vector<struct ggml_cgraph *> sub_gfs;
+        struct ggml_cgraph * sub_gf  = nullptr;
+        struct ggml_tensor * cur     = nullptr;
+        struct ggml_tensor * inpL    = nullptr;
+        struct ggml_tensor * inpB    = nullptr;
+        const  uint32_t      n_world = this->cparams.n_world;
+        const  uint32_t      my_rank = this->cparams.rank;
+        const  uint32_t    * n_layer_window = this->cparams.n_layer_window;
 
         if (my_rank == 0) {
+            sub_gf = ggml_new_graph_custom(ctx0, llama_model_max_nodes(model), false);
+
             // inp_embd - contains the input embedding
             inpL = llm_build_inp_embd(ctx0, lctx, hparams, batch, model.tok_embd, cb);
-            // inpB - contains the output embedding from other nodes
-            inpB = llm_build_backend_embd(ctx0, lctx, hparams, batch, cb);
+
+            // build the input layer as a seperate subgraph
+            ggml_build_forward_expand(sub_gf, inpL);
+            sub_gfs.push_back(sub_gf);
+            sub_gf = nullptr;
         }
+
+        // inpB - contains the output embedding from other nodes
+        inpB = llm_build_backend_embd(ctx0, lctx, hparams, batch, cb);
 
         // inp_pos - contains the positions
         struct ggml_tensor * inp_pos = build_inp_pos();
@@ -10579,10 +10575,7 @@ struct llm_build_context {
                 continue;
             }
 
-            int local_il = map_layer_to_local_id(il, n_world, my_rank, n_layer_window);
-
             if (inpL == nullptr) {
-                inpB = llm_build_backend_embd(ctx0, lctx, hparams, batch, cb);
                 inpL = inpB;
             }
 
@@ -10592,6 +10585,7 @@ struct llm_build_context {
             }
 
             struct ggml_tensor * inpSA = inpL;  // use for shortcut
+            int local_il = map_layer_to_local_id(il, n_world, my_rank, n_layer_window);
 
             // norm
             cur = llm_build_norm(ctx0, inpL, hparams,
@@ -10649,8 +10643,8 @@ struct llm_build_context {
                 // skip computing output for unused tokens
                 struct ggml_tensor * inp_out_ids = build_inp_out_ids();
                 n_tokens = n_outputs;
-                cur   = ggml_get_rows(ctx0,   cur, inp_out_ids);
-                inpSA = ggml_get_rows(ctx0, inpSA, inp_out_ids);
+                cur      = ggml_get_rows(ctx0,   cur, inp_out_ids);
+                inpSA    = ggml_get_rows(ctx0, inpSA, inp_out_ids);
             }
 
             // For Granite architecture
@@ -16399,8 +16393,8 @@ static struct ggml_cgraph * llama_build_graph_k_shift(llama_context & lctx) {
     return result;
 }
 
-static int32_t map_layer_to_subgf_id(uint32_t i, uint32_t my_rank, uint32_t n_world, const uint32_t * n_layer_window) {
-    if (!this_layer_is_mine(i, n_world, my_rank, n_layer_window)) {
+static int32_t map_layer_to_subgf_id(uint32_t il, uint32_t my_rank, uint32_t n_world, const uint32_t * n_layer_window) {
+    if (!this_layer_is_mine(il, n_world, my_rank, n_layer_window)) {
         return -1;
     }
 
@@ -16408,7 +16402,7 @@ static int32_t map_layer_to_subgf_id(uint32_t i, uint32_t my_rank, uint32_t n_wo
     for (uint32_t rank = 0; rank < n_world; ++rank) {
         total_window_size += n_layer_window[rank];
     }
-    return i / total_window_size;
+    return my_rank == 0 ? il / total_window_size + 1 : il / total_window_size;
 }
 
 static std::vector<struct ggml_cgraph *> llama_build_graph(
@@ -16440,7 +16434,7 @@ static std::vector<struct ggml_cgraph *> llama_build_graph(
 
         // norm may be automatically assigned to the backend of the previous layer, increasing data transfer between backends
         // FIXME: fix in ggml_backend_sched
-        const bool full_offload = lctx.model.n_gpu_layers > (int)n_layer_window[0];
+        const bool full_offload = false;
         if (batch.n_tokens < 32 || full_offload) {
             if (il != -1 && strcmp(name, "norm") == 0) {
                 for (auto * backend : lctx.backends) {
@@ -17489,9 +17483,9 @@ static void manage_graph_tensors(struct ggml_cgraph * cgraph, int advice, bool f
 static int llama_decode_internal(
          llama_context & lctx,
            llama_batch   batch_all) { // TODO: rename back to batch
-    const auto & model     = lctx.model;
-    const auto & hparams   = model.hparams;
-    const auto & cparams   = lctx.cparams;
+    const auto   & model   = lctx.model;
+    const auto   & hparams = model.hparams;
+    const auto   & cparams = lctx.cparams;
     const uint32_t n_world = cparams.n_world;
     const uint32_t my_rank = cparams.rank;
 
@@ -17684,7 +17678,7 @@ static int llama_decode_internal(
         GGML_ASSERT(my_rank == 0 || n_world > 1);
         
         for (size_t i = 0; i < (size_t)gf.size(); ++i) {
-            sub_gf  = gf[i];
+            sub_gf = gf[i];
 
             if (n_world > 1 && !(my_rank == 0 && i == 0) && !(my_rank == 0 && is_last_l)) {
                 // receive data from previous nodes
@@ -17720,9 +17714,13 @@ static int llama_decode_internal(
                 break;
             }
 
-            layer_str  = strchr(sub_gf_out->name, '-') + 1;
-            cur_l      = std::atoi(layer_str);
-            is_last_l  = (cur_l == static_cast<int>(n_layer) - 1);
+            if (strcmp(sub_gf_out->name, "inp_embd") == 0) {
+                is_last_l = false;
+            } else {
+                layer_str = strchr(sub_gf_out->name, '-') + 1;
+                cur_l = std::atoi(layer_str);
+                is_last_l = (cur_l == static_cast<int>(n_layer) - 1);
+            }
 
             // send the result to the next node (or the master)
             if (n_world == 1 || (my_rank == 0 && is_last_l)) {
@@ -17737,7 +17735,7 @@ static int llama_decode_internal(
                     const size_t buff_size = ubatch.n_tokens * ggml_element_size(tensors.inp_pos);
                     memcpy(tensors.inp_pos->data, ubatch.pos, buff_size);
                 }
-                const bool is_to_master = my_rank !=0 && is_last_l;
+                const bool is_to_master = my_rank != 0 && is_last_l;
                 zmq::socket_t * s = is_to_master ? lctx.master_socket : lctx.send_socket;
                 llama_send_tensors(*s, &tensors);
             }
@@ -20141,7 +20139,7 @@ struct llama_context * llama_new_context_with_model(
                 }
             }
 
-            for (int i = 0; i < 20; ++i) {
+            for (int i = 0; i < MAX_SCHEDULERS; ++i) {
                 ctx->sched.push_back(ggml_backend_sched_new(ctx->backends.data(), backend_buft.data(), ctx->backends.size(), max_nodes, pipeline_parallel));
             }
             
@@ -20152,11 +20150,8 @@ struct llama_context * llama_new_context_with_model(
             llama_ubatch ubatch = { true, n_tokens, n_tokens / n_seqs, n_seqs, &token, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr};
             std::vector<ggml_cgraph *> gf = llama_build_graph(*ctx, ubatch, true);
 
-            GGML_ASSERT(gf.size() <= 20 && "Number of subgraphs exceeds the maximum number of schedulers\n");
+            GGML_ASSERT(gf.size() <= MAX_SCHEDULERS && "Number of subgraphs exceeds the maximum number of schedulers\n");
             ctx->sched.resize(gf.size());
-            
-            // prefetch the first subgraph weights
-            manage_graph_tensors(gf.front(), POSIX_MADV_WILLNEED, false);
 
             // initialize scheduler with the worst-case graph
             bool ok = true;

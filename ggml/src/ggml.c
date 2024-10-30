@@ -4025,8 +4025,6 @@ static struct ggml_object * ggml_new_object(struct ggml_context * ctx, enum ggml
 
     ctx->objects_end = obj_new;
 
-    //printf("%s: inserted new object at %zu, size = %zu\n", __func__, cur_end, obj_new->size);
-
     return obj_new;
 }
 
