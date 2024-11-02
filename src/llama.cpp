@@ -10367,7 +10367,7 @@ struct llm_build_context {
             const llm_build_cb  & cb) {
         lctx.backend_embd = ggml_new_tensor_2d(ctx, GGML_TYPE_F32, hparams.n_embd, batch.n_tokens);
         cb(lctx.backend_embd, "backend_embd", -1);
-        // ggml_set_input(lctx.backend_embd); // set it on the device of the adjacent node
+        ggml_set_input(lctx.backend_embd); 
         return lctx.backend_embd;
     }
 
@@ -10378,7 +10378,7 @@ struct llm_build_context {
             const llm_build_cb  & cb) {
         lctx.out_embd = ggml_new_tensor_2d(ctx, GGML_TYPE_F32, hparams.n_embd, n_outputs);
         cb(lctx.out_embd, "out_embd", -1);
-        // ggml_set_input(lctx.out_embd); // set it on the device of the adjacent node
+        ggml_set_input(lctx.out_embd); 
         return lctx.out_embd;
     }
 
