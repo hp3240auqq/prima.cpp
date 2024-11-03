@@ -2297,7 +2297,6 @@ bool ggml_backend_sched_alloc_graph(ggml_backend_sched_t sched, struct ggml_cgra
 
     ggml_backend_sched_split_graph(sched, graph);
 
-
     if (!ggml_backend_sched_alloc_splits(sched)) {
         return false;
     }

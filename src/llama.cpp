@@ -3313,7 +3313,7 @@ struct llama_context {
         ggml_backend_buffer_free(buf_output);
     }
 
-    const struct llama_model & model;
+    const struct llama_model  & model;
 
     struct llama_cparams        cparams;
     struct llama_sbatch         sbatch;
@@ -3399,15 +3399,15 @@ struct llama_context {
     struct ggml_tensor * inp_KQ_mask_cross; // F32 [n_outputs_enc, n_batch]
 
     // sockets
-    std::string master_ip         = "localhost";
-    std::string next_node_ip      = "localhost";
-    uint32_t data_port           = 9000;
-    uint32_t signal_port          = 10000;
-    zmq::context_t * sock_context = nullptr;
-    zmq::socket_t * send_socket   = nullptr; 
-    zmq::socket_t * recv_socket   = nullptr; 
-    zmq::socket_t * master_socket = nullptr; 
-    zmq::socket_t * signal_socket = nullptr;
+    std::string      master_ip     = "localhost";
+    std::string      next_node_ip  = "localhost";
+    uint32_t         data_port     = 9000;
+    uint32_t         signal_port   = 10000;
+    zmq::context_t * sock_context  = nullptr;
+    zmq::socket_t  * send_socket   = nullptr; 
+    zmq::socket_t  * recv_socket   = nullptr; 
+    zmq::socket_t  * master_socket = nullptr; 
+    zmq::socket_t  * signal_socket = nullptr;
 };
 
 struct llama_lora_weight {
@@ -17343,18 +17343,18 @@ static void llama_send_meta(zmq::socket_t & socket, struct sync_meta * meta) {
 static void llama_send_tensors(zmq::socket_t & socket, struct input_tensors * tensors) {
     try {
         std::vector<zmq::message_t> send_msgs;
-        size_t buff_size = 0;
+        size_t buf_size = 0;
 
         send_msgs.emplace_back("sub_gf_out", strlen("sub_gf_out"));
         send_msgs.emplace_back(tensors->sub_gf_out->ne, sizeof(tensors->sub_gf_out->ne));
-        buff_size = tensors->sub_gf_out->ne[0] * tensors->sub_gf_out->ne[1] * sizeof(float);
-        send_msgs.emplace_back(tensors->sub_gf_out->data, buff_size);
+        buf_size = tensors->sub_gf_out->ne[0] * tensors->sub_gf_out->ne[1] * sizeof(float);
+        send_msgs.emplace_back(tensors->sub_gf_out->data, buf_size);
 
         if (tensors->inp_pos) {
             send_msgs.emplace_back("inp_pos", strlen("inp_pos"));
             send_msgs.emplace_back(tensors->inp_pos->ne, sizeof(tensors->inp_pos->ne[0]));
-            buff_size = tensors->inp_pos->ne[0] * sizeof(int32_t);
-            send_msgs.emplace_back(tensors->inp_pos->data, buff_size);
+            buf_size = tensors->inp_pos->ne[0] * sizeof(int32_t);
+            send_msgs.emplace_back(tensors->inp_pos->data, buf_size);
         }
 
         zmq::send_multipart(socket, send_msgs);
@@ -17398,17 +17398,17 @@ static void llama_recv_tensors(zmq::socket_t & socket, input_tensors * tensors) 
 
         if (key == "sub_gf_out" && tensors->sub_gf_out) {
             int64_t * dims   = static_cast<int64_t*>(dims_msg.data());
-            size_t buff_size = dims[0] * dims[1] * sizeof(float);
+            size_t buf_size = dims[0] * dims[1] * sizeof(float);
             GGML_ASSERT(dims[0] == tensors->sub_gf_out->ne[0]);
             GGML_ASSERT(dims[1] == tensors->sub_gf_out->ne[1]);
-            GGML_ASSERT(data_msg.size() == buff_size);
-            std::memcpy(tensors->sub_gf_out->data, data_msg.data(), buff_size);
+            GGML_ASSERT(data_msg.size() == buf_size);
+            std::memcpy(tensors->sub_gf_out->data, data_msg.data(), buf_size);
         } else if (key == "inp_pos" && tensors->inp_pos) {
             int64_t * dims   = static_cast<int64_t*>(dims_msg.data());
-            size_t buff_size = dims[0] * sizeof(int32_t);
+            size_t buf_size = dims[0] * sizeof(int32_t);
             GGML_ASSERT(dims[0] == tensors->inp_pos->ne[0]);
-            GGML_ASSERT(data_msg.size() == buff_size);
-            std::memcpy(tensors->inp_pos->data, data_msg.data(), buff_size);
+            GGML_ASSERT(data_msg.size() == buf_size);
+            std::memcpy(tensors->inp_pos->data, data_msg.data(), buf_size);
         }
     }
 }
@@ -17734,15 +17734,15 @@ static int llama_decode_internal(
                 llama_recv_tensors(*lctx.recv_socket, &tensors);
             
                 is_last_l = my_rank == 0 && i == (size_t)gf.size() - 1;
-                size_t buff_size = tensors.sub_gf_out->ne[0] * tensors.sub_gf_out->ne[1] * ggml_element_size(tensors.sub_gf_out);
+                size_t buf_size = tensors.sub_gf_out->ne[0] * tensors.sub_gf_out->ne[1] * ggml_element_size(tensors.sub_gf_out);
                 if (!is_last_l) { 
-                    memcpy(ubatch.backend_embd, tensors.sub_gf_out->data, buff_size);
+                    memcpy(ubatch.backend_embd, tensors.sub_gf_out->data, buf_size);
                 } else { 
-                    memcpy(ubatch.out_embd, tensors.sub_gf_out->data, buff_size);
+                    memcpy(ubatch.out_embd, tensors.sub_gf_out->data, buf_size);
                 }
                 if (my_rank != 0 && i == 0) {
-                    buff_size = tensors.inp_pos->ne[0] * ggml_element_size(tensors.inp_pos);
-                    memcpy(ubatch.pos, tensors.inp_pos->data, buff_size);
+                    buf_size = tensors.inp_pos->ne[0] * ggml_element_size(tensors.inp_pos);
+                    memcpy(ubatch.pos, tensors.inp_pos->data, buf_size);
                 }   
             }
 
@@ -17771,14 +17771,14 @@ static int llama_decode_internal(
             if (n_world == 1 || (my_rank == 0 && is_last_l)) {
                 size_t buf_size = sub_gf_out->ne[0]*sub_gf_out->ne[1]*sizeof(float);
                 float * embd_buf = is_last_l ? ubatch.out_embd : ubatch.backend_embd;
-                memcpy(embd_buf, sub_gf_out->data, buf_size);
+                ggml_backend_tensor_get(sub_gf_out, embd_buf, 0, buf_size);
             } else {
                 input_tensors tensors;
                 tensors.sub_gf_out = sub_gf_out;
                 if (i == 0 && !is_last_l && my_rank != n_world - 1) {
                     tensors.inp_pos = lctx.inp_pos;
-                    const size_t buff_size = ubatch.n_tokens * ggml_element_size(tensors.inp_pos);
-                    memcpy(tensors.inp_pos->data, ubatch.pos, buff_size);
+                    const size_t buf_size = ubatch.n_tokens * ggml_element_size(tensors.inp_pos);
+                    memcpy(tensors.inp_pos->data, ubatch.pos, buf_size);
                 }
                 const bool is_to_master = my_rank != 0 && is_last_l;
                 zmq::socket_t * s = is_to_master ? lctx.master_socket : lctx.send_socket;
@@ -19812,7 +19812,7 @@ struct llama_context * llama_new_context_with_model(
         return nullptr;
     }
 
-    llama_context * ctx = new llama_context(*model);
+    llama_context * ctx  = new llama_context(*model);
 
     const auto & hparams = model->hparams;
     auto       & cparams = ctx->cparams;
@@ -19937,6 +19937,7 @@ struct llama_context * llama_new_context_with_model(
 
         // with registry
         if (model->split_mode == LLAMA_SPLIT_MODE_NONE || model->split_mode == LLAMA_SPLIT_MODE_ROW) {
+            throw std::runtime_error("only LLAMA_SPLIT_MODE_LAYER is supported\n");
             if (main_gpu >= 0 && main_gpu < (int)model->devices.size()) {
                 ggml_backend_dev_t main_dev = model->devices[main_gpu];
                 ggml_backend_t backend = ggml_backend_dev_init(main_dev, nullptr);
