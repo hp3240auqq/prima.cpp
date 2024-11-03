@@ -17746,6 +17746,11 @@ static int llama_decode_internal(
                 }   
             }
 
+            if (i > 0) {
+                // ensure ggml_backend_tensor_get_async of the previous subgraph has finished
+                ggml_backend_sched_synchronize(lctx.sched[i - 1]);
+            }
+
             llama_set_inputs(lctx, ubatch);
 
             {   // compute graph
@@ -17769,9 +17774,15 @@ static int llama_decode_internal(
 
             // send the result to the next node (or the master)
             if (n_world == 1 || (my_rank == 0 && is_last_l)) {
-                size_t buf_size = sub_gf_out->ne[0]*sub_gf_out->ne[1]*sizeof(float);
-                float * embd_buf = is_last_l ? ubatch.out_embd : ubatch.backend_embd;
-                ggml_backend_tensor_get(sub_gf_out, embd_buf, 0, buf_size);
+                size_t         buf_size = sub_gf_out->ne[0] * sub_gf_out->ne[1] * sizeof(float);
+                float *        embd_buf = is_last_l ? ubatch.out_embd : ubatch.backend_embd;
+                ggml_backend_t backend  = ggml_backend_sched_get_tensor_backend(lctx.sched[i], sub_gf_out);
+
+                GGML_ASSERT(buf_size <= ggml_nbytes(sub_gf_out));
+                GGML_ASSERT(backend  != nullptr);
+                GGML_ASSERT(embd_buf != nullptr);
+                
+                ggml_backend_tensor_get_async(backend, sub_gf_out, embd_buf, 0, buf_size);
             } else {
                 input_tensors tensors;
                 tensors.sub_gf_out = sub_gf_out;
@@ -21800,7 +21811,9 @@ int32_t llama_decode(
 }
 
 void llama_synchronize(struct llama_context * ctx) {
-    ggml_backend_sched_synchronize(ctx->sched.at(0)); // todo.
+    for (ggml_backend_sched_t sched : ctx->sched) {
+        ggml_backend_sched_synchronize(sched);
+    }
 
     // FIXME: if multiple single tokens are evaluated without a synchronization,
     // the stats will be added to the prompt evaluation stats
