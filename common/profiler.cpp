@@ -135,8 +135,7 @@ uint64_t device_swap_memory(bool available) {
                 uint64_t kb;
                 iss >> key >> kb;
                 total_swap = kb * 1024;
-            }
-            if (line.find("SwapFree:") == 0) {
+            } else if (line.find("SwapFree:") == 0) {
                 std::istringstream iss(line);
                 std::string key;
                 uint64_t kb;
