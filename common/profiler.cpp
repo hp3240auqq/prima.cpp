@@ -25,23 +25,18 @@ uint32_t device_cpu_cores() {
     unsigned int core_count = 1; // default to 1 in case of failure
 
 #if defined(_WIN32) || defined(_WIN64)
-    // Windows implementation
     SYSTEM_INFO sysinfo;
     GetSystemInfo(&sysinfo);
     core_count = sysinfo.dwNumberOfProcessors;
 #elif defined(__linux__)
-    // Linux implementation
     core_count = sysconf(_SC_NPROCESSORS_ONLN);
 #elif defined(__APPLE__) && defined(__MACH__)
-    // macOS implementation
     int mib[4];
     size_t len = sizeof(core_count);
 
-    // set the mib for hw.ncpu
     mib[0] = CTL_HW;
-    mib[1] = HW_AVAILCPU; // number of available cpus
+    mib[1] = HW_AVAILCPU;
 
-    // get the number of available cpus
     if (sysctl(mib, 2, &core_count, &len, NULL, 0) != 0 || core_count < 1) {
         mib[1] = HW_NCPU; // total number of cpus
         if (sysctl(mib, 2, &core_count, &len, NULL, 0) != 0 || core_count < 1) {
@@ -111,6 +106,68 @@ uint64_t device_physical_memory(bool available) {
 #endif
 
     return memory;
+}
+
+uint64_t device_swap_memory(bool available) {
+    uint64_t swap_memory = 0;
+
+#if defined(_WIN32) || defined(_WIN64)
+    PERFORMANCE_INFORMATION performance_info;
+    performance_info.cb = sizeof(performance_info);
+    if (GetPerformanceInfo(&performance_info, sizeof(performance_info))) {
+        if (available) {
+            swap_memory = (performance_info.PageFileTotal - performance_info.PageFileUsage) * performance_info.PageSize;
+        } else {
+            swap_memory = performance_info.PageFileTotal * performance_info.PageSize;
+        }
+    }
+#elif defined(__linux__)
+    std::ifstream meminfo("/proc/meminfo");
+    std::string line;
+    uint64_t total_swap = 0;
+    uint64_t free_swap = 0;
+
+    if (meminfo.is_open()) {
+        while (std::getline(meminfo, line)) {
+            if (line.find("SwapTotal:") == 0) {
+                std::istringstream iss(line);
+                std::string key;
+                uint64_t kb;
+                iss >> key >> kb;
+                total_swap = kb * 1024;
+            }
+            if (line.find("SwapFree:") == 0) {
+                std::istringstream iss(line);
+                std::string key;
+                uint64_t kb;
+                iss >> key >> kb;
+                free_swap = kb * 1024;
+            }
+        }
+        meminfo.close();
+    }
+
+    if (available) {
+        swap_memory = free_swap;
+    } else {
+        swap_memory = total_swap;
+    }
+
+#elif defined(__APPLE__) && defined(__MACH__)
+    int mib[2] = {CTL_VM, VM_SWAPUSAGE};
+    struct xsw_usage swap;
+    size_t len = sizeof(swap);
+
+    if (sysctl(mib, 2, &swap, &len, NULL, 0) == 0) {
+        if (available) {
+            swap_memory = swap.xsu_avail;
+        } else {
+            swap_memory = swap.xsu_total;
+        }
+    }
+#endif
+
+    return swap_memory;
 }
 
 uint64_t get_disk_read_speed(const char * test_file, size_t buffer_size_mb) {
