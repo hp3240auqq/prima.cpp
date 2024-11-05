@@ -21,6 +21,29 @@
 
 namespace profiler {
 
+const char * device_name() {
+    static char device_name[256];
+
+#if defined(_WIN32) || defined(_WIN64)
+    DWORD size = sizeof(device_name);
+    if (GetComputerNameA(device_name, &size) == 0) {
+        strncpy(device_name, "Unknown Windows Device", sizeof(device_name));
+    }
+#elif defined(__linux__)
+    if (gethostname(device_name, sizeof(device_name)) != 0) {
+        strncpy(device_name, "Unknown Linux Device", sizeof(device_name));
+    }
+#elif defined(__APPLE__) && defined(__MACH__)
+    if (gethostname(device_name, sizeof(device_name)) != 0) {
+        strncpy(device_name, "Unknown Mac Device", sizeof(device_name));
+    }
+#else
+    strncpy(device_name, "Unknown Device", sizeof(device_name));
+#endif
+
+    return device_name;
+}
+
 uint32_t device_cpu_cores() {
     unsigned int core_count = 1; // default to 1 in case of failure
 

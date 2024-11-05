@@ -4,6 +4,7 @@
 #include <string>
 
 namespace profiler {
+    const char * device_name(); 
     uint32_t device_cpu_cores();
     uint64_t device_physical_memory(bool available = true);
     uint64_t device_swap_memory(bool available = true);

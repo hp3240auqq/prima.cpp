@@ -835,6 +835,7 @@ struct llama_init_result llama_init_from_gpt_params(gpt_params & params) {
     }
 
     // profile devices and determine the best setup
+    const char * dev_name     = profiler::device_name();
     uint32_t n_cpu_cores      = profiler::device_cpu_cores();
     uint64_t total_memory     = profiler::device_physical_memory(false);
     uint64_t available_memory = profiler::device_physical_memory(true);
@@ -842,6 +843,7 @@ struct llama_init_result llama_init_from_gpt_params(gpt_params & params) {
     uint64_t available_swap   = profiler::device_swap_memory(true);
     uint64_t disk_read_bw     = profiler::get_disk_read_speed(params.model.c_str(), 500);
 
+    LOG_INF("Device Name:               %s\n", dev_name);
     LOG_INF("Number of CPU cores:       %u\n", n_cpu_cores);
     LOG_INF("Total Physical Memory:     %.2f GB\n", total_memory / (double)(1 << 30));
     LOG_INF("Available Physical Memory: %.2f GB\n", available_memory / (double)(1 << 30));
