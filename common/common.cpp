@@ -838,9 +838,11 @@ struct llama_init_result llama_init_from_gpt_params(gpt_params & params) {
     uint32_t n_cpu_cores      = profiler::device_cpu_cores();
     uint64_t total_memory     = profiler::device_physical_memory(false);
     uint64_t available_memory = profiler::device_physical_memory(true);
+    uint64_t disk_read_bw     = profiler::get_disk_read_speed(params.model.c_str(), 500);
     LOG_INF("Number of CPU cores:       %u\n", n_cpu_cores);
     LOG_INF("Total Physical Memory:     %.2f GB\n", total_memory / (double)(1 << 30));
     LOG_INF("Available Physical Memory: %.2f GB\n", available_memory / (double)(1 << 30));
+    LOG_INF("Disk Read Bandwidth:       %.2f GB/s\n", disk_read_bw / (double)(1 << 30));
 
     if (model == NULL) {
         LOG_ERR("%s: failed to load model '%s'\n", __func__, params.model.c_str());

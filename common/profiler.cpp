@@ -12,7 +12,12 @@
     #include <unistd.h>
 #endif
 
-#include <sys/types.h>  
+#include <chrono>
+#include <fstream>
+#include <string>
+#include <sstream>
+#include <sys/types.h>
+#include <vector>
 
 namespace profiler {
 
@@ -62,10 +67,29 @@ uint64_t device_physical_memory(bool available) {
     }
 
 #elif defined(__linux__)
-    struct sysinfo info;
-    if (sysinfo(&info) == 0) {
-        memory = available ? info.freeram : info.totalram;
-        memory *= info.mem_unit;
+    if (available) {
+        // read available memory from /proc/meminfo
+        std::ifstream meminfo("/proc/meminfo");
+        std::string line;
+        if (meminfo.is_open()) {
+            while (std::getline(meminfo, line)) {
+                if (line.find("MemAvailable:") == 0) {
+                    std::istringstream iss(line);
+                    std::string key;
+                    uint64_t kb;
+                    iss >> key >> kb;
+                    memory = kb * 1024;
+                    break;
+                }
+            }
+            meminfo.close();
+        }
+    } else {
+        // get total memory using sysinfo
+        struct sysinfo info;
+        if (sysinfo(&info) == 0) {
+            memory = info.totalram * info.mem_unit;
+        }
     }
 
 #elif defined(__APPLE__) && defined(__MACH__)
@@ -87,5 +111,43 @@ uint64_t device_physical_memory(bool available) {
 #endif
 
     return memory;
+}
+
+uint64_t get_disk_read_speed(const char * test_file, size_t buffer_size_mb) {
+    uint64_t speed = 0;
+    size_t buffer_size = buffer_size_mb * 1024 * 1024; // buffer size in bytes
+
+    try {
+        // open a file for reading
+        std::ifstream file(test_file, std::ios::binary | std::ios::in);
+        if (!file) {
+            LOG_ERR("Unable to open the file at path: %s\n", test_file);
+            return speed;
+        }
+
+        // prepare buffer for reading
+        std::vector<char> buffer(buffer_size);
+
+        auto start_time = std::chrono::high_resolution_clock::now();
+
+        // read file into buffer
+        file.read(buffer.data(), buffer.size());
+        if (!file) {
+            LOG_ERR("Failed to read enough data from the test file\n");
+            return speed;
+        }
+
+        auto end_time = std::chrono::high_resolution_clock::now();
+        std::chrono::duration<double> elapsed_time = end_time - start_time;
+
+        // Calculate speed in bytes per second
+        if (elapsed_time.count() > 0) {
+            speed = static_cast<uint64_t>(buffer.size() / elapsed_time.count());
+        }
+    } catch (const std::exception &e) {
+        LOG_ERR("Exception while calculating disk read speed: %s\n", e.what());
+    }
+
+    return speed;
 }
 } // namespace profiler
