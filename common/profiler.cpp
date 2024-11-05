@@ -15,6 +15,7 @@
 #include <chrono>
 #include <fstream>
 #include <string>
+#include <cstring>
 #include <sstream>
 #include <sys/types.h>
 #include <vector>
