@@ -2,7 +2,8 @@
 #define PROFILER_H
 
 namespace profiler {
-    unsigned int get_cpu_core_count();
+    uint32_t device_cpu_cores();
+    uint64_t device_physical_memory(bool available = true);
 } // namespace profiler
 
 #endif // PROFILER_H

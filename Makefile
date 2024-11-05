@@ -937,6 +937,7 @@ OBJ_LLAMA = \
 	src/unicode-data.o
 
 OBJ_COMMON = \
+	common/profiler.o \
 	common/common.o \
 	common/arg.o \
 	common/log.o \
@@ -945,8 +946,8 @@ OBJ_COMMON = \
 	common/sampling.o \
 	common/train.o \
 	common/build-info.o \
-	common/json-schema-to-grammar.o \
-	common/profiler.o
+	common/json-schema-to-grammar.o
+	
 
 OBJ_ALL = $(OBJ_GGML) $(OBJ_LLAMA) $(OBJ_COMMON)
 
@@ -1172,6 +1173,11 @@ $(LIB_LLAMA_S): \
 
 # common
 
+common/profiler.o: \
+    common/profiler.cpp \
+	common/profiler.h
+	$(CXX) $(CXXFLAGS) -c $< -o $@
+
 common/common.o: \
 	common/common.cpp \
 	common/common.h \
@@ -1179,17 +1185,13 @@ common/common.o: \
 	common/sampling.h \
 	common/json.hpp \
 	common/json-schema-to-grammar.h \
+	common/profiler.h \
 	include/llama.h
 	$(CXX) $(CXXFLAGS) -c $< -o $@
 
 common/arg.o: \
 	common/arg.cpp \
 	common/arg.h
-	$(CXX) $(CXXFLAGS) -c $< -o $@
-
-common/profiler.o: \
-    common/profiler.cpp \
-	common/profiler.h
 	$(CXX) $(CXXFLAGS) -c $< -o $@
 
 common/log.o: \
