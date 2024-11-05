@@ -9,6 +9,7 @@
 #include "json.hpp"
 #include "json-schema-to-grammar.h"
 #include "llama.h"
+#include "profile.h"
 
 #include <algorithm>
 #include <cinttypes>
@@ -832,6 +833,10 @@ struct llama_init_result llama_init_from_gpt_params(gpt_params & params) {
     } else {
         model = llama_load_model_from_file(params.model.c_str(), mparams);
     }
+
+    // profile devices and determine the best setup
+    uint32_t n_cpu_cores = profiler::get_cpu_core_count();
+    LOG_INF("Number of CPU cores on this device: %i\n", n_cpu_cores);
 
     if (model == NULL) {
         LOG_ERR("%s: failed to load model '%s'\n", __func__, params.model.c_str());

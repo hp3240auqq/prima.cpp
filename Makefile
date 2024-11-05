@@ -945,7 +945,8 @@ OBJ_COMMON = \
 	common/sampling.o \
 	common/train.o \
 	common/build-info.o \
-	common/json-schema-to-grammar.o
+	common/json-schema-to-grammar.o \
+	common/profiler.o
 
 OBJ_ALL = $(OBJ_GGML) $(OBJ_LLAMA) $(OBJ_COMMON)
 
@@ -1184,6 +1185,11 @@ common/common.o: \
 common/arg.o: \
 	common/arg.cpp \
 	common/arg.h
+	$(CXX) $(CXXFLAGS) -c $< -o $@
+
+common/profiler.o: \
+    common/profiler.cpp \
+	common/profiler.h
 	$(CXX) $(CXXFLAGS) -c $< -o $@
 
 common/log.o: \
