@@ -885,7 +885,7 @@ struct llama_init_result llama_init_from_gpt_params(gpt_params & params) {
     LOG_INF("GPU Properties:\n");
     LOG_INF("  GPU Name                  : %s\n", gpu_props.name);
     LOG_INF("  Description               : %s\n", gpu_props.description);
-    LOG_INF("  Memory Free               : %d MB\n", (int)(gpu_props.memory_free / (double)(1 << 20)));
+    LOG_INF("  Memory Free               : %.2f GB\n", gpu_props.memory_free / (double)(1 << 30));
     LOG_INF("  Memory Total              : %.2f GB\n", gpu_props.memory_total / (double)(1 << 30));
 
     if (model == NULL) {
