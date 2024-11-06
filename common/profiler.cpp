@@ -193,7 +193,7 @@ uint64_t device_swap_memory(bool available) {
     return swap_memory;
 }
 
-uint64_t get_disk_read_speed(const char * test_file, size_t buffer_size_mb) {
+uint64_t device_disk_read_bw(const char * test_file, size_t buffer_size_mb) {
     uint64_t speed = 0;
     size_t buffer_size = buffer_size_mb * 1024 * 1024; // buffer size in bytes
 
@@ -220,14 +220,55 @@ uint64_t get_disk_read_speed(const char * test_file, size_t buffer_size_mb) {
         auto end_time = std::chrono::high_resolution_clock::now();
         std::chrono::duration<double> elapsed_time = end_time - start_time;
 
-        // Calculate speed in bytes per second
+        // speed in bytes per second
         if (elapsed_time.count() > 0) {
             speed = static_cast<uint64_t>(buffer.size() / elapsed_time.count());
         }
+
+        buffer.clear();
+        buffer.shrink_to_fit();
     } catch (const std::exception &e) {
         LOG_ERR("Exception while calculating disk read speed: %s\n", e.what());
     }
 
     return speed;
 }
+
+uint64_t device_memory_bw(size_t buffer_size_mb) {
+    uint64_t speed = 0;
+    size_t test_size = buffer_size_mb * 1024 * 1024; // convert MB to bytes
+
+    try {
+        // allocate memory for speed test
+        std::vector<char> buffer(test_size, 1);
+
+        // measure write speed
+        auto start_time = std::chrono::high_resolution_clock::now();
+        memset(buffer.data(), 0xAB, buffer.size());
+        auto end_time = std::chrono::high_resolution_clock::now();
+        std::chrono::duration<double> elapsed_time = end_time - start_time;
+        double write_speed = static_cast<double>(test_size) / elapsed_time.count();
+
+        // measure read speed
+        start_time = std::chrono::high_resolution_clock::now();
+        volatile char temp = 0;
+        for (size_t i = 0; i < buffer.size(); i += 64) {
+            temp += buffer[i]; // read in steps of cache line size to minimize cache thrashing
+        }
+        end_time = std::chrono::high_resolution_clock::now();
+        elapsed_time = end_time - start_time;
+        double read_speed = static_cast<double>(test_size) / elapsed_time.count();
+
+        // average speed
+        speed = static_cast<uint64_t>((write_speed + read_speed) / 2.0);
+
+        buffer.clear();
+        buffer.shrink_to_fit();
+    } catch (const std::exception &e) {
+        LOG_ERR("Exception while calculating memory speed: %s\n", e.what());
+    }
+
+    return speed;
+}
+
 } // namespace profiler

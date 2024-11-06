@@ -841,7 +841,8 @@ struct llama_init_result llama_init_from_gpt_params(gpt_params & params) {
     uint64_t available_memory = profiler::device_physical_memory(true);
     uint64_t total_swap       = profiler::device_swap_memory(false);
     uint64_t available_swap   = profiler::device_swap_memory(true);
-    uint64_t disk_read_bw     = profiler::get_disk_read_speed(params.model.c_str(), 500);
+    uint64_t disk_read_bw     = profiler::device_disk_read_bw(params.model.c_str(), 500);
+    uint64_t memory_bw        = profiler::device_memory_bw(500);
 
     LOG_INF("Device Name:               %s\n", dev_name);
     LOG_INF("Number of CPU cores:       %u\n", n_cpu_cores);
@@ -850,6 +851,7 @@ struct llama_init_result llama_init_from_gpt_params(gpt_params & params) {
     LOG_INF("Total Swap Memory:         %.2f GB\n", total_swap / (double)(1 << 30));
     LOG_INF("Available Swap Memory:     %.2f GB\n", available_swap / (double)(1 << 30));
     LOG_INF("Disk Read Bandwidth:       %.2f GB/s\n", disk_read_bw / (double)(1 << 30));
+    LOG_INF("Memory Bandwidth:          %.2f GB/s\n", memory_bw / (double)(1 << 30));
 
     if (model == NULL) {
         LOG_ERR("%s: failed to load model '%s'\n", __func__, params.model.c_str());
