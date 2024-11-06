@@ -1,5 +1,8 @@
 #include "log.h"
 #include "profiler.h"
+#include "ggml.h"
+#include "ggml-backend.h"
+#include "llama.h"
 
 #if defined(_WIN32) || defined(_WIN64)
     #include <windows.h>
@@ -269,6 +272,47 @@ uint64_t device_memory_bw(size_t buffer_size_mb) {
     }
 
     return speed;
+}
+
+int device_has_metal(void) {
+    return ggml_cpu_has_metal();
+}
+
+int device_has_cuda(void) {
+    return ggml_cpu_has_cuda();
+}
+
+int device_has_vulkan(void) {
+    return ggml_cpu_has_vulkan();
+}
+
+int device_has_kompute(void) {
+    return ggml_cpu_has_kompute();
+}
+
+int device_has_gpublas(void) {
+    return ggml_cpu_has_gpublas();
+}
+
+int device_has_blas(void) {
+    return ggml_cpu_has_blas();
+}
+
+int device_has_sycl(void) {
+    return ggml_cpu_has_sycl();
+}
+
+// ggml_backend_buffer_type_t llama_dev_buffer_type(const llama_model * model, int device)
+
+void device_get_props(struct llama_model * model, int device, struct ggml_backend_dev_props * props) {
+    ggml_backend_buffer_type_t buft_type;
+    if (device == -1) { // type cpu
+        buft_type = ggml_backend_cpu_buffer_type();
+    } else { // type gpu
+        buft_type = llama_dev_buffer_type(model, device);
+    }
+    ggml_backend_dev_t dev = ggml_backend_buft_get_device(buft_type);
+    ggml_backend_dev_get_props(dev, props);
 }
 
 } // namespace profiler

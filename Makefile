@@ -1175,7 +1175,7 @@ $(LIB_LLAMA_S): \
 
 common/profiler.o: \
     common/profiler.cpp \
-	common/profiler.h
+	common/profiler.h 
 	$(CXX) $(CXXFLAGS) -c $< -o $@
 
 common/common.o: \

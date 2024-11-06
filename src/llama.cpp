@@ -3544,6 +3544,10 @@ static ggml_backend_buffer_type_t llama_default_buffer_type_offload(const llama_
     GGML_UNUSED(model);
 }
 
+ggml_backend_buffer_type_t llama_dev_buffer_type(struct llama_model * model, int device) {
+    return llama_default_buffer_type_offload(*model, device);
+}
+
 static ggml_backend_buffer_type_t llama_default_buffer_type_split(const llama_model & model, int fallback_gpu, const float * tensor_split) {
     ggml_backend_buffer_type_t buft = nullptr;
 
@@ -17385,7 +17389,7 @@ static int llama_recv_meta(zmq::socket_t & socket, struct sync_meta * meta) {
     return 0;
 }
 
-static void llama_recv_tensors(zmq::socket_t & socket, struct llama_ubatch * ubatch, struct llama_context * lctx, const bool is_out_embd=false) {
+static void llama_recv_tensors(zmq::socket_t & socket, struct llama_ubatch * ubatch, const bool is_out_embd=false) {
     std::vector<zmq::message_t> recv_msgs;
     if (!zmq::recv_multipart(socket, std::back_inserter(recv_msgs))) {
         LLAMA_LOG_INFO("Failed to receive tensor data.\n");
@@ -17724,7 +17728,7 @@ static int llama_decode_internal(
             // receive data from other nodes
             if (n_world > 1 && !(my_rank == 0 && i == 0) && !(my_rank == 0 && is_last_l)) {
                 const bool is_out_embd = my_rank == 0 && i == (size_t)gf.size() - 1;
-                llama_recv_tensors(*lctx.recv_socket, &ubatch, &lctx, is_out_embd);
+                llama_recv_tensors(*lctx.recv_socket, &ubatch, is_out_embd);
             }
 
             // ensure ggml_backend_tensor_get_async of the previous subgraph has finished

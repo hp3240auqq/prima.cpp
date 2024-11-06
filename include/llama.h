@@ -408,6 +408,8 @@ extern "C" {
     // Call once at the start of the program
     LLAMA_API void llama_backend_init(void);
 
+    ggml_backend_buffer_type_t llama_dev_buffer_type(struct llama_model * model, int device);
+
     //optional:
     LLAMA_API void llama_numa_init(enum ggml_numa_strategy numa);
 
