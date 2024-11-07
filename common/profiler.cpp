@@ -300,8 +300,6 @@ int device_has_sycl(void) {
     return ggml_cpu_has_sycl();
 }
 
-// ggml_backend_buffer_type_t llama_dev_buffer_type(const llama_model * model, int device)
-
 void device_get_props(struct llama_model * model, int device, struct ggml_backend_dev_props * props) {
     ggml_backend_buffer_type_t buft_type;
     if (device == -1) { // type cpu
@@ -311,4 +309,283 @@ void device_get_props(struct llama_model * model, int device, struct ggml_backen
     }
     ggml_backend_dev_t dev = ggml_backend_buft_get_device(buft_type);
     ggml_backend_dev_get_props(dev, props);
+}
+
+void device_print_props(struct device_info * dev_info_set, int n) {
+    LOG_INF("\n-------------------------------------------------------------------------------------------\n");
+    LOG_INF("| Property                     ");
+    for (int i = 0; i < n; ++i) {
+        LOG_INF("| Rank %-8d", i);
+        GGML_ASSERT(dev_info_set[i].rank == i);
+    }
+    LOG_INF("\n-------------------------------------------------------------------------------------------\n");
+
+    LOG_INF("| Device Name                  ");
+    for (int i = 0; i < n; ++i) {
+        LOG_INF("| %-10.10s   ", dev_info_set[i].device_name);
+    }
+    LOG_INF("\n");
+
+    LOG_INF("| CPU Name                     ");
+    for (int i = 0; i < n; ++i) {
+        LOG_INF("| %-10.10s   ", dev_info_set[i].cpu_props.name);
+    }
+    LOG_INF("\n");
+
+    LOG_INF("| CPU Description              ");
+    for (int i = 0; i < n; ++i) {
+        LOG_INF("| %-10.10s   ", dev_info_set[i].cpu_props.description);
+    }
+    LOG_INF("\n");
+
+    LOG_INF("| Number of CPU cores          ");
+    for (int i = 0; i < n; ++i) {
+        LOG_INF("| %-10u   ", dev_info_set[i].cpu_props.cores);
+    }
+    LOG_INF("\n");
+
+    LOG_INF("| Physical Mem Total (GB)      ");
+    for (int i = 0; i < n; ++i) {
+        LOG_INF("| %-10.2f   ", dev_info_set[i].memory.total_physical);
+    }
+    LOG_INF("\n");
+
+    LOG_INF("| Physical Mem Available (GB)  ");
+    for (int i = 0; i < n; ++i) {
+        LOG_INF("| %-10.2f   ", dev_info_set[i].memory.available_physical);
+    }
+    LOG_INF("\n");
+
+    LOG_INF("| Swap Mem Total (GB)          ");
+    for (int i = 0; i < n; ++i) {
+        LOG_INF("| %-10.2f   ", dev_info_set[i].memory.total_swap);
+    }
+    LOG_INF("\n");
+
+    LOG_INF("| Swap Mem Available (GB)      ");
+    for (int i = 0; i < n; ++i) {
+        LOG_INF("| %-10.2f   ", dev_info_set[i].memory.available_swap);
+    }
+    LOG_INF("\n");
+
+    LOG_INF("| Mem Bandwidth (GB/s)         ");
+    for (int i = 0; i < n; ++i) {
+        LOG_INF("| %-10.2f   ", dev_info_set[i].memory.bandwidth);
+    }
+    LOG_INF("\n");
+
+    LOG_INF("| Disk Read Bandwidth (GB/s)   ");
+    for (int i = 0; i < n; ++i) {
+        LOG_INF("| %-10.2f   ", dev_info_set[i].disk_read_bandwidth);
+    }
+    LOG_INF("\n");
+
+    LOG_INF("| GPU Metal                    ");
+    for (int i = 0; i < n; ++i) {
+        LOG_INF("| %-10d   ", dev_info_set[i].gpu_support.metal);
+    }
+    LOG_INF("\n");
+
+    LOG_INF("| GPU CUDA                     ");
+    for (int i = 0; i < n; ++i) {
+        LOG_INF("| %-10d   ", dev_info_set[i].gpu_support.cuda);
+    }
+    LOG_INF("\n");
+
+    LOG_INF("| GPU Vulkan                   ");
+    for (int i = 0; i < n; ++i) {
+        LOG_INF("| %-10d   ", dev_info_set[i].gpu_support.vulkan);
+    }
+    LOG_INF("\n");
+
+    LOG_INF("| GPU Kompute                  ");
+    for (int i = 0; i < n; ++i) {
+        LOG_INF("| %-10d   ", dev_info_set[i].gpu_support.kompute);
+    }
+    LOG_INF("\n");
+
+    LOG_INF("| GPU BLAS                     ");
+    for (int i = 0; i < n; ++i) {
+        LOG_INF("| %-10d   ", dev_info_set[i].gpu_support.gpublas);
+    }
+    LOG_INF("\n");
+
+    LOG_INF("| BLAS                         ");
+    for (int i = 0; i < n; ++i) {
+        LOG_INF("| %-10d   ", dev_info_set[i].gpu_support.blas);
+    }
+    LOG_INF("\n");
+
+    LOG_INF("| SYCL                         ");
+    for (int i = 0; i < n; ++i) {
+        LOG_INF("| %-10d   ", dev_info_set[i].gpu_support.sycl);
+    }
+    LOG_INF("\n");
+
+    LOG_INF("| GPU Name                     ");
+    for (int i = 0; i < n; ++i) {
+        LOG_INF("| %-10.10s   ", dev_info_set[i].gpu_props.name);
+    }
+    LOG_INF("\n");
+
+    LOG_INF("| GPU Description              ");
+    for (int i = 0; i < n; ++i) {
+        LOG_INF("| %-10.10s   ", dev_info_set[i].gpu_props.description);
+    }
+    LOG_INF("\n");
+
+    LOG_INF("| GPU Mem Free (GB)            ");
+    for (int i = 0; i < n; ++i) {
+        LOG_INF("| %-10.2f   ", dev_info_set[i].gpu_props.memory_free);
+    }
+    LOG_INF("\n");
+
+    LOG_INF("| GPU Mem Total (GB)           ");
+    for (int i = 0; i < n; ++i) {
+        LOG_INF("| %-10.2f   ", dev_info_set[i].gpu_props.memory_total);
+    }
+    LOG_INF("\n");
+
+    LOG_INF("-------------------------------------------------------------------------------------------\n\n");
+}
+
+
+size_t serialize(const struct device_info * dev_info, char ** buffer) {
+    // calculate total size for serialized buffer
+    size_t device_name_len     = strlen(dev_info->device_name) + 1;
+    size_t cpu_name_len        = strlen(dev_info->cpu_props.name) + 1;
+    size_t cpu_description_len = strlen(dev_info->cpu_props.description) + 1;
+    size_t gpu_name_len        = strlen(dev_info->gpu_props.name) + 1;
+    size_t gpu_description_len = strlen(dev_info->gpu_props.description) + 1;
+
+    size_t total_size = sizeof(uint32_t)
+                      + sizeof(size_t) * 5  // for lengths of strings
+                      + device_name_len
+                      + cpu_name_len
+                      + cpu_description_len
+                      + gpu_name_len
+                      + gpu_description_len
+                      + sizeof(float)       // disk_read_bandwidth
+                      + sizeof(uint32_t)    // cpu_props.cores
+                      + sizeof(struct memory_info)
+                      + sizeof(struct gpu_support)
+                      + sizeof(float) * 2;  // gpu_props.memory_free and gpu_props.memory_total
+
+    *buffer = (char *)malloc(total_size);
+    char * ptr = *buffer;
+
+    // rank
+    memcpy(ptr, &dev_info->rank, sizeof(uint32_t));
+    ptr += sizeof(uint32_t);
+
+    // copy string lengths and string data
+    memcpy(ptr, &device_name_len, sizeof(size_t));
+    ptr += sizeof(size_t);
+    memcpy(ptr, dev_info->device_name, device_name_len);
+    ptr += device_name_len;
+
+    memcpy(ptr, &cpu_name_len, sizeof(size_t));
+    ptr += sizeof(size_t);
+    memcpy(ptr, dev_info->cpu_props.name, cpu_name_len);
+    ptr += cpu_name_len;
+
+    memcpy(ptr, &cpu_description_len, sizeof(size_t));
+    ptr += sizeof(size_t);
+    memcpy(ptr, dev_info->cpu_props.description, cpu_description_len);
+    ptr += cpu_description_len;
+
+    memcpy(ptr, &gpu_name_len, sizeof(size_t));
+    ptr += sizeof(size_t);
+    memcpy(ptr, dev_info->gpu_props.name, gpu_name_len);
+    ptr += gpu_name_len;
+
+    memcpy(ptr, &gpu_description_len, sizeof(size_t));
+    ptr += sizeof(size_t);
+    memcpy(ptr, dev_info->gpu_props.description, gpu_description_len);
+    ptr += gpu_description_len;
+
+    // copy the non-string members
+    memcpy(ptr, &dev_info->disk_read_bandwidth, sizeof(float));
+    ptr += sizeof(float);
+
+    memcpy(ptr, &dev_info->cpu_props.cores, sizeof(uint32_t));
+    ptr += sizeof(uint32_t);
+
+    memcpy(ptr, &dev_info->memory, sizeof(struct memory_info));
+    ptr += sizeof(struct memory_info);
+
+    memcpy(ptr, &dev_info->gpu_support, sizeof(struct gpu_support));
+    ptr += sizeof(struct gpu_support);
+
+    memcpy(ptr, &dev_info->gpu_props.memory_free, sizeof(float));
+    ptr += sizeof(float);
+
+    memcpy(ptr, &dev_info->gpu_props.memory_total, sizeof(float));
+
+    return total_size;
+}
+
+void deserialize(const char * buffer, struct device_info * dev_info) {
+    const char * ptr = buffer;
+
+    // rank
+    memcpy(&dev_info->rank, ptr, sizeof(uint32_t));
+    ptr += sizeof(uint32_t);
+
+    // device_name
+    size_t device_name_len;
+    memcpy(&device_name_len, ptr, sizeof(size_t));
+    ptr += sizeof(size_t);
+    dev_info->device_name = (char *)malloc(device_name_len);
+    memcpy((void *)dev_info->device_name, ptr, device_name_len);
+    ptr += device_name_len;
+
+    // cpu_props.name
+    size_t cpu_name_len;
+    memcpy(&cpu_name_len, ptr, sizeof(size_t));
+    ptr += sizeof(size_t);
+    dev_info->cpu_props.name = (char *)malloc(cpu_name_len);
+    memcpy((void *)dev_info->cpu_props.name, ptr, cpu_name_len);
+    ptr += cpu_name_len;
+
+    // cpu_props.description
+    size_t cpu_description_len;
+    memcpy(&cpu_description_len, ptr, sizeof(size_t));
+    ptr += sizeof(size_t);
+    dev_info->cpu_props.description = (char *)malloc(cpu_description_len);
+    memcpy((void *)dev_info->cpu_props.description, ptr, cpu_description_len);
+    ptr += cpu_description_len;
+
+    // gpu_props.name
+    size_t gpu_name_len;
+    memcpy(&gpu_name_len, ptr, sizeof(size_t));
+    ptr += sizeof(size_t);
+    dev_info->gpu_props.name = (char *)malloc(gpu_name_len);
+    memcpy((void *)dev_info->gpu_props.name, ptr, gpu_name_len);
+    ptr += gpu_name_len;
+
+    // gpu_props.description
+    size_t gpu_description_len;
+    memcpy(&gpu_description_len, ptr, sizeof(size_t));
+    ptr += sizeof(size_t);
+    dev_info->gpu_props.description = (char *)malloc(gpu_description_len);
+    memcpy((void *)dev_info->gpu_props.description, ptr, gpu_description_len);
+    ptr += gpu_description_len;
+
+    // other non-string members
+    memcpy(&dev_info->disk_read_bandwidth, ptr, sizeof(float));
+    ptr += sizeof(float);
+
+    memcpy(&dev_info->cpu_props.cores, ptr, sizeof(uint32_t));
+    ptr += sizeof(uint32_t);
+
+    memcpy(&dev_info->memory, ptr, sizeof(struct memory_info));
+    ptr += sizeof(struct memory_info);
+
+    memcpy(&dev_info->gpu_support, ptr, sizeof(struct gpu_support));
+    ptr += sizeof(struct gpu_support);
+
+    memcpy(&dev_info->gpu_props.memory_free, ptr, sizeof(float));
+    ptr += sizeof(float);
+    memcpy(&dev_info->gpu_props.memory_total, ptr, sizeof(float));
 }

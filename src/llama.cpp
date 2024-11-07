@@ -2567,16 +2567,18 @@ struct llama_hparams {
 static_assert(std::is_trivially_copyable<llama_hparams>::value, "llama_hparams must be trivially copyable");
 
 struct llama_cparams {
-    uint32_t n_world;
-    uint32_t rank;
-    uint32_t n_layer_window[32];
-    bool     unload;
-    uint32_t n_ctx;           // context size used during inference
-    uint32_t n_batch;
-    uint32_t n_ubatch;
-    uint32_t n_seq_max;
-    int      n_threads;       // number of threads to use for generation
-    int      n_threads_batch; // number of threads to use for batch processing
+    uint32_t  n_world;
+    uint32_t  rank;
+    uint32_t  n_layer_window[32];
+    bool      unload;
+    uint32_t  n_ctx;           // context size used during inference
+    ggml_type type_k;
+    ggml_type type_v;
+    uint32_t  n_batch;
+    uint32_t  n_ubatch;
+    uint32_t  n_seq_max;
+    int       n_threads;       // number of threads to use for generation
+    int       n_threads_batch; // number of threads to use for batch processing
 
     float rope_freq_base;
     float rope_freq_scale;
@@ -3579,39 +3581,6 @@ void llama_profile_device(device_info * dev_info, struct llama_model * model, co
     dev_info->gpu_props.description     = gpu_props.description;
     dev_info->gpu_props.memory_free     = round(gpu_props.memory_free  / (double)(1 << 30) * 100) / 100;
     dev_info->gpu_props.memory_total    = round(gpu_props.memory_total / (double)(1 << 30) * 100) / 100;
-
-    LLAMA_LOG_INFO("\n");
-    LLAMA_LOG_INFO("Device Info:\n");
-    LLAMA_LOG_INFO("  Device Name               : %s\n",        dev_info->device_name);
-    LLAMA_LOG_INFO("  CPU Name                  : %s\n",        dev_info->cpu_props.name);
-    LLAMA_LOG_INFO("  CPU Description           : %s\n",        dev_info->cpu_props.description);
-    LLAMA_LOG_INFO("  Number of CPU cores       : %u\n",        dev_info->cpu_props.cores);
-    LLAMA_LOG_INFO("  Disk Read Bandwidth       : %.2f GB/s\n", dev_info->disk_read_bandwidth);
-    LLAMA_LOG_INFO("\n");
-
-    LLAMA_LOG_INFO("Memory Information:\n");
-    LLAMA_LOG_INFO("  Physical Mem Total        : %.2f GB\n",   dev_info->memory.total_physical);
-    LLAMA_LOG_INFO("  Physical Mem Available    : %.2f GB\n",   dev_info->memory.available_physical);
-    LLAMA_LOG_INFO("  Swap Memory Total         : %.2f GB\n",   dev_info->memory.total_swap);
-    LLAMA_LOG_INFO("  Swap Memory Available     : %.2f GB\n",   dev_info->memory.available_swap);
-    LLAMA_LOG_INFO("  Mem Bandwidth             : %.2f GB/s\n", dev_info->memory.bandwidth);
-    LLAMA_LOG_INFO("\n");
-
-    LLAMA_LOG_INFO("GPU Support:\n");
-    LLAMA_LOG_INFO("  Metal                     : %i\n",        dev_info->gpu_support.metal);
-    LLAMA_LOG_INFO("  CUDA                      : %i\n",        dev_info->gpu_support.cuda);
-    LLAMA_LOG_INFO("  Vulkan                    : %i\n",        dev_info->gpu_support.vulkan);
-    LLAMA_LOG_INFO("  Kompute                   : %i\n",        dev_info->gpu_support.kompute);
-    LLAMA_LOG_INFO("  GPU BLAS                  : %i\n",        dev_info->gpu_support.gpublas);
-    LLAMA_LOG_INFO("  BLAS                      : %i\n",        dev_info->gpu_support.blas);
-    LLAMA_LOG_INFO("  SYCL                      : %i\n",        dev_info->gpu_support.sycl);
-    LLAMA_LOG_INFO("\n");
-
-    LLAMA_LOG_INFO("GPU Properties:\n");
-    LLAMA_LOG_INFO("  GPU Name                  : %s\n",        dev_info->gpu_props.name);
-    LLAMA_LOG_INFO("  Description               : %s\n",        dev_info->gpu_props.description);
-    LLAMA_LOG_INFO("  Memory Free               : %.2f GB\n",   dev_info->gpu_props.memory_free);
-    LLAMA_LOG_INFO("  Memory Total              : %.2f GB\n",   dev_info->gpu_props.memory_total);
 }
 
 ggml_backend_buffer_type_t llama_dev_buffer_type(struct llama_model * model, int device) {
@@ -19815,6 +19784,63 @@ void llama_init_sockets(struct llama_context * ctx, uint32_t n_world, uint32_t m
     }
 }
 
+int llama_collect_device_info(struct device_info * dev_info_set, struct llama_context * ctx) {
+    uint32_t n_world = ctx->cparams.n_world;
+    if (n_world == 1) {
+        return 0;
+    }
+
+    GGML_ASSERT(dev_info_set != nullptr);
+    GGML_ASSERT(ctx != nullptr && ctx->send_socket != nullptr);
+    try {
+        char * buffer = nullptr;
+        size_t buffer_size = serialize(&dev_info_set[0], &buffer);
+
+        std::vector<zmq::message_t> send_msgs;
+        send_msgs.emplace_back(buffer, buffer_size);
+        zmq::send_multipart(*ctx->send_socket, send_msgs);
+
+        free(buffer);
+    } catch (const zmq::error_t& e) {
+        LLAMA_LOG_INFO("Failed to send data: %s\n", e.what());
+        return -1;
+    }
+
+    std::vector<zmq::message_t> recv_msgs;
+    if (!zmq::recv_multipart(*ctx->recv_socket, std::back_inserter(recv_msgs))) {
+        return -1;
+    }
+    GGML_ASSERT(recv_msgs.size() == n_world);
+
+    for (size_t i = 0; i < recv_msgs.size(); i++) {
+        deserialize((const char *)recv_msgs[i].data(), &dev_info_set[i]);
+    }
+    return 0;
+}
+
+int llama_send_device_info(struct device_info * dev_info, struct llama_context * ctx) {
+    std::vector<zmq::message_t> recv_msgs;
+    if (!zmq::recv_multipart(*ctx->recv_socket, std::back_inserter(recv_msgs))) {
+        return -1;
+    }
+
+    GGML_ASSERT(dev_info != nullptr);
+    GGML_ASSERT(ctx != nullptr && ctx->send_socket != nullptr);
+
+    try {
+        char * buffer = nullptr;
+        size_t buffer_size = serialize(dev_info, &buffer);
+
+        recv_msgs.emplace_back(buffer, buffer_size);
+        zmq::send_multipart(*ctx->send_socket, recv_msgs);
+
+        free(buffer);
+    } catch (const zmq::error_t& e) {
+        LLAMA_LOG_INFO("Failed to send data: %s\n", e.what());
+        return -1;
+    }
+}
+
 void llama_free_sockets(struct llama_context * ctx, char ** msg) {
     const uint32_t n_world   = ctx->cparams.n_world;
     const uint32_t my_rank   = ctx->cparams.rank;
@@ -19902,6 +19928,8 @@ struct llama_context * llama_new_context_with_model(
     cparams.pooling_type     = params.pooling_type;
 
     cparams.n_ctx            = params.n_ctx           == 0    ? hparams.n_ctx_train           : params.n_ctx;
+    cparams.type_k           = params.type_k;
+    cparams.type_v           = params.type_v;    
     cparams.rope_freq_base   = params.rope_freq_base  == 0.0f ? hparams.rope_freq_base_train  : params.rope_freq_base;
     cparams.rope_freq_scale  = params.rope_freq_scale == 0.0f ? hparams.rope_freq_scale_train : params.rope_freq_scale;
 
@@ -19981,19 +20009,27 @@ struct llama_context * llama_new_context_with_model(
     // build worst-case graph for encoder if a model contains encoder
     ctx->is_encoding = llama_model_has_encoder(model);
 
+    return ctx;
+}
+
+void * llama_context_setup_backend(struct llama_context * ctx) {
+    GGML_ASSERT(ctx != nullptr);
+    const auto * model   = &ctx->model;
+    const auto & hparams = ctx->model.hparams;
+    const auto & cparams = ctx->cparams;
+
     uint32_t kv_size = cparams.n_ctx;
-    ggml_type type_k = params.type_k;
-    ggml_type type_v = params.type_v;
+    ggml_type type_k = cparams.type_k;
+    ggml_type type_v = cparams.type_v;
 
     // Mamba only needs a constant number of KV cache cells per sequence
     if (llama_model_is_recurrent(model)) {
         // Mamba needs at least as many KV cells as there are sequences kept at any time
-        kv_size = std::max((uint32_t) 1, params.n_seq_max);
+        kv_size = std::max((uint32_t) 1, cparams.n_seq_max);
         // it's probably best to keep as much precision as possible for the states
-        type_k = GGML_TYPE_F32; // required by ggml_ssm_conv for Mamba's conv_states
-        type_v = GGML_TYPE_F32; // required by ggml_ssm_scan for Mamba's ssm_states
+        type_k  = GGML_TYPE_F32; // required by ggml_ssm_conv for Mamba's conv_states
+        type_v  = GGML_TYPE_F32; // required by ggml_ssm_scan for Mamba's ssm_states
     }
-
     GGML_ASSERT(hparams.n_embd_head_k % ggml_blck_size(type_k) == 0);
     GGML_ASSERT(hparams.n_embd_head_v % ggml_blck_size(type_v) == 0);
 
@@ -20189,9 +20225,9 @@ struct llama_context * llama_new_context_with_model(
         }
 
         // graph outputs buffer, reserve for rank 0 only
-        if (params.rank == 0) {
+        if (cparams.rank == 0) {
             // resized during inference when a batch uses more outputs
-            if (llama_output_reserve(*ctx, params.n_seq_max) < params.n_seq_max) {
+            if (llama_output_reserve(*ctx, cparams.n_seq_max) < cparams.n_seq_max) {
                 LLAMA_LOG_ERROR("%s: failed to reserve initial output buffer\n", __func__);
                 llama_free(ctx);
                 return nullptr;
@@ -20226,7 +20262,7 @@ struct llama_context * llama_new_context_with_model(
                 llama_get_device_count(*model) > 1 &&
                 model->n_gpu_layers > (int)model->hparams.n_layer &&
                 model->split_mode == LLAMA_SPLIT_MODE_LAYER &&
-                params.offload_kqv;
+                cparams.offload_kqv;
 
             // pipeline parallelism requires support for async compute and events in all devices
             if (pipeline_parallel) {

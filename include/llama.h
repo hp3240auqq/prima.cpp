@@ -432,13 +432,16 @@ extern "C" {
 
     LLAMA_API void llama_free_model(struct llama_model * model);
 
-    LLAMA_API void llama_init_sockets(struct llama_context * ctx, uint32_t n_world, uint32_t my_rank);
-    LLAMA_API void llama_free_sockets(struct llama_context * ctx, char ** msg);
+    LLAMA_API void llama_init_sockets       (struct llama_context * ctx, uint32_t n_world, uint32_t my_rank);
+    LLAMA_API void llama_free_sockets       (struct llama_context * ctx, char ** msg);
+    LLAMA_API int  llama_collect_device_info(struct device_info * dev_info_set, struct llama_context * ctx);
+    LLAMA_API int  llama_send_device_info   (struct device_info * dev_info,     struct llama_context * ctx);
 
     // TODO: rename to llama_init_from_model
     LLAMA_API struct llama_context * llama_new_context_with_model(
                      struct llama_model * model,
             struct llama_context_params   params);
+    LLAMA_API void * llama_context_setup_backend(struct llama_context * ctx);
 
     // Frees all allocated memory
     LLAMA_API void llama_free(struct llama_context * ctx);

@@ -35,6 +35,7 @@ struct gpu_props {
 };
 
 struct device_info {
+    uint32_t           rank;
     const char *       device_name;
     float              disk_read_bandwidth;  // in GB/s
     struct cpu_props   cpu_props;
@@ -50,14 +51,18 @@ uint64_t device_physical_memory(bool available);
 uint64_t device_swap_memory    (bool available);
 uint64_t device_disk_read_bw   (const char * test_file, size_t buffer_size_mb);
 uint64_t device_memory_bw      (size_t buffer_size_mb);
-void     device_get_props      (struct llama_model * model, int device, struct ggml_backend_dev_props * props);
+void     device_get_props      (struct llama_model * model, int device, struct ggml_backend_dev_props * props); 
+void     device_print_props    (struct device_info * dev_info_set, int n);
 
-int      device_has_metal(void);
-int      device_has_cuda(void);
-int      device_has_vulkan(void);
+int      device_has_metal  (void);
+int      device_has_cuda   (void);
+int      device_has_vulkan (void);
 int      device_has_kompute(void);
 int      device_has_gpublas(void);
-int      device_has_blas(void);
-int      device_has_sycl(void);
+int      device_has_blas   (void);
+int      device_has_sycl   (void);
+
+size_t   serialize  (const struct device_info * dev_info, char ** buffer);
+void     deserialize(const char * buffer, struct device_info * dev_info);
 
 #endif // PROFILER_H
