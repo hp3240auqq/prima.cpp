@@ -23,8 +23,6 @@
 #include <sys/types.h>
 #include <vector>
 
-namespace profiler {
-
 const char * device_name() {
     static char device_name[256];
 
@@ -314,5 +312,3 @@ void device_get_props(struct llama_model * model, int device, struct ggml_backen
     ggml_backend_dev_t dev = ggml_backend_buft_get_device(buft_type);
     ggml_backend_dev_get_props(dev, props);
 }
-
-} // namespace profiler

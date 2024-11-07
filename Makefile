@@ -1185,7 +1185,6 @@ common/common.o: \
 	common/sampling.h \
 	common/json.hpp \
 	common/json-schema-to-grammar.h \
-	common/profiler.h \
 	include/llama.h
 	$(CXX) $(CXXFLAGS) -c $< -o $@
 

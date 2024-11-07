@@ -9,7 +9,6 @@
 #include "json.hpp"
 #include "json-schema-to-grammar.h"
 #include "llama.h"
-#include "profiler.h"
 
 #include <algorithm>
 #include <cinttypes>
@@ -824,7 +823,7 @@ struct llama_init_result llama_init_from_gpt_params(gpt_params & params) {
     llama_init_result iparams;
     auto mparams = llama_model_params_from_gpt_params(params);
 
-    llama_model * model = nullptr;
+    struct llama_model * model = nullptr;
 
     if (!params.hf_repo.empty() && !params.hf_file.empty()) {
         model = llama_load_model_from_hf(params.hf_repo.c_str(), params.hf_file.c_str(), params.model.c_str(), params.hf_token.c_str(), mparams);
@@ -835,58 +834,8 @@ struct llama_init_result llama_init_from_gpt_params(gpt_params & params) {
     }
 
     // profile devices and determine the best setup
-    const char * dev_name     = profiler::device_name();
-    uint32_t n_cpu_cores      = profiler::device_cpu_cores();
-    uint64_t total_memory     = profiler::device_physical_memory(false);
-    uint64_t available_memory = profiler::device_physical_memory(true);
-    uint64_t total_swap       = profiler::device_swap_memory(false);
-    uint64_t available_swap   = profiler::device_swap_memory(true);
-    uint64_t disk_read_bw     = profiler::device_disk_read_bw(params.model.c_str(), 500);
-    uint64_t memory_bw        = profiler::device_memory_bw(500);
-    int      has_metal        = profiler::device_has_metal();
-    int      has_cuda         = profiler::device_has_cuda();
-    int      has_vulkan       = profiler::device_has_vulkan();
-    int      has_kompute      = profiler::device_has_kompute();
-    int      has_gpublas      = profiler::device_has_gpublas();
-    int      has_blas         = profiler::device_has_blas();
-    int      has_sycl         = profiler::device_has_sycl();
-    ggml_backend_dev_props cpu_props;
-    ggml_backend_dev_props gpu_props;
-    profiler::device_get_props(model, -1, &cpu_props); // -1 for cpu
-    profiler::device_get_props(model, 0,  &gpu_props); // 0 for gpu0
-
-    LOG_INF("\n");
-    LOG_INF("Device Info:\n");
-    LOG_INF("  Device Name               : %s\n", dev_name);
-    LOG_INF("  CPU Name                  : %s\n", cpu_props.name);
-    LOG_INF("  CPU Description           : %s\n", cpu_props.description);
-    LOG_INF("  Number of CPU cores       : %u\n", n_cpu_cores);
-    LOG_INF("  Disk Read Bandwidth       : %.2f GB/s\n", disk_read_bw / (double)(1 << 30));
-    LOG_INF("\n");
-
-    LOG_INF("Memory Information:\n");
-    LOG_INF("  Physical Mem Total        : %.2f GB\n", total_memory / (double)(1 << 30));
-    LOG_INF("  Physical Mem Available    : %.2f GB\n", available_memory / (double)(1 << 30));
-    LOG_INF("  Swap Memory Total         : %.2f GB\n", total_swap / (double)(1 << 30));
-    LOG_INF("  Swap Memory Available     : %.2f GB\n", available_swap / (double)(1 << 30));
-    LOG_INF("  Mem Bandwidth             : %.2f GB/s\n", memory_bw / (double)(1 << 30));
-    LOG_INF("\n");
-
-    LOG_INF("GPU Support:\n");
-    LOG_INF("  Metal                     : %i\n", has_metal);
-    LOG_INF("  CUDA                      : %i\n", has_cuda);
-    LOG_INF("  Vulkan                    : %i\n", has_vulkan);
-    LOG_INF("  Kompute                   : %i\n", has_kompute);
-    LOG_INF("  GPU BLAS                  : %i\n", has_gpublas);
-    LOG_INF("  BLAS                      : %i\n", has_blas);
-    LOG_INF("  SYCL                      : %i\n", has_sycl);
-    LOG_INF("\n");
-
-    LOG_INF("GPU Properties:\n");
-    LOG_INF("  GPU Name                  : %s\n", gpu_props.name);
-    LOG_INF("  Description               : %s\n", gpu_props.description);
-    LOG_INF("  Memory Free               : %.2f GB\n", gpu_props.memory_free / (double)(1 << 30));
-    LOG_INF("  Memory Total              : %.2f GB\n", gpu_props.memory_total / (double)(1 << 30));
+    device_info dev_info;
+    llama_profile_device(&dev_info, model, params.model.c_str());
 
     if (model == NULL) {
         LOG_ERR("%s: failed to load model '%s'\n", __func__, params.model.c_str());

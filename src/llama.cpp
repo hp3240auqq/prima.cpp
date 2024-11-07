@@ -10,6 +10,8 @@
 #include "ggml-alloc.h"
 #include "ggml-backend.h"
 
+#include "profiler.h"
+
 #ifdef GGML_USE_RPC
 #  include "ggml-rpc.h"
 #endif
@@ -3542,6 +3544,74 @@ static ggml_backend_buffer_type_t llama_default_buffer_type_offload(const llama_
     return buft;
 
     GGML_UNUSED(model);
+}
+
+void llama_profile_device(device_info * dev_info, struct llama_model * model, const char * test_file) {
+    dev_info->device_name               = device_name();
+    dev_info->cpu_props.cores           = device_cpu_cores();
+
+    dev_info->memory.total_physical     = round(device_physical_memory(false) / (double)(1 << 30) * 100) / 100;
+    dev_info->memory.available_physical = round(device_physical_memory(true)  / (double)(1 << 30) * 100) / 100;
+    dev_info->memory.total_swap         = round(device_swap_memory(false) / (double)(1 << 30) * 100) / 100;
+    dev_info->memory.available_swap     = round(device_swap_memory(true) / (double)(1 << 30) * 100) / 100;
+    dev_info->memory.bandwidth          = round(device_memory_bw(500) / (double)(1 << 30) * 100) / 100;
+
+    dev_info->disk_read_bandwidth       = round(device_disk_read_bw(test_file, 500) / (double)(1 << 30) * 100) / 100;
+
+    dev_info->gpu_support.metal         = device_has_metal();
+    dev_info->gpu_support.cuda          = device_has_cuda();
+    dev_info->gpu_support.vulkan        = device_has_vulkan();
+    dev_info->gpu_support.kompute       = device_has_kompute();
+    dev_info->gpu_support.gpublas       = device_has_gpublas();
+    dev_info->gpu_support.blas          = device_has_blas();
+    dev_info->gpu_support.sycl          = device_has_sycl();
+
+
+    ggml_backend_dev_props cpu_props;
+    ggml_backend_dev_props gpu_props;
+    device_get_props(model, -1, &cpu_props); // -1 for cpu
+    device_get_props(model, 0,  &gpu_props); // 0 for gpu0
+
+    dev_info->cpu_props.name            = cpu_props.name;
+    dev_info->cpu_props.description     = cpu_props.description;
+
+    dev_info->gpu_props.name            = gpu_props.name;
+    dev_info->gpu_props.description     = gpu_props.description;
+    dev_info->gpu_props.memory_free     = round(gpu_props.memory_free  / (double)(1 << 30) * 100) / 100;
+    dev_info->gpu_props.memory_total    = round(gpu_props.memory_total / (double)(1 << 30) * 100) / 100;
+
+    LLAMA_LOG_INFO("\n");
+    LLAMA_LOG_INFO("Device Info:\n");
+    LLAMA_LOG_INFO("  Device Name               : %s\n",        dev_info->device_name);
+    LLAMA_LOG_INFO("  CPU Name                  : %s\n",        dev_info->cpu_props.name);
+    LLAMA_LOG_INFO("  CPU Description           : %s\n",        dev_info->cpu_props.description);
+    LLAMA_LOG_INFO("  Number of CPU cores       : %u\n",        dev_info->cpu_props.cores);
+    LLAMA_LOG_INFO("  Disk Read Bandwidth       : %.2f GB/s\n", dev_info->disk_read_bandwidth);
+    LLAMA_LOG_INFO("\n");
+
+    LLAMA_LOG_INFO("Memory Information:\n");
+    LLAMA_LOG_INFO("  Physical Mem Total        : %.2f GB\n",   dev_info->memory.total_physical);
+    LLAMA_LOG_INFO("  Physical Mem Available    : %.2f GB\n",   dev_info->memory.available_physical);
+    LLAMA_LOG_INFO("  Swap Memory Total         : %.2f GB\n",   dev_info->memory.total_swap);
+    LLAMA_LOG_INFO("  Swap Memory Available     : %.2f GB\n",   dev_info->memory.available_swap);
+    LLAMA_LOG_INFO("  Mem Bandwidth             : %.2f GB/s\n", dev_info->memory.bandwidth);
+    LLAMA_LOG_INFO("\n");
+
+    LLAMA_LOG_INFO("GPU Support:\n");
+    LLAMA_LOG_INFO("  Metal                     : %i\n",        dev_info->gpu_support.metal);
+    LLAMA_LOG_INFO("  CUDA                      : %i\n",        dev_info->gpu_support.cuda);
+    LLAMA_LOG_INFO("  Vulkan                    : %i\n",        dev_info->gpu_support.vulkan);
+    LLAMA_LOG_INFO("  Kompute                   : %i\n",        dev_info->gpu_support.kompute);
+    LLAMA_LOG_INFO("  GPU BLAS                  : %i\n",        dev_info->gpu_support.gpublas);
+    LLAMA_LOG_INFO("  BLAS                      : %i\n",        dev_info->gpu_support.blas);
+    LLAMA_LOG_INFO("  SYCL                      : %i\n",        dev_info->gpu_support.sycl);
+    LLAMA_LOG_INFO("\n");
+
+    LLAMA_LOG_INFO("GPU Properties:\n");
+    LLAMA_LOG_INFO("  GPU Name                  : %s\n",        dev_info->gpu_props.name);
+    LLAMA_LOG_INFO("  Description               : %s\n",        dev_info->gpu_props.description);
+    LLAMA_LOG_INFO("  Memory Free               : %.2f GB\n",   dev_info->gpu_props.memory_free);
+    LLAMA_LOG_INFO("  Memory Total              : %.2f GB\n",   dev_info->gpu_props.memory_total);
 }
 
 ggml_backend_buffer_type_t llama_dev_buffer_type(struct llama_model * model, int device) {
