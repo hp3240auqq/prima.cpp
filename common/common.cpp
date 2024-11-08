@@ -28,6 +28,8 @@
 #include <vector>
 #include <thread>
 
+#define DEFAULT_N_LAYER_WINDOW 4
+
 #if defined(__APPLE__) && defined(__MACH__)
 #include <sys/types.h>
 #include <sys/sysctl.h>
@@ -360,6 +362,11 @@ bool parse_cpu_mask(const std::string & mask, bool (&boolmask)[GGML_MAX_N_THREAD
     }
 
     return true;
+}
+
+template <size_t N>
+void copy_n_layer_window(const uint32_t (&source)[N], uint32_t * destination) {
+    std::copy(std::begin(source), std::end(source), destination);
 }
 
 void gpt_init() {
@@ -819,6 +826,24 @@ std::string fs_get_cache_file(const std::string & filename) {
 //
 // Model utils
 //
+static void llama_assign_n_layer_window(
+                                uint32_t   n_world, 
+                                uint32_t   my_rank, 
+                       const device_info * dev_info_set, 
+                                uint32_t * n_layer_window, 
+                      struct llama_model * model) {
+    GGML_ASSERT(dev_info_set != nullptr);
+    GGML_ASSERT(n_layer_window != nullptr);
+
+    uint32_t n_layer = llama_model_n_layers(model);
+    if (n_world == 1) {
+        n_layer_window[0] = n_layer;
+        return;
+    }
+
+    std::fill_n(n_layer_window, n_world, DEFAULT_N_LAYER_WINDOW);
+}
+
 struct llama_init_result llama_init_from_gpt_params(gpt_params & params) {
     llama_init_result iparams;
     auto mparams = llama_model_params_from_gpt_params(params);
@@ -837,6 +862,8 @@ struct llama_init_result llama_init_from_gpt_params(gpt_params & params) {
         LOG_ERR("%s: failed to load model '%s'\n", __func__, params.model.c_str());
         return iparams;
     }
+
+    llama_model_loader * ml = llama_model_load(params.model.c_str(), model, &mparams);
 
     if (params.reranking) {
         bool ok = true;
@@ -871,21 +898,49 @@ struct llama_init_result llama_init_from_gpt_params(gpt_params & params) {
     struct llama_context_params cparams = llama_context_params_from_gpt_params(params);
     llama_context * lctx                = llama_new_context_with_model(model, cparams);
 
+    uint32_t n_world = cparams.n_world;
+    uint32_t my_rank = cparams.rank;
+
     // initialize sockets
-    llama_init_sockets(lctx, cparams.n_world, cparams.rank);
+    llama_init_sockets(lctx, n_world, my_rank);
 
     // sychronize device profile to the master node
     struct device_info * dev_info_set = nullptr;
-    if (params.rank == 0) {
-        dev_info_set = (struct device_info *)malloc(cparams.n_world * sizeof(struct device_info));
+    if (my_rank == 0) {
+        dev_info_set = (struct device_info *)malloc(n_world * sizeof(struct device_info));
         dev_info_set[0] = dev_info;
-        llama_collect_device_info(dev_info_set, lctx);
-        device_print_props(dev_info_set, cparams.n_world);
+        llama_gather_device_info(lctx, dev_info_set);
+        device_print_props(dev_info_set, n_world);
     } else {
-        llama_send_device_info(&dev_info, lctx);
+        llama_send_device_info(lctx, &dev_info);
     }
 
-    if (llama_context_setup_backend(lctx) == nullptr) {
+    uint32_t n_layer_window[32] = {0};
+    if (my_rank == 0) {
+        if (n_world == 1 || params.n_layer_window[0] == 0) {
+            llama_assign_n_layer_window(n_world, my_rank, dev_info_set, n_layer_window, model);
+        } else {
+            copy_n_layer_window(params.n_layer_window, n_layer_window);
+        }
+
+        // synchronize the new n_layer_window to other nodes
+        llama_broadcast_n_layer_window(lctx, n_layer_window);
+    } else {
+        llama_recv_n_layer_window(lctx, n_layer_window);
+    }
+
+    // update n_layer_window
+    copy_n_layer_window(n_layer_window, params.n_layer_window);
+    copy_n_layer_window(n_layer_window, cparams.n_layer_window);
+    copy_n_layer_window(n_layer_window, mparams.n_layer_window);
+    copy_n_layer_window(n_layer_window, llama_context_n_layer_window(lctx));
+
+    if (!mparams.vocab_only && llm_load_tensors(ml, model, mparams) < 0) {
+        LOG_ERR("%s: failed to load model '%s'\n", __func__, params.model.c_str());
+        return iparams;
+    }
+
+    if (llama_context_setup_backend(model, cparams, lctx) == nullptr) {
         LOG_ERR("%s: failed to setup context with model '%s'\n", __func__, params.model.c_str());
         llama_free_model(model);
         return iparams;

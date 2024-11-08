@@ -434,14 +434,26 @@ extern "C" {
 
     LLAMA_API void llama_init_sockets       (struct llama_context * ctx, uint32_t n_world, uint32_t my_rank);
     LLAMA_API void llama_free_sockets       (struct llama_context * ctx, char ** msg);
-    LLAMA_API int  llama_collect_device_info(struct device_info * dev_info_set, struct llama_context * ctx);
-    LLAMA_API int  llama_send_device_info   (struct device_info * dev_info,     struct llama_context * ctx);
+    LLAMA_API int  llama_gather_device_info (struct llama_context * ctx, struct device_info * dev_info_set);
+    LLAMA_API int  llama_send_device_info   (struct llama_context * ctx, struct device_info * dev_info);
+    LLAMA_API int  llama_broadcast_n_layer_window(struct llama_context * ctx, uint32_t * n_layer_window);
+    LLAMA_API int  llama_recv_n_layer_window(struct llama_context * ctx, uint32_t * n_layer_window);
 
-    // TODO: rename to llama_init_from_model
+    LLAMA_API int llm_load_tensors(
+              struct llama_model_loader * ml,
+              struct llama_model        * model,
+              struct llama_model_params   params);
+
     LLAMA_API struct llama_context * llama_new_context_with_model(
                      struct llama_model * model,
             struct llama_context_params   params);
-    LLAMA_API void * llama_context_setup_backend(struct llama_context * ctx);
+
+    LLAMA_API void * llama_context_setup_backend(
+                     struct llama_model * model,
+            struct llama_context_params   params,
+                   struct llama_context * ctx);
+    
+    LLAMA_API uint32_t * llama_context_n_layer_window(struct llama_context * ctx);
 
     // Frees all allocated memory
     LLAMA_API void llama_free(struct llama_context * ctx);
@@ -491,11 +503,16 @@ extern "C" {
     // Get metadata value as a string by index
     LLAMA_API int32_t llama_model_meta_val_str_by_index(const struct llama_model * model, int32_t i, char * buf, size_t buf_size);
 
+    LLAMA_API struct llama_model_loader * llama_model_load(const char * fname, struct llama_model * model, struct llama_model_params * params);
+
     // Get a string describing the model type
     LLAMA_API int32_t llama_model_desc(const struct llama_model * model, char * buf, size_t buf_size);
 
     // Returns the total size of all the tensors in the model in bytes
     LLAMA_API uint64_t llama_model_size(const struct llama_model * model);
+
+    // Returns the number of model layers in the model
+    LLAMA_API uint32_t llama_model_n_layers(const struct llama_model * model);
 
     // Returns the total number of parameters in the model
     LLAMA_API uint64_t llama_model_n_params(const struct llama_model * model);

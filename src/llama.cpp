@@ -2572,8 +2572,6 @@ struct llama_cparams {
     uint32_t  n_layer_window[32];
     bool      unload;
     uint32_t  n_ctx;           // context size used during inference
-    ggml_type type_k;
-    ggml_type type_v;
     uint32_t  n_batch;
     uint32_t  n_ubatch;
     uint32_t  n_seq_max;
@@ -7137,7 +7135,7 @@ static void llm_load_print_meta(llama_model_loader & ml, llama_model & model) {
 }
 
 // Returns false if cancelled by progress_callback
-static bool llm_load_tensors(
+static bool llm_load_tensors_impl(
         llama_model_loader   &  ml,
         llama_model          &  model,
         uint32_t                n_world,
@@ -9159,41 +9157,56 @@ static bool llm_load_tensors(
     return true;
 }
 
-// Returns 0 on success, -1 on error, and -2 on cancellation via llama_progress_callback
-static int llama_model_load(const std::string & fname, llama_model & model, llama_model_params & params) {
-    model.t_start_us = ggml_time_us();
+int llm_load_tensors(
+    struct llama_model_loader * ml,
+    struct llama_model        * model,
+    struct llama_model_params   params) {
+    model->t_start_us = ggml_time_us();
 
     try {
-        llama_model_loader ml(fname, params.use_mmap, params.check_tensors, params.kv_overrides);
+        if (!llm_load_tensors_impl(
+            *ml, *model, params.n_world, params.rank, params.n_layer_window, params.n_gpu_layers, params.split_mode, 
+            params.main_gpu, params.use_mlock, params.progress_callback, params.progress_callback_user_data
+        )) {
+            return -2;
+        }
+    } catch (const std::exception & err) {
+        LLAMA_LOG_ERROR("%s: error loading model: %s\n", __func__, err.what());
+        return -1;
+    }
+
+    model->t_load_us = ggml_time_us() - model->t_start_us;
+    return 0;
+}
+
+// Returns 0 on success, -1 on error, and -2 on cancellation via llama_progress_callback
+static llama_model_loader * llama_model_load_impl(const std::string & fname, llama_model & model, llama_model_params & params) {
+    try {
+        llama_model_loader * ml = new llama_model_loader(fname, params.use_mmap, params.check_tensors, params.kv_overrides);
 
         model.hparams.vocab_only = params.vocab_only;
 
         try {
-            llm_load_arch(ml, model);
+            llm_load_arch(*ml, model);
         } catch(const std::exception & e) {
             throw std::runtime_error("error loading model architecture: " + std::string(e.what()));
         }
         try {
-            llm_load_hparams(ml, model);
+            llm_load_hparams(*ml, model);
         } catch(const std::exception & e) {
             throw std::runtime_error("error loading model hyperparameters: " + std::string(e.what()));
         }
         try {
-            llm_load_vocab(ml, model);
+            llm_load_vocab(*ml, model);
         } catch(const std::exception & e) {
             throw std::runtime_error("error loading model vocabulary: " + std::string(e.what()));
         }
 
-        llm_load_print_meta(ml, model);
+        llm_load_print_meta(*ml, model);
 
         if (model.vocab.type != LLAMA_VOCAB_TYPE_NONE &&
             model.hparams.n_vocab != model.vocab.id_to_token.size()) {
             throw std::runtime_error("vocab size mismatch");
-        }
-
-        if (params.vocab_only) {
-            LLAMA_LOG_INFO("%s: vocab only - skipping tensors\n", __func__);
-            return 0;
         }
 
 #ifdef GGML_USE_KOMPUTE
@@ -9213,22 +9226,14 @@ static int llama_model_load(const std::string & fname, llama_model & model, llam
         }
 #endif
 
-        if (!llm_load_tensors(
-            ml, model, params.n_world, params.rank, params.n_layer_window, params.n_gpu_layers, params.split_mode, 
-            params.main_gpu, params.use_mlock, params.progress_callback, params.progress_callback_user_data
-        )) {
-            return -2;
-        }
+        return ml;
     } catch (const std::exception & err) {
-        LLAMA_LOG_ERROR("%s: error loading model: %s\n", __func__, err.what());
-        return -1;
+        throw std::runtime_error("error loading model: " + std::string(err.what()));
     }
+}
 
-    // loading time will be recalculate after the first eval, so
-    // we take page faults deferred by mmap() into consideration
-    model.t_load_us = ggml_time_us() - model.t_start_us;
-
-    return 0;
+struct llama_model_loader * llama_model_load(const char * fname, struct llama_model * model, struct llama_model_params * params) {
+    return llama_model_load_impl(std::string(fname), *model, *params);
 }
 
 //
@@ -17383,6 +17388,28 @@ static void llama_send_meta(zmq::socket_t & socket, struct sync_meta * meta) {
     }
 }
 
+static int llama_recv_meta(zmq::socket_t & socket, struct sync_meta * meta) {
+    socket.set(zmq::sockopt::rcvtimeo, 1000);
+
+    std::vector<zmq::message_t> recv_msgs;
+    if (!zmq::recv_multipart(socket, std::back_inserter(recv_msgs))) {
+        return -1;
+    }
+
+    socket.set(zmq::sockopt::rcvtimeo, -1);
+
+    for (size_t i = 0; i < recv_msgs.size(); i += 2) {
+        std::string key           = recv_msgs[i].to_string();
+        zmq::message_t & data_msg = recv_msgs[i + 1];
+
+        if (key == "n_tokens") {
+            GGML_ASSERT(data_msg.size() == sizeof(meta->n_tokens));
+            std::memcpy(&(meta->n_tokens), data_msg.data(), sizeof(meta->n_tokens));
+        }
+    }
+    return 0;
+}
+
 static void llama_send_tensors(zmq::socket_t & socket, struct llama_ubatch * ubatch, struct input_tensors * tensors) {
     try {
         std::vector<zmq::message_t> send_msgs;
@@ -17404,28 +17431,6 @@ static void llama_send_tensors(zmq::socket_t & socket, struct llama_ubatch * uba
     } catch (const zmq::error_t& e) {
         LLAMA_LOG_INFO("Failed to send tensor data: %s\n", e.what());
     }
-}
-
-static int llama_recv_meta(zmq::socket_t & socket, struct sync_meta * meta) {
-    socket.set(zmq::sockopt::rcvtimeo, 1000);
-
-    std::vector<zmq::message_t> recv_msgs;
-    if (!zmq::recv_multipart(socket, std::back_inserter(recv_msgs))) {
-        return -1;
-    }
-
-    socket.set(zmq::sockopt::rcvtimeo, -1);
-
-    for (size_t i = 0; i < recv_msgs.size(); i += 2) {
-        std::string key           = recv_msgs[i].to_string();
-        zmq::message_t & data_msg = recv_msgs[i + 1];
-
-        if (key == "n_tokens") {
-            GGML_ASSERT(data_msg.size() == sizeof(meta->n_tokens));
-            std::memcpy(&(meta->n_tokens), data_msg.data(), sizeof(meta->n_tokens));
-        }
-    }
-    return 0;
 }
 
 static void llama_recv_tensors(zmq::socket_t & socket, struct llama_ubatch * ubatch, const bool is_out_embd=false) {
@@ -19523,7 +19528,7 @@ struct llama_model_params llama_model_default_params() {
     struct llama_model_params result = {
         /*.n_world                     =*/ 1,
         /*.rank                        =*/ 0,
-        /*.n_layer_window              =*/ {32},
+        /*.n_layer_window              =*/ {0},
         /*.n_gpu_layers                =*/ 0,
         /*.split_mode                  =*/ LLAMA_SPLIT_MODE_LAYER,
         /*.main_gpu                    =*/ 0,
@@ -19726,17 +19731,7 @@ struct llama_model * llama_load_model_from_file(const char * path_model, struct 
         }
     }
 
-    int status = llama_model_load(path_model, *model, params);
-    GGML_ASSERT(status <= 0);
-    if (status < 0) {
-        if (status == -1) {
-            LLAMA_LOG_ERROR("%s: failed to load model\n", __func__);
-        } else if (status == -2) {
-            LLAMA_LOG_INFO("%s: cancelled model load\n", __func__);
-        }
-        delete model;
-        return nullptr;
-    }
+    (void)path_model;
 
     return model;
 }
@@ -19784,7 +19779,7 @@ void llama_init_sockets(struct llama_context * ctx, uint32_t n_world, uint32_t m
     }
 }
 
-int llama_collect_device_info(struct device_info * dev_info_set, struct llama_context * ctx) {
+int llama_gather_device_info(struct llama_context * ctx, struct device_info * dev_info_set) {
     uint32_t n_world = ctx->cparams.n_world;
     if (n_world == 1) {
         return 0;
@@ -19818,7 +19813,7 @@ int llama_collect_device_info(struct device_info * dev_info_set, struct llama_co
     return 0;
 }
 
-int llama_send_device_info(struct device_info * dev_info, struct llama_context * ctx) {
+int llama_send_device_info(struct llama_context * ctx, struct device_info * dev_info) {
     std::vector<zmq::message_t> recv_msgs;
     if (!zmq::recv_multipart(*ctx->recv_socket, std::back_inserter(recv_msgs))) {
         return -1;
@@ -19839,6 +19834,59 @@ int llama_send_device_info(struct device_info * dev_info, struct llama_context *
         LLAMA_LOG_INFO("Failed to send data: %s\n", e.what());
         return -1;
     }
+}
+
+int llama_broadcast_n_layer_window(struct llama_context * ctx, uint32_t * n_layer_window) {
+    uint32_t n_world = ctx->cparams.n_world;
+    if (n_world == 1) {
+        return 0;
+    }
+
+    GGML_ASSERT(ctx != nullptr && ctx->send_socket != nullptr);
+    try {
+        std::vector<zmq::message_t> send_msgs;
+
+        send_msgs.emplace_back("n_layer_window", strlen("n_layer_window"));
+        send_msgs.emplace_back(n_layer_window, sizeof(uint32_t) * 32);
+
+        zmq::send_multipart(*ctx->send_socket, send_msgs);
+    } catch (const zmq::error_t& e) {
+        LLAMA_LOG_INFO("Failed to send data: %s\n", e.what());
+        return -1;
+    }
+
+    return 0;
+}
+
+int llama_recv_n_layer_window(struct llama_context * ctx, uint32_t * n_layer_window) {
+    uint32_t n_world = ctx->cparams.n_world;
+    uint32_t my_rank = ctx->cparams.rank;
+
+    std::vector<zmq::message_t> recv_msgs;
+    if (!zmq::recv_multipart(*ctx->recv_socket, std::back_inserter(recv_msgs))) {
+        return -1;
+    }
+
+    std::string key = recv_msgs[0].to_string();
+    if (key != "n_layer_window") {
+        LLAMA_LOG_INFO("Unexpected message received: %s\n", key.c_str());
+        return -1;
+    }
+
+    zmq::message_t & data_msg = recv_msgs[1];
+    GGML_ASSERT(data_msg.size() == sizeof(uint32_t) * 32);
+    memcpy(n_layer_window, data_msg.data(), sizeof(uint32_t) * 32);
+
+    if (my_rank != n_world - 1) {
+        try {
+            zmq::send_multipart(*ctx->send_socket, recv_msgs);
+        } catch (const zmq::error_t& e) {
+            LLAMA_LOG_INFO("Failed to send data: %s\n", e.what());
+            return -1;
+        }
+    }
+    
+    return 0;
 }
 
 void llama_free_sockets(struct llama_context * ctx, char ** msg) {
@@ -19873,6 +19921,25 @@ void llama_free_sockets(struct llama_context * ctx, char ** msg) {
 struct llama_context * llama_new_context_with_model(
                  struct llama_model * model,
         struct llama_context_params   params) {
+    
+    if (!model) {
+        LLAMA_LOG_ERROR("%s: model cannot be NULL\n", __func__);
+        return nullptr;
+    }
+
+    llama_context * ctx  = new llama_context(*model);
+
+    ctx->master_ip       = params.master_ip;
+    ctx->next_node_ip    = params.next_node_ip;
+    ctx->cparams.n_world = params.n_world;
+    ctx->cparams.rank    = params.rank;
+    return ctx;
+}
+
+void * llama_context_setup_backend(
+                    struct llama_model * model,
+           struct llama_context_params   params,
+                  struct llama_context * ctx) {
 
     if (!model) {
         LLAMA_LOG_ERROR("%s: model cannot be NULL\n", __func__);
@@ -19904,13 +19971,9 @@ struct llama_context * llama_new_context_with_model(
         return nullptr;
     }
 
-    llama_context * ctx  = new llama_context(*model);
-
     const auto & hparams = model->hparams;
     auto       & cparams = ctx->cparams;
 
-    cparams.n_world          = params.n_world;
-    cparams.rank             = params.rank;
     std::copy(std::begin(params.n_layer_window), std::end(params.n_layer_window), cparams.n_layer_window);
     cparams.unload           = params.unload;
     cparams.n_seq_max        = std::max(1u, params.n_seq_max);
@@ -19927,9 +19990,7 @@ struct llama_context * llama_new_context_with_model(
     cparams.no_perf          = params.no_perf;
     cparams.pooling_type     = params.pooling_type;
 
-    cparams.n_ctx            = params.n_ctx           == 0    ? hparams.n_ctx_train           : params.n_ctx;
-    cparams.type_k           = params.type_k;
-    cparams.type_v           = params.type_v;    
+    cparams.n_ctx            = params.n_ctx           == 0    ? hparams.n_ctx_train           : params.n_ctx;   
     cparams.rope_freq_base   = params.rope_freq_base  == 0.0f ? hparams.rope_freq_base_train  : params.rope_freq_base;
     cparams.rope_freq_scale  = params.rope_freq_scale == 0.0f ? hparams.rope_freq_scale_train : params.rope_freq_scale;
 
@@ -19985,10 +20046,6 @@ struct llama_context * llama_new_context_with_model(
         cparams.causal_attn = params.attention_type == LLAMA_ATTENTION_TYPE_CAUSAL;
     }
 
-    ctx->master_ip    = params.master_ip;
-    ctx->next_node_ip = params.next_node_ip;
-
-    LLAMA_LOG_INFO("\n");
     LLAMA_LOG_INFO("%s: n_world      = %u\n",     __func__, cparams.n_world);
     LLAMA_LOG_INFO("%s: rank         = %u\n",     __func__, cparams.rank);
     LLAMA_LOG_INFO("%s: win_size     = %u\n",     __func__, cparams.n_layer_window[cparams.rank]);
@@ -19998,8 +20055,8 @@ struct llama_context * llama_new_context_with_model(
     LLAMA_LOG_INFO("%s: flash_attn   = %d\n",     __func__, cparams.flash_attn);
     LLAMA_LOG_INFO("%s: freq_base    = %.1f\n",   __func__, cparams.rope_freq_base);
     LLAMA_LOG_INFO("%s: freq_scale   = %g\n",     __func__, cparams.rope_freq_scale);
-    LLAMA_LOG_INFO("%s: master_ip    = %s\n",   __func__, ctx->master_ip.c_str());
-    LLAMA_LOG_INFO("%s: next_node_ip = %s\n",   __func__, ctx->next_node_ip.c_str());
+    LLAMA_LOG_INFO("%s: master_ip    = %s\n",     __func__, ctx->master_ip.c_str());
+    LLAMA_LOG_INFO("%s: next_node_ip = %s\n",     __func__, ctx->next_node_ip.c_str());
 
     ctx->abort_callback      = params.abort_callback;
     ctx->abort_callback_data = params.abort_callback_data;
@@ -20009,18 +20066,9 @@ struct llama_context * llama_new_context_with_model(
     // build worst-case graph for encoder if a model contains encoder
     ctx->is_encoding = llama_model_has_encoder(model);
 
-    return ctx;
-}
-
-void * llama_context_setup_backend(struct llama_context * ctx) {
-    GGML_ASSERT(ctx != nullptr);
-    const auto * model   = &ctx->model;
-    const auto & hparams = ctx->model.hparams;
-    const auto & cparams = ctx->cparams;
-
     uint32_t kv_size = cparams.n_ctx;
-    ggml_type type_k = cparams.type_k;
-    ggml_type type_v = cparams.type_v;
+    ggml_type type_k = params.type_k;
+    ggml_type type_v = params.type_v;
 
     // Mamba only needs a constant number of KV cache cells per sequence
     if (llama_model_is_recurrent(model)) {
@@ -20333,6 +20381,10 @@ void * llama_context_setup_backend(struct llama_context * ctx) {
     return ctx;
 }
 
+uint32_t * llama_context_n_layer_window(struct llama_context * ctx) {
+    return ctx->cparams.n_layer_window;
+}
+
 void llama_free(struct llama_context * ctx) {
     delete ctx;
 }
@@ -20509,6 +20561,10 @@ uint64_t llama_model_size(const struct llama_model * model) {
         size += ggml_nbytes(it.second);
     }
     return size;
+}
+
+uint32_t llama_model_n_layers(const struct llama_model * model) {
+    return model->hparams.n_layer;
 }
 
 uint64_t llama_model_n_params(const struct llama_model * model) {

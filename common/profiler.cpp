@@ -316,7 +316,7 @@ void device_print_props(struct device_info * dev_info_set, int n) {
     LOG_INF("| Property                     ");
     for (int i = 0; i < n; ++i) {
         LOG_INF("| Rank %-8d", i);
-        GGML_ASSERT(dev_info_set[i].rank == i);
+        GGML_ASSERT((int)dev_info_set[i].rank == i);
     }
     LOG_INF("\n-------------------------------------------------------------------------------------------\n");
 
