@@ -73,6 +73,69 @@ uint32_t device_cpu_cores() {
     return core_count;
 }
 
+float device_cpu_flops(struct llama_model * model, enum ggml_type dtype, int n_threads) {
+    // define matrix dimensions
+    const int n_embd      = llama_n_embd(model);
+    const int n_ff_hidden = llama_n_ff_hidden(model);
+    const int rows_A = n_embd, cols_A = n_ff_hidden;
+    const int rows_B = n_embd, cols_B = n_ff_hidden;
+
+    // calculate memory size needed for ggml_context allocation
+    size_t ctx_size = 0;
+    ctx_size += rows_A * cols_A * ggml_type_size(dtype); // tensor a
+    ctx_size += rows_B * cols_B * ggml_type_size(dtype); // tensor b
+    ctx_size += rows_A * rows_B * ggml_type_size(dtype); // result
+    ctx_size += 3 * ggml_tensor_overhead(); // metadata for 3 tensors
+    ctx_size += ggml_graph_overhead(); // compute graph
+    ctx_size = (size_t)(ctx_size * 1.2); // some overhead
+
+    // allocate ggml_context
+    struct ggml_init_params params = {
+        /*.mem_size   =*/ ctx_size,
+        /*.mem_buffer =*/ NULL,
+        /*.no_alloc   =*/ false,
+    };
+    struct ggml_context * ctx = ggml_init(params);
+
+    // create tensors and set data
+    struct ggml_tensor * tensor_a = ggml_new_tensor_2d(ctx, dtype, cols_A, rows_A);
+    struct ggml_tensor * tensor_b = ggml_new_tensor_2d(ctx, dtype, cols_B, rows_B);
+
+    // fill tensors with random data
+    float * matrix_A = (float *)malloc(rows_A * cols_A * sizeof(float));
+    float * matrix_B = (float *)malloc(rows_B * cols_B * sizeof(float));
+
+    for (int i = 0; i < rows_A * cols_A; i++) {
+        matrix_A[i] = (float)(rand() % 100) / 10.0f; // random float between 0.0 and 10.0
+    }
+    for (int i = 0; i < rows_B * cols_B; i++) {
+        matrix_B[i] = (float)(rand() % 100) / 10.0f;
+    }
+
+    memcpy(tensor_a->data, matrix_A, ggml_nbytes(tensor_a));
+    memcpy(tensor_b->data, matrix_B, ggml_nbytes(tensor_b));
+
+    free(matrix_A);
+    free(matrix_B);
+
+    // create ggml_cgraph for multiplication
+    struct ggml_cgraph * gf = ggml_new_graph(ctx);
+    struct ggml_tensor * result = ggml_mul_mat(ctx, tensor_a, tensor_b);
+    ggml_build_forward_expand(gf, result);
+
+    // run the computation
+    int64_t start_time = ggml_time_us();
+    ggml_graph_compute_with_ctx(ctx, gf, n_threads);
+    int64_t end_time = ggml_time_us();
+
+    double elapsed_seconds = (end_time - start_time) / 1e6;
+    double flops = (2.0 * rows_A * cols_A * cols_B) / elapsed_seconds / 1e9;
+
+    // free memory
+    ggml_free(ctx);
+    return (float)flops;
+}
+
 uint64_t device_physical_memory(bool available) {
     uint64_t memory = 0;
 
@@ -344,6 +407,18 @@ void device_print_props(struct device_info * dev_info_set, int n) {
     }
     LOG_INF("\n");
 
+    LOG_INF("| CPU flops (F32)              ");
+    for (int i = 0; i < n; ++i) {
+        LOG_INF("| %-10.1f   ", dev_info_set[i].cpu_props.flops_f32);
+    }
+    LOG_INF("\n");
+
+    LOG_INF("| CPU flops (F16)              ");
+    for (int i = 0; i < n; ++i) {
+        LOG_INF("| %-10.1f   ", dev_info_set[i].cpu_props.flops_f16);
+    }
+    LOG_INF("\n");
+
     LOG_INF("| Physical Mem Total (GB)      ");
     for (int i = 0; i < n; ++i) {
         LOG_INF("| %-10.2f   ", dev_info_set[i].memory.total_physical);
@@ -467,6 +542,7 @@ size_t serialize(const struct device_info * dev_info, char ** buffer) {
                       + gpu_description_len
                       + sizeof(float)       // disk_read_bandwidth
                       + sizeof(uint32_t)    // cpu_props.cores
+                      + sizeof(float) * 2    // cpu_props.flops_f32 and cpu_props.flops_f16
                       + sizeof(struct memory_info)
                       + sizeof(struct gpu_support)
                       + sizeof(float) * 2;  // gpu_props.memory_free and gpu_props.memory_total
@@ -510,6 +586,12 @@ size_t serialize(const struct device_info * dev_info, char ** buffer) {
 
     memcpy(ptr, &dev_info->cpu_props.cores, sizeof(uint32_t));
     ptr += sizeof(uint32_t);
+
+    memcpy(ptr, &dev_info->cpu_props.flops_f32, sizeof(float));
+    ptr += sizeof(float);
+
+    memcpy(ptr, &dev_info->cpu_props.flops_f16, sizeof(float));
+    ptr += sizeof(float);
 
     memcpy(ptr, &dev_info->memory, sizeof(struct memory_info));
     ptr += sizeof(struct memory_info);
@@ -578,6 +660,12 @@ void deserialize(const char * buffer, struct device_info * dev_info) {
 
     memcpy(&dev_info->cpu_props.cores, ptr, sizeof(uint32_t));
     ptr += sizeof(uint32_t);
+
+    memcpy(&dev_info->cpu_props.flops_f32, ptr, sizeof(float));
+    ptr += sizeof(float);
+
+    memcpy(&dev_info->cpu_props.flops_f16, ptr, sizeof(float));
+    ptr += sizeof(float);
 
     memcpy(&dev_info->memory, ptr, sizeof(struct memory_info));
     ptr += sizeof(struct memory_info);

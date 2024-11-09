@@ -3546,9 +3546,11 @@ static ggml_backend_buffer_type_t llama_default_buffer_type_offload(const llama_
     GGML_UNUSED(model);
 }
 
-void llama_profile_device(device_info * dev_info, struct llama_model * model, const char * test_file) {
+void llama_profile_device(device_info * dev_info, struct llama_model * model, const char * test_file, int n_threads) {
     dev_info->device_name               = device_name();
     dev_info->cpu_props.cores           = device_cpu_cores();
+    dev_info->cpu_props.flops_f32       = device_cpu_flops(model, GGML_TYPE_F32, n_threads);
+    dev_info->cpu_props.flops_f16       = device_cpu_flops(model, GGML_TYPE_F16, n_threads);
 
     dev_info->memory.total_physical     = round(device_physical_memory(false) / (double)(1 << 30) * 100) / 100;
     dev_info->memory.available_physical = round(device_physical_memory(true)  / (double)(1 << 30) * 100) / 100;
@@ -20427,6 +20429,10 @@ int32_t llama_n_layer(const struct llama_model * model) {
 
 int32_t llama_n_head(const struct llama_model * model) {
     return model->hparams.n_head();
+}
+
+int32_t llama_n_ff_hidden(const struct llama_model * model) {
+    return model->hparams.n_ff_arr[0];
 }
 
 const struct llama_model * llama_get_model(const struct llama_context * ctx) {

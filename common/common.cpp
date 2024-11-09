@@ -890,9 +890,11 @@ struct llama_init_result llama_init_from_gpt_params(gpt_params & params) {
     }
 
     // get device profile
+    LOG_INF("Start profiling this device, this may take some seconds ...\n");
+
     device_info dev_info;
     dev_info.rank = params.rank;
-    llama_profile_device(&dev_info, model, params.model.c_str());
+    llama_profile_device(&dev_info, model, params.model.c_str(), params.cpuparams.n_threads);
 
     // create llama context
     struct llama_context_params cparams = llama_context_params_from_gpt_params(params);

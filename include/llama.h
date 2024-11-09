@@ -410,7 +410,7 @@ extern "C" {
     // Call once at the start of the program
     LLAMA_API void llama_backend_init(void);
 
-    LLAMA_API void llama_profile_device (struct device_info * dev_info, struct llama_model * model, const char * test_file);
+    LLAMA_API void llama_profile_device (struct device_info * dev_info, struct llama_model * model, const char * test_file, int n_threads);
     LLAMA_API ggml_backend_buffer_type_t llama_dev_buffer_type(struct llama_model * model, int device);
 
     //optional:
@@ -476,6 +476,7 @@ extern "C" {
     LLAMA_API int32_t llama_n_embd     (const struct llama_model * model);
     LLAMA_API int32_t llama_n_layer    (const struct llama_model * model);
     LLAMA_API int32_t llama_n_head     (const struct llama_model * model);
+    LLAMA_API int32_t llama_n_ff_hidden(const struct llama_model * model);
 
     LLAMA_API const struct llama_model * llama_get_model(const struct llama_context * ctx);
 

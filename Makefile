@@ -1,45 +1,46 @@
 # Define the default target now so that it is always the first target
-BUILD_TARGETS = \
-	libllava.a \
-	llama-baby-llama \
-	llama-batched \
-	llama-batched-bench \
-	llama-bench \
-	llama-cli \
-	llama-convert-llama2c-to-ggml \
-	llama-embedding \
-	llama-eval-callback \
-	llama-export-lora \
-	llama-gbnf-validator \
-	llama-gguf \
-	llama-gguf-hash \
-	llama-gguf-split \
-	llama-gritlm \
-	llama-imatrix \
-	llama-infill \
-	llama-llava-cli \
-	llama-minicpmv-cli\
-	llama-lookahead \
-	llama-lookup \
-	llama-lookup-create \
-	llama-lookup-merge \
-	llama-lookup-stats \
-	llama-parallel \
-	llama-passkey \
-	llama-perplexity \
-	llama-q8dot \
-	llama-quantize \
-	llama-quantize-stats \
-	llama-retrieval \
-	llama-save-load-state \
-	llama-server \
-	llama-simple \
-	llama-speculative \
-	llama-tokenize \
-	llama-vdot \
-	llama-cvector-generator \
-	llama-gen-docs \
-	tests/test-c.o
+BUILD_TARGETS = llama-cli
+# BUILD_TARGETS = \
+# 	libllava.a \
+# 	llama-baby-llama \
+# 	llama-batched \
+# 	llama-batched-bench \
+# 	llama-bench \
+# 	llama-cli \
+# 	llama-convert-llama2c-to-ggml \
+# 	llama-embedding \
+# 	llama-eval-callback \
+# 	llama-export-lora \
+# 	llama-gbnf-validator \
+# 	llama-gguf \
+# 	llama-gguf-hash \
+# 	llama-gguf-split \
+# 	llama-gritlm \
+# 	llama-imatrix \
+# 	llama-infill \
+# 	llama-llava-cli \
+# 	llama-minicpmv-cli\
+# 	llama-lookahead \
+# 	llama-lookup \
+# 	llama-lookup-create \
+# 	llama-lookup-merge \
+# 	llama-lookup-stats \
+# 	llama-parallel \
+# 	llama-passkey \
+# 	llama-perplexity \
+# 	llama-q8dot \
+# 	llama-quantize \
+# 	llama-quantize-stats \
+# 	llama-retrieval \
+# 	llama-save-load-state \
+# 	llama-server \
+# 	llama-simple \
+# 	llama-speculative \
+# 	llama-tokenize \
+# 	llama-vdot \
+# 	llama-cvector-generator \
+# 	llama-gen-docs \
+# 	tests/test-c.o
 
 # Binaries only useful for tests
 TEST_TARGETS = \

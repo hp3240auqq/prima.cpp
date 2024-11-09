@@ -1,12 +1,15 @@
 #ifndef PROFILER_H
 #define PROFILER_H
 
+#include "ggml.h"
 #include "llama.h"
 
 struct cpu_props {
     const char * name;
     const char * description;
     uint32_t     cores;
+    float        flops_f32;
+    float        flops_f16;
 };
 
 struct memory_info {
@@ -47,6 +50,7 @@ struct device_info {
 const char * device_name(void); 
 
 uint32_t device_cpu_cores      (void);
+float    device_cpu_flops      (struct llama_model * model, enum ggml_type dtype, int n_threads);
 uint64_t device_physical_memory(bool available);
 uint64_t device_swap_memory    (bool available);
 uint64_t device_disk_read_bw   (const char * test_file, size_t buffer_size_mb);
