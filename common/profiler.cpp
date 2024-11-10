@@ -15,6 +15,14 @@
     #include <unistd.h>
 #endif
 
+#ifdef GGML_USE_METAL
+    #include "ggml-metal.h"
+#endif
+
+#ifdef GGML_USE_CUDA
+    #include "ggml-cuda.h"
+#endif
+
 #include <chrono>
 #include <fstream>
 #include <string>
@@ -74,65 +82,114 @@ uint32_t device_cpu_cores() {
 }
 
 float device_cpu_flops(struct llama_model * model, enum ggml_type dtype, int n_threads) {
-    // define matrix dimensions
+    return device_flops(model, dtype, PROFILER_BACKEND_TYPE_CPU, n_threads);
+}
+
+float device_metal_flops(struct llama_model * model, enum ggml_type dtype) {
+#ifdef GGML_USE_METAL
+    return device_flops(model, dtype, PROFILER_BACKEND_TYPE_METAL, 4);
+#endif
+
+    return 0.0f;
+}
+
+float device_cuda_flops(struct llama_model * model, enum ggml_type dtype) {
+#ifdef GGML_USE_CUDA
+    return device_flops(model, dtype, PROFILER_BACKEND_TYPE_CUDA, 4);
+#endif
+
+    return 0.0f;
+}
+
+float device_flops(struct llama_model * model, enum ggml_type dtype, profiler_backend_type btype, int n_threads) {
     const int n_embd      = llama_n_embd(model);
     const int n_ff_hidden = llama_n_ff_hidden(model);
     const int rows_A = n_embd, cols_A = n_ff_hidden;
     const int rows_B = n_embd, cols_B = n_ff_hidden;
+    GGML_ASSERT(cols_A == cols_B);
 
-    // calculate memory size needed for ggml_context allocation
+    std::vector<float> matrix_A(cols_A * rows_A, 1.0f); 
+    std::vector<float> matrix_B(cols_B * rows_B, 1.0f / cols_B);
+
+    ggml_backend_t backend = NULL;
+
+    switch (btype) {
+        case PROFILER_BACKEND_TYPE_CPU:
+            backend = ggml_backend_cpu_init();
+            break;
+        case PROFILER_BACKEND_TYPE_METAL:
+#ifdef GGML_USE_METAL
+            backend = ggml_backend_metal_init();
+#endif
+            break;
+        case PROFILER_BACKEND_TYPE_CUDA:
+#ifdef GGML_USE_CUDA
+            backend = ggml_backend_cuda_init(0);
+#endif
+            break;
+    }
+
+    if (!backend) {
+        LOG_INF("%s: ggml backend init failed\n", __func__);
+        return 0.0f;
+    }
+
     size_t ctx_size = 0;
-    ctx_size += rows_A * cols_A * ggml_type_size(dtype); // tensor a
-    ctx_size += rows_B * cols_B * ggml_type_size(dtype); // tensor b
-    ctx_size += rows_A * rows_B * ggml_type_size(dtype); // result
-    ctx_size += 3 * ggml_tensor_overhead(); // metadata for 3 tensors
-    ctx_size += ggml_graph_overhead(); // compute graph
-    ctx_size = (size_t)(ctx_size * 1.2); // some overhead
+    ctx_size += 2 * ggml_tensor_overhead(); // tensors
 
-    // allocate ggml_context
     struct ggml_init_params params = {
         /*.mem_size   =*/ ctx_size,
         /*.mem_buffer =*/ NULL,
-        /*.no_alloc   =*/ false,
+        /*.no_alloc   =*/ true, // the tensors will be allocated later by ggml_backend_alloc_ctx_tensors()
     };
     struct ggml_context * ctx = ggml_init(params);
 
-    // create tensors and set data
     struct ggml_tensor * tensor_a = ggml_new_tensor_2d(ctx, dtype, cols_A, rows_A);
     struct ggml_tensor * tensor_b = ggml_new_tensor_2d(ctx, dtype, cols_B, rows_B);
 
-    // fill tensors with random data
-    float * matrix_A = (float *)malloc(rows_A * cols_A * sizeof(float));
-    float * matrix_B = (float *)malloc(rows_B * cols_B * sizeof(float));
+    ggml_backend_buffer_t buffer = ggml_backend_alloc_ctx_tensors(ctx, backend);
 
-    for (int i = 0; i < rows_A * cols_A; i++) {
-        matrix_A[i] = (float)(rand() % 100) / 10.0f; // random float between 0.0 and 10.0
+    ggml_backend_tensor_set(tensor_a, matrix_A.data(), 0, ggml_nbytes(tensor_a));
+    ggml_backend_tensor_set(tensor_b, matrix_B.data(), 0, ggml_nbytes(tensor_b));
+
+    struct ggml_cgraph * gf = NULL;
+    struct ggml_context * ctx_cgraph = NULL;
+    {
+        struct ggml_init_params params0 = {
+            /*.mem_size   =*/ ggml_tensor_overhead() * GGML_DEFAULT_GRAPH_SIZE + ggml_graph_overhead(),
+            /*.mem_buffer =*/ NULL,
+            /*.no_alloc   =*/ true, // the tensors will be allocated later by ggml_gallocr_alloc_graph()
+        };
+        ctx_cgraph = ggml_init(params0);
+
+        gf = ggml_new_graph(ctx_cgraph);
+        struct ggml_tensor * cur = ggml_mul_mat(ctx_cgraph, tensor_a, tensor_b);
+        ggml_build_forward_expand(gf, cur);
     }
-    for (int i = 0; i < rows_B * cols_B; i++) {
-        matrix_B[i] = (float)(rand() % 100) / 10.0f;
+
+    ggml_gallocr_t allocr = ggml_gallocr_new(ggml_backend_get_default_buffer_type(backend));
+    ggml_gallocr_alloc_graph(allocr, gf);
+
+    if (ggml_backend_is_cpu(backend)) {
+        ggml_backend_cpu_set_n_threads(backend, n_threads);
     }
 
-    memcpy(tensor_a->data, matrix_A, ggml_nbytes(tensor_a));
-    memcpy(tensor_b->data, matrix_B, ggml_nbytes(tensor_b));
+    // warm-up
+    ggml_backend_graph_compute(backend, gf);
 
-    free(matrix_A);
-    free(matrix_B);
+    const int64_t t_start = ggml_time_us();
+    ggml_backend_graph_compute(backend, gf);
+    const int64_t t_end = ggml_time_us();
 
-    // create ggml_cgraph for multiplication
-    struct ggml_cgraph * gf = ggml_new_graph(ctx);
-    struct ggml_tensor * result = ggml_mul_mat(ctx, tensor_a, tensor_b);
-    ggml_build_forward_expand(gf, result);
+    double elapsed_seconds = ((double)t_end - (double)t_start) / 1e6; // convert to seconds
+    double flops = (2.0 * (double)cols_A * (double)rows_A * (double)rows_B) / elapsed_seconds / 1e9; // convert to GFLOPS
 
-    // run the computation
-    int64_t start_time = ggml_time_us();
-    ggml_graph_compute_with_ctx(ctx, gf, n_threads);
-    int64_t end_time = ggml_time_us();
-
-    double elapsed_seconds = (end_time - start_time) / 1e6;
-    double flops = (2.0 * rows_A * cols_A * cols_B) / elapsed_seconds / 1e9;
-
-    // free memory
+    ggml_free(ctx_cgraph);
+    ggml_gallocr_free(allocr);
     ggml_free(ctx);
+    ggml_backend_buffer_free(buffer);
+    ggml_backend_free(backend);
+
     return (float)flops;
 }
 
@@ -407,13 +464,13 @@ void device_print_props(struct device_info * dev_info_set, int n) {
     }
     LOG_INF("\n");
 
-    LOG_INF("| CPU flops (F32)              ");
+    LOG_INF("| CPU flops (F32, GFLOPS)      ");
     for (int i = 0; i < n; ++i) {
         LOG_INF("| %-10.1f   ", dev_info_set[i].cpu_props.flops_f32);
     }
     LOG_INF("\n");
 
-    LOG_INF("| CPU flops (F16)              ");
+    LOG_INF("| CPU flops (F16, GFLOPS)      ");
     for (int i = 0; i < n; ++i) {
         LOG_INF("| %-10.1f   ", dev_info_set[i].cpu_props.flops_f16);
     }
@@ -521,6 +578,18 @@ void device_print_props(struct device_info * dev_info_set, int n) {
     }
     LOG_INF("\n");
 
+    LOG_INF("| GPU Metal flops (GFLOPS)     ");
+    for (int i = 0; i < n; ++i) {
+        LOG_INF("| %-10.1f   ", dev_info_set[i].gpu_props.metal_flops);
+    }
+    LOG_INF("\n");
+
+    LOG_INF("| GPU CUDA flops (GFLOPS)      ");
+    for (int i = 0; i < n; ++i) {
+        LOG_INF("| %-10.1f   ", dev_info_set[i].gpu_props.cuda_flops);
+    }
+    LOG_INF("\n");
+
     LOG_INF("-------------------------------------------------------------------------------------------\n\n");
 }
 
@@ -545,7 +614,7 @@ size_t serialize(const struct device_info * dev_info, char ** buffer) {
                       + sizeof(float) * 2    // cpu_props.flops_f32 and cpu_props.flops_f16
                       + sizeof(struct memory_info)
                       + sizeof(struct gpu_support)
-                      + sizeof(float) * 2;  // gpu_props.memory_free and gpu_props.memory_total
+                      + sizeof(float) * 4;  // gpu_props.memory_free, gpu_props.memory_total, gpu_props.metal_flops, and gpu_props.cuda_flops
 
     *buffer = (char *)malloc(total_size);
     char * ptr = *buffer;
@@ -603,6 +672,12 @@ size_t serialize(const struct device_info * dev_info, char ** buffer) {
     ptr += sizeof(float);
 
     memcpy(ptr, &dev_info->gpu_props.memory_total, sizeof(float));
+    ptr += sizeof(float);
+
+    memcpy(ptr, &dev_info->gpu_props.metal_flops, sizeof(float));
+    ptr += sizeof(float);
+
+    memcpy(ptr, &dev_info->gpu_props.cuda_flops, sizeof(float));
 
     return total_size;
 }
@@ -675,5 +750,12 @@ void deserialize(const char * buffer, struct device_info * dev_info) {
 
     memcpy(&dev_info->gpu_props.memory_free, ptr, sizeof(float));
     ptr += sizeof(float);
+
     memcpy(&dev_info->gpu_props.memory_total, ptr, sizeof(float));
+    ptr += sizeof(float);
+
+    memcpy(&dev_info->gpu_props.metal_flops, ptr, sizeof(float));
+    ptr += sizeof(float);
+
+    memcpy(&dev_info->gpu_props.cuda_flops, ptr, sizeof(float));
 }
