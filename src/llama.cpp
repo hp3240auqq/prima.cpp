@@ -3582,7 +3582,10 @@ void llama_profile_device(device_info * dev_info, struct llama_model * model, co
     dev_info->gpu_props.memory_free     = round(gpu_props.memory_free  / (double)(1 << 30) * 100) / 100;
     dev_info->gpu_props.memory_total    = round(gpu_props.memory_total / (double)(1 << 30) * 100) / 100;
     dev_info->gpu_props.metal_flops     = device_metal_flops(model, GGML_TYPE_F32);
-    dev_info->gpu_props.cuda_flops      = device_cuda_flops(model, GGML_TYPE_F32);
+    dev_info->gpu_props.cuda_flops_f32  = device_cuda_flops(model, GGML_TYPE_F32);
+    dev_info->gpu_props.cuda_flops_f16  = device_cuda_flops(model, GGML_TYPE_F16);
+    dev_info->gpu_props.cuda_flops_q8   = device_cuda_flops(model, GGML_TYPE_Q8_0);
+    dev_info->gpu_props.cuda_flops_q4k  = device_cuda_flops(model, GGML_TYPE_Q4_K);
 }
 
 ggml_backend_buffer_type_t llama_dev_buffer_type(struct llama_model * model, int device) {

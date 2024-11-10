@@ -42,13 +42,16 @@ struct gpu_support {
 struct gpu_props {
     const char * name;
     const char * description;
-    float        memory_free;   // in GB
-    float        memory_total;  // in GB
-    float        metal_flops;   // in GFLOPS
-    float        cuda_flops;    // in GFLOPS
+    float        memory_free;    // in GB
+    float        memory_total;   // in GB
+    float        metal_flops;    // in GFLOPS
+    float        cuda_flops_f32; // in GFLOPS
+    float        cuda_flops_f16; // in GFLOPS
+    float        cuda_flops_q8;  // in GFLOPS
+    float        cuda_flops_q4k; // in GFLOPS
 
     gpu_props()
-        : name(""), description(""), memory_free(0.0f), memory_total(0.0f), metal_flops(0.0f), cuda_flops(0.0f) {}
+        : name(""), description(""), memory_free(0.0f), memory_total(0.0f), metal_flops(0.0f), cuda_flops_f32(0.0f), cuda_flops_f16(0.0f), cuda_flops_q8(0.0f), cuda_flops_q4k(0.0f) {}
 };
 
 struct device_info {
