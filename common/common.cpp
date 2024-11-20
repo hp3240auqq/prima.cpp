@@ -841,6 +841,8 @@ static void llama_assign_n_layer_window(
         return;
     }
 
+    (void)my_rank;
+
     std::fill_n(n_layer_window, n_world, DEFAULT_N_LAYER_WINDOW);
 }
 
@@ -894,7 +896,7 @@ struct llama_init_result llama_init_from_gpt_params(gpt_params & params) {
 
     device_info dev_info;
     dev_info.rank = params.rank;
-    llama_profile_device(&dev_info, model, params.model.c_str(), params.cpuparams.n_threads);
+    llama_profile_device(&dev_info, model, ml, params.model.c_str(), params.cpuparams.n_threads);
 
     // create llama context
     struct llama_context_params cparams = llama_context_params_from_gpt_params(params);

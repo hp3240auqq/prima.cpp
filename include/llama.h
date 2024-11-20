@@ -410,7 +410,13 @@ extern "C" {
     // Call once at the start of the program
     LLAMA_API void llama_backend_init(void);
 
-    LLAMA_API void llama_profile_device (struct device_info * dev_info, struct llama_model * model, const char * test_file, int n_threads);
+    LLAMA_API void llama_profile_device(
+                struct device_info        * dev_info, 
+                struct llama_model        * model, 
+                struct llama_model_loader * ml, 
+                const char                * test_file, 
+                int                         n_threads);
+
     LLAMA_API ggml_backend_buffer_type_t llama_dev_buffer_type(struct llama_model * model, int device);
 
     //optional:
@@ -517,6 +523,14 @@ extern "C" {
 
     // Returns the total number of parameters in the model
     LLAMA_API uint64_t llama_model_n_params(const struct llama_model * model);
+
+    // Return the total number of float operations in the model
+    LLAMA_API void llama_model_n_flops(
+                        struct llama_model * model, 
+                 struct llama_model_loader * ml, 
+                         struct flops_info * ffo,
+                             const int64_t   n_input,
+                             const int64_t   n_history);
 
     // Get a llama model tensor
     LLAMA_API struct ggml_tensor * llama_get_model_tensor(struct llama_model * model, const char * name);

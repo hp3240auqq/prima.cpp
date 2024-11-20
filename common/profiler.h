@@ -67,6 +67,21 @@ struct device_info {
         : rank(0), device_name(""), disk_read_bandwidth(0.0f), cpu_props(), memory(), gpu_support(), gpu_props() {}
 };
 
+struct flops_info {
+    // model flops
+    int64_t input_flops;
+    int64_t output_flops;
+    int64_t layer_flops;
+    
+    // model params
+    int64_t input_params;
+    int64_t output_params;
+    int64_t layer_params;
+
+    flops_info()
+        : input_flops(0), output_flops(0), layer_flops(0), input_params(0), output_params(0), layer_params(0) {}
+};
+
 enum profiler_backend_type {
     PROFILER_BACKEND_TYPE_CPU   = 0,
     PROFILER_BACKEND_TYPE_METAL = 1,
