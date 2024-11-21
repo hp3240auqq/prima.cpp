@@ -914,7 +914,7 @@ struct llama_init_result llama_init_from_gpt_params(gpt_params & params) {
         dev_info_set = (struct device_info *)malloc(n_world * sizeof(struct device_info));
         dev_info_set[0] = dev_info;
         llama_gather_device_info(lctx, dev_info_set);
-        device_print_props(dev_info_set, n_world);
+        device_print_props(dev_info_set, n_world, model);
     } else {
         llama_send_device_info(lctx, &dev_info);
     }

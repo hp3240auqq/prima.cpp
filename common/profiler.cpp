@@ -23,6 +23,7 @@
     #include "ggml-cuda.h"
 #endif
 
+#include <cmath>
 #include <chrono>
 #include <fstream>
 #include <string>
@@ -82,17 +83,11 @@ uint32_t device_cpu_cores() {
 }
 
 static float device_flops(struct llama_model * model, enum ggml_type dtype, profiler_backend_type btype, int n_threads) {
-    const int n_embd      = llama_n_embd(model);
-    const int n_ff_hidden = llama_n_ff_hidden(model);
-    const int rows_A = n_embd, cols_A = n_ff_hidden;
-    const int rows_B = n_embd, cols_B = n_ff_hidden;
-    GGML_ASSERT(cols_A == cols_B);
-
-    std::vector<float> matrix_A(cols_A * rows_A, 1.0f); 
-    std::vector<float> matrix_B(cols_B * rows_B, 1.0f / cols_B);
+    const int n_embd = llama_n_embd(model);
+    std::vector<float> matrix_A(n_embd * n_embd, 1.0f); 
+    std::vector<float> matrix_B(n_embd * n_embd, 1.0f / n_embd);
 
     ggml_backend_t backend = NULL;
-
     switch (btype) {
         case PROFILER_BACKEND_TYPE_CPU:
             backend = ggml_backend_cpu_init();
@@ -124,15 +119,15 @@ static float device_flops(struct llama_model * model, enum ggml_type dtype, prof
     };
     struct ggml_context * ctx = ggml_init(params);
 
-    struct ggml_tensor * tensor_a = ggml_new_tensor_2d(ctx, dtype, cols_A, rows_A);
-    struct ggml_tensor * tensor_b = ggml_new_tensor_2d(ctx, dtype, cols_B, rows_B);
+    struct ggml_tensor * tensor_a = ggml_new_tensor_2d(ctx, dtype, n_embd, n_embd);
+    struct ggml_tensor * tensor_b = ggml_new_tensor_2d(ctx, dtype, n_embd, n_embd);
 
     ggml_backend_buffer_t buffer = ggml_backend_alloc_ctx_tensors(ctx, backend);
 
     ggml_backend_tensor_set(tensor_a, matrix_A.data(), 0, ggml_nbytes(tensor_a));
     ggml_backend_tensor_set(tensor_b, matrix_B.data(), 0, ggml_nbytes(tensor_b));
 
-    struct ggml_cgraph * gf = NULL;
+    struct ggml_cgraph  * gf         = NULL;
     struct ggml_context * ctx_cgraph = NULL;
     {
         struct ggml_init_params params0 = {
@@ -162,7 +157,7 @@ static float device_flops(struct llama_model * model, enum ggml_type dtype, prof
     const int64_t t_end = ggml_time_us();
 
     double elapsed_seconds = ((double)t_end - (double)t_start) / 1e6; // convert to seconds
-    double flops = (2.0 * (double)cols_A * (double)rows_A * (double)rows_B) / elapsed_seconds / 1e9; // convert to GFLOPS
+    double flops = (2.0 * (double)n_embd * (double)n_embd * (double)n_embd) / elapsed_seconds / 1e9; // convert to GFLOPS
 
     ggml_free(ctx_cgraph);
     ggml_gallocr_free(allocr);
@@ -435,7 +430,7 @@ void device_get_props(struct llama_model * model, int device, struct ggml_backen
     ggml_backend_dev_get_props(dev, props);
 }
 
-void device_print_props(struct device_info * dev_info_set, int n) {
+void device_print_props(struct device_info * dev_info_set, int n, struct llama_model * model) {
     LOG_INF("\n-------------------------------------------------------------------------------------------\n");
     LOG_INF("| Property                     ");
     for (int i = 0; i < n; ++i) {
@@ -612,6 +607,38 @@ void device_print_props(struct device_info * dev_info_set, int n) {
     }
     LOG_INF("\n");
 
+    LOG_INF("| Model flops (input)          ");
+    LOG_INF("| %-10lu   ", dev_info_set[0].model_flops.input_flops);
+    LOG_INF("\n");
+
+    LOG_INF("| Model flops (each layer)     ");
+    LOG_INF("| %-10lu   ", dev_info_set[0].model_flops.layer_flops);
+    LOG_INF("\n");
+
+    LOG_INF("| Model flops (output)         ");
+    LOG_INF("| %-10lu   ", dev_info_set[0].model_flops.output_flops);
+    LOG_INF("\n");
+
+    LOG_INF("| Model params (input)         ");
+    LOG_INF("| %-10lu   ", dev_info_set[0].model_flops.input_params);
+    LOG_INF("\n");
+
+    LOG_INF("| Model params (each layer)    ");
+    LOG_INF("| %-10lu   ", dev_info_set[0].model_flops.layer_params);
+    LOG_INF("\n");
+
+    LOG_INF("| Model params (output)        ");
+    LOG_INF("| %-10lu   ", dev_info_set[0].model_flops.output_params);
+    LOG_INF("\n");
+
+    model_flops ffo  = dev_info_set[0].model_flops;
+    int64_t total_flops = ffo.input_flops + ffo.output_flops + (ffo.layer_flops * llama_model_n_layers(model));
+    double cpu_flops_f16 = dev_info_set[0].cpu_props.flops_f16 * 1e9;
+
+    LOG_INF("| Token latency (ms)           ");
+    LOG_INF("| %-10.2f   ", total_flops / cpu_flops_f16 * 1000);
+    LOG_INF("\n");
+
     LOG_INF("-------------------------------------------------------------------------------------------\n\n");
 }
 
@@ -711,6 +738,7 @@ size_t serialize(const struct device_info * dev_info, char ** buffer) {
 
     memcpy(ptr, &dev_info->gpu_props.cuda_flops_q4k, sizeof(float));
 
+    // no need to synchronize model flops
     return total_size;
 }
 
@@ -799,4 +827,6 @@ void deserialize(const char * buffer, struct device_info * dev_info) {
     ptr += sizeof(float);
 
     memcpy(&dev_info->gpu_props.cuda_flops_q4k, ptr, sizeof(float));
+
+    // no need to synchronize model flops
 }

@@ -110,7 +110,7 @@ struct Timer {
     ~Timer() {
         if (enable_timer) {
             int64_t end_time = ggml_time_us();
-            LLAMA_LOG_INFO("Time to run %s: %lld ms\n", name, (end_time - start_time)/1000);
+            LLAMA_LOG_INFO("Time to run %s: %lu ms\n", name, (end_time - start_time)/1000);
         }
     }
 };
@@ -3587,14 +3587,8 @@ void llama_profile_device(device_info * dev_info, struct llama_model * model, ll
     dev_info->gpu_props.cuda_flops_q4k  = device_cuda_flops(model,  GGML_TYPE_Q4_K);
 
     if (dev_info->rank == 0) {
-        struct flops_info ffo = flops_info{};
-        llama_model_n_flops(model, ml, &ffo, 1, 10);
-        LLAMA_LOG_INFO("input_flops:   %llu\n", ffo.input_flops);
-        LLAMA_LOG_INFO("output_flops:  %llu\n", ffo.output_flops);
-        LLAMA_LOG_INFO("layer_flops:   %llu\n", ffo.layer_flops);
-        LLAMA_LOG_INFO("input_params:  %llu\n", ffo.input_params);
-        LLAMA_LOG_INFO("output_params: %llu\n", ffo.output_params);
-        LLAMA_LOG_INFO("layer_params:  %llu\n", ffo.layer_params);
+        struct model_flops * ffo = &dev_info->model_flops;
+        llama_model_n_flops(model, ml, ffo, 1, 10);
     }
 }
 
@@ -20668,7 +20662,7 @@ static void llama_model_reset_tensors(struct llama_model * model) {
     model->cls_out_b = nullptr;
 }
 
-void llama_model_n_flops(struct llama_model * model, struct llama_model_loader * ml, struct flops_info * ffo, const int64_t n_input, const int64_t n_history) {
+void llama_model_n_flops(struct llama_model * model, struct llama_model_loader * ml, struct model_flops * ffo, const int64_t n_input, const int64_t n_history) {
     const llama_hparams hparams  = model->hparams;
     const int64_t n_layer        = hparams.n_layer;
     const int64_t n_vocab        = hparams.n_vocab;

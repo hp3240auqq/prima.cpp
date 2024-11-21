@@ -528,7 +528,7 @@ extern "C" {
     LLAMA_API void llama_model_n_flops(
                         struct llama_model * model, 
                  struct llama_model_loader * ml, 
-                         struct flops_info * ffo,
+                        struct model_flops * ffo,
                              const int64_t   n_input,
                              const int64_t   n_history);
 
