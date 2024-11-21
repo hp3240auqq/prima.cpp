@@ -91,7 +91,6 @@ enum profiler_backend_type {
 const char * device_name(void); 
 
 uint32_t device_cpu_cores      (void);
-float    device_flops          (struct llama_model * model, enum ggml_type dtype, profiler_backend_type btype, int n_threads);
 float    device_cpu_flops      (struct llama_model * model, enum ggml_type dtype, int n_threads);
 float    device_metal_flops    (struct llama_model * model, enum ggml_type dtype);
 float    device_cuda_flops     (struct llama_model * model, enum ggml_type dtype);

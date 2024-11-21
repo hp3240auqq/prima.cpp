@@ -81,31 +81,7 @@ uint32_t device_cpu_cores() {
     return core_count;
 }
 
-float device_cpu_flops(struct llama_model * model, enum ggml_type dtype, int n_threads) {
-    return device_flops(model, dtype, PROFILER_BACKEND_TYPE_CPU, n_threads);
-}
-
-float device_metal_flops(struct llama_model * model, enum ggml_type dtype) {
-#ifdef GGML_USE_METAL
-    return device_flops(model, dtype, PROFILER_BACKEND_TYPE_METAL, 4);
-#endif
-
-    (void)model;
-    (void)dtype;
-    return 0.0f;
-}
-
-float device_cuda_flops(struct llama_model * model, enum ggml_type dtype) {
-#ifdef GGML_USE_CUDA
-    return device_flops(model, dtype, PROFILER_BACKEND_TYPE_CUDA, 4);
-#endif
-
-    (void)model;
-    (void)dtype;
-    return 0.0f;
-}
-
-float device_flops(struct llama_model * model, enum ggml_type dtype, profiler_backend_type btype, int n_threads) {
+static float device_flops(struct llama_model * model, enum ggml_type dtype, profiler_backend_type btype, int n_threads) {
     const int n_embd      = llama_n_embd(model);
     const int n_ff_hidden = llama_n_ff_hidden(model);
     const int rows_A = n_embd, cols_A = n_ff_hidden;
@@ -195,6 +171,30 @@ float device_flops(struct llama_model * model, enum ggml_type dtype, profiler_ba
     ggml_backend_free(backend);
 
     return (float)flops;
+}
+
+float device_cpu_flops(struct llama_model * model, enum ggml_type dtype, int n_threads) {
+    return device_flops(model, dtype, PROFILER_BACKEND_TYPE_CPU, n_threads);
+}
+
+float device_metal_flops(struct llama_model * model, enum ggml_type dtype) {
+#ifdef GGML_USE_METAL
+    return device_flops(model, dtype, PROFILER_BACKEND_TYPE_METAL, 4);
+#endif
+
+    (void)model;
+    (void)dtype;
+    return 0.0f;
+}
+
+float device_cuda_flops(struct llama_model * model, enum ggml_type dtype) {
+#ifdef GGML_USE_CUDA
+    return device_flops(model, dtype, PROFILER_BACKEND_TYPE_CUDA, 4);
+#endif
+
+    (void)model;
+    (void)dtype;
+    return 0.0f;
 }
 
 uint64_t device_physical_memory(bool available) {
@@ -726,7 +726,7 @@ void deserialize(const char * buffer, struct device_info * dev_info) {
     memcpy(&device_name_len, ptr, sizeof(size_t));
     ptr += sizeof(size_t);
     dev_info->device_name = (char *)malloc(device_name_len);
-    memcpy((void *)dev_info->device_name, ptr, device_name_len);
+    memcpy(const_cast<void*>(static_cast<const void*>(dev_info->device_name)), ptr, device_name_len);
     ptr += device_name_len;
 
     // cpu_props.name
@@ -734,7 +734,7 @@ void deserialize(const char * buffer, struct device_info * dev_info) {
     memcpy(&cpu_name_len, ptr, sizeof(size_t));
     ptr += sizeof(size_t);
     dev_info->cpu_props.name = (char *)malloc(cpu_name_len);
-    memcpy((void *)dev_info->cpu_props.name, ptr, cpu_name_len);
+    memcpy(const_cast<void*>(static_cast<const void*>(dev_info->cpu_props.name)), ptr, cpu_name_len);
     ptr += cpu_name_len;
 
     // cpu_props.description
@@ -742,7 +742,7 @@ void deserialize(const char * buffer, struct device_info * dev_info) {
     memcpy(&cpu_description_len, ptr, sizeof(size_t));
     ptr += sizeof(size_t);
     dev_info->cpu_props.description = (char *)malloc(cpu_description_len);
-    memcpy((void *)dev_info->cpu_props.description, ptr, cpu_description_len);
+    memcpy(const_cast<void*>(static_cast<const void*>(dev_info->cpu_props.description)), ptr, cpu_description_len);
     ptr += cpu_description_len;
 
     // gpu_props.name
@@ -750,7 +750,7 @@ void deserialize(const char * buffer, struct device_info * dev_info) {
     memcpy(&gpu_name_len, ptr, sizeof(size_t));
     ptr += sizeof(size_t);
     dev_info->gpu_props.name = (char *)malloc(gpu_name_len);
-    memcpy((void *)dev_info->gpu_props.name, ptr, gpu_name_len);
+    memcpy(const_cast<void*>(static_cast<const void*>(dev_info->gpu_props.name)), ptr, gpu_name_len);
     ptr += gpu_name_len;
 
     // gpu_props.description
@@ -758,7 +758,7 @@ void deserialize(const char * buffer, struct device_info * dev_info) {
     memcpy(&gpu_description_len, ptr, sizeof(size_t));
     ptr += sizeof(size_t);
     dev_info->gpu_props.description = (char *)malloc(gpu_description_len);
-    memcpy((void *)dev_info->gpu_props.description, ptr, gpu_description_len);
+    memcpy(const_cast<void*>(static_cast<const void*>(dev_info->gpu_props.description)), ptr, gpu_description_len);
     ptr += gpu_description_len;
 
     // other non-string members
