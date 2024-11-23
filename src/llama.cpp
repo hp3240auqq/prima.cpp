@@ -3549,14 +3549,16 @@ static ggml_backend_buffer_type_t llama_default_buffer_type_offload(const llama_
 void llama_profile_device(device_info * dev_info, struct llama_model * model, llama_model_loader * ml, const char * test_file, int n_threads) {
     dev_info->device_name               = device_name();
     dev_info->cpu_props.cores           = device_cpu_cores();
-    dev_info->cpu_props.flops_f32       = device_cpu_flops(model, GGML_TYPE_F32, n_threads);
-    dev_info->cpu_props.flops_f16       = device_cpu_flops(model, GGML_TYPE_F16, n_threads);
+    dev_info->cpu_props.flops_f32       = device_cpu_flops(model, GGML_TYPE_F32,  GGML_TYPE_F32, n_threads);
+    dev_info->cpu_props.flops_f16       = device_cpu_flops(model, GGML_TYPE_F16,  GGML_TYPE_F16, n_threads);
+    dev_info->cpu_props.flops_q4k_f32   = device_cpu_flops(model, GGML_TYPE_Q4_K, GGML_TYPE_F32, n_threads);
+    dev_info->cpu_props.flops_q6k_f32   = device_cpu_flops(model, GGML_TYPE_Q6_K, GGML_TYPE_F32, n_threads);
 
     dev_info->memory.total_physical     = round(device_physical_memory(false) / (double)(1 << 30) * 100) / 100;
     dev_info->memory.available_physical = round(device_physical_memory(true)  / (double)(1 << 30) * 100) / 100;
-    dev_info->memory.total_swap         = round(device_swap_memory(false) / (double)(1 << 30) * 100) / 100;
-    dev_info->memory.available_swap     = round(device_swap_memory(true) / (double)(1 << 30) * 100) / 100;
-    dev_info->memory.bandwidth          = round(device_memory_bw(500) / (double)(1 << 30) * 100) / 100;
+    dev_info->memory.total_swap         = round(device_swap_memory    (false) / (double)(1 << 30) * 100) / 100;
+    dev_info->memory.available_swap     = round(device_swap_memory    (true)  / (double)(1 << 30) * 100) / 100;
+    dev_info->memory.bandwidth          = round(device_memory_bw      (500)   / (double)(1 << 30) * 100) / 100;
 
     dev_info->disk_read_bandwidth       = round(device_disk_read_bw(test_file, 500) / (double)(1 << 30) * 100) / 100;
 
@@ -3573,18 +3575,21 @@ void llama_profile_device(device_info * dev_info, struct llama_model * model, ll
     device_get_props(model, -1, &cpu_props); // -1 for cpu
     device_get_props(model, 0,  &gpu_props); // 0 for gpu0
 
-    dev_info->cpu_props.name            = cpu_props.name;
-    dev_info->cpu_props.description     = cpu_props.description;
+    dev_info->cpu_props.name                = cpu_props.name;
+    dev_info->cpu_props.description         = cpu_props.description;
 
-    dev_info->gpu_props.name            = gpu_props.name;
-    dev_info->gpu_props.description     = gpu_props.description;
-    dev_info->gpu_props.memory_free     = round(gpu_props.memory_free  / (double)(1 << 30) * 100) / 100;
-    dev_info->gpu_props.memory_total    = round(gpu_props.memory_total / (double)(1 << 30) * 100) / 100;
-    dev_info->gpu_props.metal_flops     = device_metal_flops(model, GGML_TYPE_F32);
-    dev_info->gpu_props.cuda_flops_f32  = device_cuda_flops(model,  GGML_TYPE_F32);
-    dev_info->gpu_props.cuda_flops_f16  = device_cuda_flops(model,  GGML_TYPE_F16);
-    dev_info->gpu_props.cuda_flops_q8   = device_cuda_flops(model,  GGML_TYPE_Q8_0);
-    dev_info->gpu_props.cuda_flops_q4k  = device_cuda_flops(model,  GGML_TYPE_Q4_K);
+    dev_info->gpu_props.name                = gpu_props.name;
+    dev_info->gpu_props.description         = gpu_props.description;
+    dev_info->gpu_props.memory_free         = round(gpu_props.memory_free  / (double)(1 << 30) * 100) / 100;
+    dev_info->gpu_props.memory_total        = round(gpu_props.memory_total / (double)(1 << 30) * 100) / 100;
+    dev_info->gpu_props.metal_flops_f32     = device_metal_flops(model, GGML_TYPE_F32,  GGML_TYPE_F32);
+    dev_info->gpu_props.metal_flops_f16     = device_metal_flops(model, GGML_TYPE_F16,  GGML_TYPE_F16);
+    dev_info->gpu_props.metal_flops_q4k_f32 = device_metal_flops(model, GGML_TYPE_Q4_K, GGML_TYPE_F32);
+    dev_info->gpu_props.metal_flops_q6k_f32 = device_metal_flops(model, GGML_TYPE_Q6_K, GGML_TYPE_F32);
+    dev_info->gpu_props.cuda_flops_f32      = device_cuda_flops (model, GGML_TYPE_F32,  GGML_TYPE_F32);
+    dev_info->gpu_props.cuda_flops_f16      = device_cuda_flops (model, GGML_TYPE_F16,  GGML_TYPE_F16);
+    dev_info->gpu_props.cuda_flops_q4k_f32  = device_cuda_flops (model, GGML_TYPE_Q4_K, GGML_TYPE_F32);
+    dev_info->gpu_props.cuda_flops_q6k_f32  = device_cuda_flops (model, GGML_TYPE_Q6_K, GGML_TYPE_F32);
 
     if (dev_info->rank == 0) {
         struct model_flops * ffo = &dev_info->model_flops;
@@ -10687,7 +10692,9 @@ struct llm_build_context {
             // build the input layer as a seperate subgraph
             ggml_build_forward_expand(sub_gf, inpL);
             sub_gfs.push_back(sub_gf);
+
             sub_gf = nullptr;
+            inpL   = nullptr;
         }
 
         // inpB - contains the output embedding from other nodes

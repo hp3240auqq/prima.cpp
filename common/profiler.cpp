@@ -82,7 +82,7 @@ uint32_t device_cpu_cores() {
     return core_count;
 }
 
-static float device_flops(struct llama_model * model, enum ggml_type dtype, profiler_backend_type btype, int n_threads) {
+static float device_flops(struct llama_model * model, enum ggml_type src0t, enum ggml_type src1t, profiler_backend_type btype, int n_threads) {
     const int n_embd = llama_n_embd(model);
     std::vector<float> matrix_A(n_embd * n_embd, 1.0f); 
     std::vector<float> matrix_B(n_embd * n_embd, 1.0f / n_embd);
@@ -119,8 +119,8 @@ static float device_flops(struct llama_model * model, enum ggml_type dtype, prof
     };
     struct ggml_context * ctx = ggml_init(params);
 
-    struct ggml_tensor * tensor_a = ggml_new_tensor_2d(ctx, dtype, n_embd, n_embd);
-    struct ggml_tensor * tensor_b = ggml_new_tensor_2d(ctx, dtype, n_embd, n_embd);
+    struct ggml_tensor * tensor_a = ggml_new_tensor_2d(ctx, src0t, n_embd, n_embd);
+    struct ggml_tensor * tensor_b = ggml_new_tensor_2d(ctx, src1t, n_embd, n_embd);
 
     ggml_backend_buffer_t buffer = ggml_backend_alloc_ctx_tensors(ctx, backend);
 
@@ -168,27 +168,29 @@ static float device_flops(struct llama_model * model, enum ggml_type dtype, prof
     return (float)flops;
 }
 
-float device_cpu_flops(struct llama_model * model, enum ggml_type dtype, int n_threads) {
-    return device_flops(model, dtype, PROFILER_BACKEND_TYPE_CPU, n_threads);
+float device_cpu_flops(struct llama_model * model, enum ggml_type src0t, enum ggml_type src1t, int n_threads) {
+    return device_flops(model, src0t, src1t, PROFILER_BACKEND_TYPE_CPU, n_threads);
 }
 
-float device_metal_flops(struct llama_model * model, enum ggml_type dtype) {
+float device_metal_flops(struct llama_model * model, enum ggml_type src0t, enum ggml_type src1t) {
 #ifdef GGML_USE_METAL
-    return device_flops(model, dtype, PROFILER_BACKEND_TYPE_METAL, 4);
+    return device_flops(model, src0t, src1t, PROFILER_BACKEND_TYPE_METAL, 4);
 #endif
 
     (void)model;
-    (void)dtype;
+    (void)src0t;
+    (void)src1t;
     return 0.0f;
 }
 
-float device_cuda_flops(struct llama_model * model, enum ggml_type dtype) {
+float device_cuda_flops(struct llama_model * model, enum ggml_type src0t, enum ggml_type src1t) {
 #ifdef GGML_USE_CUDA
-    return device_flops(model, dtype, PROFILER_BACKEND_TYPE_CUDA, 4);
+    return device_flops(model, src0t, src1t, PROFILER_BACKEND_TYPE_CUDA, 4);
 #endif
 
     (void)model;
-    (void)dtype;
+    (void)src0t;
+    (void)src1t;
     return 0.0f;
 }
 
@@ -463,15 +465,27 @@ void device_print_props(struct device_info * dev_info_set, int n, struct llama_m
     }
     LOG_INF("\n");
 
-    LOG_INF("| CPU flops (F32, GFLOPS)      ");
+    LOG_INF("| CPU flops (F32 x F32, GFLOPS)");
     for (int i = 0; i < n; ++i) {
         LOG_INF("| %-10.1f   ", dev_info_set[i].cpu_props.flops_f32);
     }
     LOG_INF("\n");
 
-    LOG_INF("| CPU flops (F16, GFLOPS)      ");
+    LOG_INF("| CPU flops (F16 x F16, GFLOPS)");
     for (int i = 0; i < n; ++i) {
         LOG_INF("| %-10.1f   ", dev_info_set[i].cpu_props.flops_f16);
+    }
+    LOG_INF("\n");
+
+    LOG_INF("| CPU flops (Q4K x F32, GFLOPS)");
+    for (int i = 0; i < n; ++i) {
+        LOG_INF("| %-10.1f   ", dev_info_set[i].cpu_props.flops_q4k_f32);
+    }
+    LOG_INF("\n");
+
+    LOG_INF("| CPU flops (Q6K x F32, GFLOPS)");
+    for (int i = 0; i < n; ++i) {
+        LOG_INF("| %-10.1f   ", dev_info_set[i].cpu_props.flops_q6k_f32);
     }
     LOG_INF("\n");
 
@@ -577,33 +591,51 @@ void device_print_props(struct device_info * dev_info_set, int n, struct llama_m
     }
     LOG_INF("\n");
 
-    LOG_INF("| Metal flops (F32, GFLOPS)    ");
+    LOG_INF("| Metal flops (F32xF32, GFLOPS)");
     for (int i = 0; i < n; ++i) {
-        LOG_INF("| %-10.1f   ", dev_info_set[i].gpu_props.metal_flops);
+        LOG_INF("| %-10.1f   ", dev_info_set[i].gpu_props.metal_flops_f32);
     }
     LOG_INF("\n");
 
-    LOG_INF("| CUDA flops (F32, GFLOPS)     ");
+    LOG_INF("| Metal flops (F16xF16, GFLOPS)");
+    for (int i = 0; i < n; ++i) {
+        LOG_INF("| %-10.1f   ", dev_info_set[i].gpu_props.metal_flops_f16);
+    }
+    LOG_INF("\n");
+
+    LOG_INF("| Metal flops (Q4KxF32, GFLOPS)");
+    for (int i = 0; i < n; ++i) {
+        LOG_INF("| %-10.1f   ", dev_info_set[i].gpu_props.metal_flops_q4k_f32);
+    }
+    LOG_INF("\n");
+
+    LOG_INF("| Metal flops (Q6KxF32, GFLOPS)");
+    for (int i = 0; i < n; ++i) {
+        LOG_INF("| %-10.1f   ", dev_info_set[i].gpu_props.metal_flops_q6k_f32);
+    }
+    LOG_INF("\n");
+
+    LOG_INF("| CUDA  flops (F32xF32, GFLOPS)");
     for (int i = 0; i < n; ++i) {
         LOG_INF("| %-10.1f   ", dev_info_set[i].gpu_props.cuda_flops_f32);
     }
     LOG_INF("\n");
 
-    LOG_INF("| CUDA flops (F16, GFLOPS)     ");
+    LOG_INF("| CUDA  flops (F16xF16, GFLOPS)");
     for (int i = 0; i < n; ++i) {
         LOG_INF("| %-10.1f   ", dev_info_set[i].gpu_props.cuda_flops_f16);
     }
     LOG_INF("\n");
 
-    LOG_INF("| CUDA flops (Q8_0, GFLOPS)    ");
+    LOG_INF("| CUDA  flops (Q4KxF32, GFLOPS)");
     for (int i = 0; i < n; ++i) {
-        LOG_INF("| %-10.1f   ", dev_info_set[i].gpu_props.cuda_flops_q8);
+        LOG_INF("| %-10.1f   ", dev_info_set[i].gpu_props.cuda_flops_q4k_f32);
     }
     LOG_INF("\n");
 
-    LOG_INF("| CUDA flops (Q4_K, GFLOPS)    ");
+    LOG_INF("| CUDA  flops (Q6KxF32, GFLOPS)");
     for (int i = 0; i < n; ++i) {
-        LOG_INF("| %-10.1f   ", dev_info_set[i].gpu_props.cuda_flops_q4k);
+        LOG_INF("| %-10.1f   ", dev_info_set[i].gpu_props.cuda_flops_q6k_f32);
     }
     LOG_INF("\n");
 
@@ -660,10 +692,11 @@ size_t serialize(const struct device_info * dev_info, char ** buffer) {
                       + gpu_description_len
                       + sizeof(float)       // disk_read_bandwidth
                       + sizeof(uint32_t)    // cpu_props.cores
-                      + sizeof(float) * 2    // cpu_props.flops_f32 and cpu_props.flops_f16
+                      + sizeof(float) * 4    // cpu_props.flops_f32, cpu_props.flops_f16, cpu_props.flops_q4k_f32, cpu_props.flops_q6k_f32
                       + sizeof(struct memory_info)
                       + sizeof(struct gpu_support)
-                      + sizeof(float) * 7;  // gpu_props.memory_free, gpu_props.memory_total, gpu_props.metal_flops, 
+                      + sizeof(float) * 10; // gpu_props.memory_free, gpu_props.memory_total, 
+                                            // gpu_props.metal_flops_f32, gpu_props.metal_flops_f16, gpu_props.metal_flops_q4k_f32, gpu_props.metal_flops_q6k_f32, 
                                             // gpu_props.cuda_flops_f32, gpu_props.cuda_flops_f16, gpu_props.cuda_flops_q8, and gpu_props.cuda_flops_q4k
 
     *buffer = (char *)malloc(total_size);
@@ -712,6 +745,12 @@ size_t serialize(const struct device_info * dev_info, char ** buffer) {
     memcpy(ptr, &dev_info->cpu_props.flops_f16, sizeof(float));
     ptr += sizeof(float);
 
+    memcpy(ptr, &dev_info->cpu_props.flops_q4k_f32, sizeof(float));
+    ptr += sizeof(float);
+
+    memcpy(ptr, &dev_info->cpu_props.flops_q6k_f32, sizeof(float));
+    ptr += sizeof(float);
+
     memcpy(ptr, &dev_info->memory, sizeof(struct memory_info));
     ptr += sizeof(struct memory_info);
 
@@ -724,7 +763,16 @@ size_t serialize(const struct device_info * dev_info, char ** buffer) {
     memcpy(ptr, &dev_info->gpu_props.memory_total, sizeof(float));
     ptr += sizeof(float);
 
-    memcpy(ptr, &dev_info->gpu_props.metal_flops, sizeof(float));
+    memcpy(ptr, &dev_info->gpu_props.metal_flops_f32, sizeof(float));
+    ptr += sizeof(float);
+
+    memcpy(ptr, &dev_info->gpu_props.metal_flops_f16, sizeof(float));
+    ptr += sizeof(float);
+
+    memcpy(ptr, &dev_info->gpu_props.metal_flops_q4k_f32, sizeof(float));
+    ptr += sizeof(float);
+
+    memcpy(ptr, &dev_info->gpu_props.metal_flops_q6k_f32, sizeof(float));
     ptr += sizeof(float);
 
     memcpy(ptr, &dev_info->gpu_props.cuda_flops_f32, sizeof(float));
@@ -733,10 +781,10 @@ size_t serialize(const struct device_info * dev_info, char ** buffer) {
     memcpy(ptr, &dev_info->gpu_props.cuda_flops_f16, sizeof(float));
     ptr += sizeof(float);
 
-    memcpy(ptr, &dev_info->gpu_props.cuda_flops_q8, sizeof(float));
+    memcpy(ptr, &dev_info->gpu_props.cuda_flops_q4k_f32, sizeof(float));
     ptr += sizeof(float);
 
-    memcpy(ptr, &dev_info->gpu_props.cuda_flops_q4k, sizeof(float));
+    memcpy(ptr, &dev_info->gpu_props.cuda_flops_q6k_f32, sizeof(float));
 
     // no need to synchronize model flops
     return total_size;
@@ -802,6 +850,12 @@ void deserialize(const char * buffer, struct device_info * dev_info) {
     memcpy(&dev_info->cpu_props.flops_f16, ptr, sizeof(float));
     ptr += sizeof(float);
 
+    memcpy(&dev_info->cpu_props.flops_q4k_f32, ptr, sizeof(float));
+    ptr += sizeof(float);
+
+    memcpy(&dev_info->cpu_props.flops_q6k_f32, ptr, sizeof(float));
+    ptr += sizeof(float);
+
     memcpy(&dev_info->memory, ptr, sizeof(struct memory_info));
     ptr += sizeof(struct memory_info);
 
@@ -814,7 +868,16 @@ void deserialize(const char * buffer, struct device_info * dev_info) {
     memcpy(&dev_info->gpu_props.memory_total, ptr, sizeof(float));
     ptr += sizeof(float);
 
-    memcpy(&dev_info->gpu_props.metal_flops, ptr, sizeof(float));
+    memcpy(&dev_info->gpu_props.metal_flops_f32, ptr, sizeof(float));
+    ptr += sizeof(float);
+
+    memcpy(&dev_info->gpu_props.metal_flops_f16, ptr, sizeof(float));
+    ptr += sizeof(float);
+
+    memcpy(&dev_info->gpu_props.metal_flops_q4k_f32, ptr, sizeof(float));
+    ptr += sizeof(float);
+
+    memcpy(&dev_info->gpu_props.metal_flops_q6k_f32, ptr, sizeof(float));
     ptr += sizeof(float);
 
     memcpy(&dev_info->gpu_props.cuda_flops_f32, ptr, sizeof(float));
@@ -823,10 +886,10 @@ void deserialize(const char * buffer, struct device_info * dev_info) {
     memcpy(&dev_info->gpu_props.cuda_flops_f16, ptr, sizeof(float));
     ptr += sizeof(float);
 
-    memcpy(&dev_info->gpu_props.cuda_flops_q8, ptr, sizeof(float));
+    memcpy(&dev_info->gpu_props.cuda_flops_q4k_f32, ptr, sizeof(float));
     ptr += sizeof(float);
 
-    memcpy(&dev_info->gpu_props.cuda_flops_q4k, ptr, sizeof(float));
+    memcpy(&dev_info->gpu_props.cuda_flops_q6k_f32, ptr, sizeof(float));
 
     // no need to synchronize model flops
 }
