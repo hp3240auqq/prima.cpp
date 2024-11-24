@@ -465,15 +465,15 @@ void device_print_props(struct device_info * dev_info_set, int n, struct llama_m
     }
     LOG_INF("\n");
 
-    LOG_INF("| CPU flops (F32 x F32, GFLOPS)");
+    LOG_INF("| CPU flops (F32xF32, GFLOPS)  ");
     for (int i = 0; i < n; ++i) {
-        LOG_INF("| %-10.1f   ", dev_info_set[i].cpu_props.flops_f32);
+        LOG_INF("| %-10.1f   ", dev_info_set[i].cpu_props.flops_f32_f32);
     }
     LOG_INF("\n");
 
-    LOG_INF("| CPU flops (F16 x F16, GFLOPS)");
+    LOG_INF("| CPU flops (F16xF32, GFLOPS)  ");
     for (int i = 0; i < n; ++i) {
-        LOG_INF("| %-10.1f   ", dev_info_set[i].cpu_props.flops_f16);
+        LOG_INF("| %-10.1f   ", dev_info_set[i].cpu_props.flops_f16_f32);
     }
     LOG_INF("\n");
 
@@ -593,13 +593,13 @@ void device_print_props(struct device_info * dev_info_set, int n, struct llama_m
 
     LOG_INF("| Metal flops (F32xF32, GFLOPS)");
     for (int i = 0; i < n; ++i) {
-        LOG_INF("| %-10.1f   ", dev_info_set[i].gpu_props.metal_flops_f32);
+        LOG_INF("| %-10.1f   ", dev_info_set[i].gpu_props.metal_flops_f32_f32);
     }
     LOG_INF("\n");
 
-    LOG_INF("| Metal flops (F16xF16, GFLOPS)");
+    LOG_INF("| Metal flops (F16xF32, GFLOPS)");
     for (int i = 0; i < n; ++i) {
-        LOG_INF("| %-10.1f   ", dev_info_set[i].gpu_props.metal_flops_f16);
+        LOG_INF("| %-10.1f   ", dev_info_set[i].gpu_props.metal_flops_f16_f32);
     }
     LOG_INF("\n");
 
@@ -617,13 +617,13 @@ void device_print_props(struct device_info * dev_info_set, int n, struct llama_m
 
     LOG_INF("| CUDA  flops (F32xF32, GFLOPS)");
     for (int i = 0; i < n; ++i) {
-        LOG_INF("| %-10.1f   ", dev_info_set[i].gpu_props.cuda_flops_f32);
+        LOG_INF("| %-10.1f   ", dev_info_set[i].gpu_props.cuda_flops_f32_f32);
     }
     LOG_INF("\n");
 
-    LOG_INF("| CUDA  flops (F16xF16, GFLOPS)");
+    LOG_INF("| CUDA  flops (F16xF32, GFLOPS)");
     for (int i = 0; i < n; ++i) {
-        LOG_INF("| %-10.1f   ", dev_info_set[i].gpu_props.cuda_flops_f16);
+        LOG_INF("| %-10.1f   ", dev_info_set[i].gpu_props.cuda_flops_f16_f32);
     }
     LOG_INF("\n");
 
@@ -639,33 +639,45 @@ void device_print_props(struct device_info * dev_info_set, int n, struct llama_m
     }
     LOG_INF("\n");
 
-    LOG_INF("| Model flops (input)          ");
-    LOG_INF("| %-10lu   ", dev_info_set[0].model_flops.input_flops);
+    LOG_INF("| Model flops (output F32xF32) ");
+    LOG_INF("| %-10lu   ", dev_info_set[0].model_flops.output_f32_f32);
     LOG_INF("\n");
 
-    LOG_INF("| Model flops (each layer)     ");
-    LOG_INF("| %-10lu   ", dev_info_set[0].model_flops.layer_flops);
+    LOG_INF("| Model flops (output Q6KxF32) ");
+    LOG_INF("| %-10lu   ", dev_info_set[0].model_flops.output_q6k_f32);
     LOG_INF("\n");
 
-    LOG_INF("| Model flops (output)         ");
-    LOG_INF("| %-10lu   ", dev_info_set[0].model_flops.output_flops);
+    LOG_INF("| Model flops (layer F32xF32)  ");
+    LOG_INF("| %-10lu   ", dev_info_set[0].model_flops.layer_f32_f32);
+    LOG_INF("\n");
+
+    LOG_INF("| Model flops (layer F16xF32)  ");
+    LOG_INF("| %-10lu   ", dev_info_set[0].model_flops.layer_f16_f32);
+    LOG_INF("\n");
+
+    LOG_INF("| Model flops (layer Q4KxF32)  ");
+    LOG_INF("| %-10lu   ", dev_info_set[0].model_flops.layer_q4k_f32);
+    LOG_INF("\n");
+
+    LOG_INF("| Model flops (layer Q6KxF32)  ");
+    LOG_INF("| %-10lu   ", dev_info_set[0].model_flops.layer_q6k_f32);
     LOG_INF("\n");
 
     LOG_INF("| Model params (input)         ");
-    LOG_INF("| %-10lu   ", dev_info_set[0].model_flops.input_params);
+    LOG_INF("| %-10lu   ", dev_info_set[0].model_params.input_params);
     LOG_INF("\n");
 
     LOG_INF("| Model params (each layer)    ");
-    LOG_INF("| %-10lu   ", dev_info_set[0].model_flops.layer_params);
+    LOG_INF("| %-10lu   ", dev_info_set[0].model_params.layer_params);
     LOG_INF("\n");
 
     LOG_INF("| Model params (output)        ");
-    LOG_INF("| %-10lu   ", dev_info_set[0].model_flops.output_params);
+    LOG_INF("| %-10lu   ", dev_info_set[0].model_params.output_params);
     LOG_INF("\n");
 
     model_flops ffo  = dev_info_set[0].model_flops;
-    int64_t total_flops = ffo.input_flops + ffo.output_flops + (ffo.layer_flops * llama_model_n_layers(model));
-    double cpu_flops_f16 = dev_info_set[0].cpu_props.flops_f16 * 1e9;
+    int64_t total_flops = ffo.output_f32_f32 + (ffo.layer_f32_f32 * llama_model_n_layers(model)); // todo
+    double cpu_flops_f16 = dev_info_set[0].cpu_props.flops_f16_f32 * 1e9;
 
     LOG_INF("| Token latency (ms)           ");
     LOG_INF("| %-10.2f   ", total_flops / cpu_flops_f16 * 1000);
@@ -739,10 +751,10 @@ size_t serialize(const struct device_info * dev_info, char ** buffer) {
     memcpy(ptr, &dev_info->cpu_props.cores, sizeof(uint32_t));
     ptr += sizeof(uint32_t);
 
-    memcpy(ptr, &dev_info->cpu_props.flops_f32, sizeof(float));
+    memcpy(ptr, &dev_info->cpu_props.flops_f32_f32, sizeof(float));
     ptr += sizeof(float);
 
-    memcpy(ptr, &dev_info->cpu_props.flops_f16, sizeof(float));
+    memcpy(ptr, &dev_info->cpu_props.flops_f16_f32, sizeof(float));
     ptr += sizeof(float);
 
     memcpy(ptr, &dev_info->cpu_props.flops_q4k_f32, sizeof(float));
@@ -763,10 +775,10 @@ size_t serialize(const struct device_info * dev_info, char ** buffer) {
     memcpy(ptr, &dev_info->gpu_props.memory_total, sizeof(float));
     ptr += sizeof(float);
 
-    memcpy(ptr, &dev_info->gpu_props.metal_flops_f32, sizeof(float));
+    memcpy(ptr, &dev_info->gpu_props.metal_flops_f32_f32, sizeof(float));
     ptr += sizeof(float);
 
-    memcpy(ptr, &dev_info->gpu_props.metal_flops_f16, sizeof(float));
+    memcpy(ptr, &dev_info->gpu_props.metal_flops_f16_f32, sizeof(float));
     ptr += sizeof(float);
 
     memcpy(ptr, &dev_info->gpu_props.metal_flops_q4k_f32, sizeof(float));
@@ -775,10 +787,10 @@ size_t serialize(const struct device_info * dev_info, char ** buffer) {
     memcpy(ptr, &dev_info->gpu_props.metal_flops_q6k_f32, sizeof(float));
     ptr += sizeof(float);
 
-    memcpy(ptr, &dev_info->gpu_props.cuda_flops_f32, sizeof(float));
+    memcpy(ptr, &dev_info->gpu_props.cuda_flops_f32_f32, sizeof(float));
     ptr += sizeof(float);
 
-    memcpy(ptr, &dev_info->gpu_props.cuda_flops_f16, sizeof(float));
+    memcpy(ptr, &dev_info->gpu_props.cuda_flops_f16_f32, sizeof(float));
     ptr += sizeof(float);
 
     memcpy(ptr, &dev_info->gpu_props.cuda_flops_q4k_f32, sizeof(float));
@@ -786,7 +798,7 @@ size_t serialize(const struct device_info * dev_info, char ** buffer) {
 
     memcpy(ptr, &dev_info->gpu_props.cuda_flops_q6k_f32, sizeof(float));
 
-    // no need to synchronize model flops
+    // no need to synchronize model flops and model params
     return total_size;
 }
 
@@ -844,10 +856,10 @@ void deserialize(const char * buffer, struct device_info * dev_info) {
     memcpy(&dev_info->cpu_props.cores, ptr, sizeof(uint32_t));
     ptr += sizeof(uint32_t);
 
-    memcpy(&dev_info->cpu_props.flops_f32, ptr, sizeof(float));
+    memcpy(&dev_info->cpu_props.flops_f32_f32, ptr, sizeof(float));
     ptr += sizeof(float);
 
-    memcpy(&dev_info->cpu_props.flops_f16, ptr, sizeof(float));
+    memcpy(&dev_info->cpu_props.flops_f16_f32, ptr, sizeof(float));
     ptr += sizeof(float);
 
     memcpy(&dev_info->cpu_props.flops_q4k_f32, ptr, sizeof(float));
@@ -868,10 +880,10 @@ void deserialize(const char * buffer, struct device_info * dev_info) {
     memcpy(&dev_info->gpu_props.memory_total, ptr, sizeof(float));
     ptr += sizeof(float);
 
-    memcpy(&dev_info->gpu_props.metal_flops_f32, ptr, sizeof(float));
+    memcpy(&dev_info->gpu_props.metal_flops_f32_f32, ptr, sizeof(float));
     ptr += sizeof(float);
 
-    memcpy(&dev_info->gpu_props.metal_flops_f16, ptr, sizeof(float));
+    memcpy(&dev_info->gpu_props.metal_flops_f16_f32, ptr, sizeof(float));
     ptr += sizeof(float);
 
     memcpy(&dev_info->gpu_props.metal_flops_q4k_f32, ptr, sizeof(float));
@@ -880,10 +892,10 @@ void deserialize(const char * buffer, struct device_info * dev_info) {
     memcpy(&dev_info->gpu_props.metal_flops_q6k_f32, ptr, sizeof(float));
     ptr += sizeof(float);
 
-    memcpy(&dev_info->gpu_props.cuda_flops_f32, ptr, sizeof(float));
+    memcpy(&dev_info->gpu_props.cuda_flops_f32_f32, ptr, sizeof(float));
     ptr += sizeof(float);
 
-    memcpy(&dev_info->gpu_props.cuda_flops_f16, ptr, sizeof(float));
+    memcpy(&dev_info->gpu_props.cuda_flops_f16_f32, ptr, sizeof(float));
     ptr += sizeof(float);
 
     memcpy(&dev_info->gpu_props.cuda_flops_q4k_f32, ptr, sizeof(float));
@@ -891,5 +903,5 @@ void deserialize(const char * buffer, struct device_info * dev_info) {
 
     memcpy(&dev_info->gpu_props.cuda_flops_q6k_f32, ptr, sizeof(float));
 
-    // no need to synchronize model flops
+    // no need to synchronize model flops and model params
 }

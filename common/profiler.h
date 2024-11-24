@@ -8,8 +8,8 @@ struct cpu_props {
     const char * name;
     const char * description;
     uint32_t     cores;
-    float        flops_f32;     // in GFLOPS
-    float        flops_f16;     // in GFLOPS
+    float        flops_f32_f32; // in GFLOPS
+    float        flops_f16_f32; // in GFLOPS
     float        flops_q4k_f32; // in GFLOPS
     float        flops_q6k_f32; // in GFLOPS
 
@@ -17,8 +17,8 @@ struct cpu_props {
         name(""), 
         description(""), 
         cores(0), 
-        flops_f32    (0.0f), 
-        flops_f16    (0.0f), 
+        flops_f32_f32(0.0f), 
+        flops_f16_f32(0.0f), 
         flops_q4k_f32(0.0f),
         flops_q6k_f32(0.0f) {}
 };
@@ -62,12 +62,12 @@ struct gpu_props {
     const char * description;
     float        memory_free;         // in GB
     float        memory_total;        // in GB
-    float        metal_flops_f32;     // in GFLOPS
-    float        metal_flops_f16;     // in GFLOPS
+    float        metal_flops_f32_f32; // in GFLOPS
+    float        metal_flops_f16_f32; // in GFLOPS
     float        metal_flops_q4k_f32; // in GFLOPS
     float        metal_flops_q6k_f32; // in GFLOPS
-    float        cuda_flops_f32;      // in GFLOPS
-    float        cuda_flops_f16;      // in GFLOPS
+    float        cuda_flops_f32_f32;  // in GFLOPS
+    float        cuda_flops_f16_f32;  // in GFLOPS
     float        cuda_flops_q4k_f32;  // in GFLOPS
     float        cuda_flops_q6k_f32;  // in GFLOPS
 
@@ -76,45 +76,54 @@ struct gpu_props {
         description(""), 
         memory_free        (0.0f), 
         memory_total       (0.0f), 
-        metal_flops_f32    (0.0f), 
-        metal_flops_f16    (0.0f),
+        metal_flops_f32_f32(0.0f), 
+        metal_flops_f16_f32(0.0f),
         metal_flops_q4k_f32(0.0f),
         metal_flops_q6k_f32(0.0f),
-        cuda_flops_f32     (0.0f), 
-        cuda_flops_f16     (0.0f), 
+        cuda_flops_f32_f32 (0.0f), 
+        cuda_flops_f16_f32 (0.0f), 
         cuda_flops_q4k_f32 (0.0f), 
         cuda_flops_q6k_f32 (0.0f) {}
 };
 
 struct model_flops {
-    // model flops
-    int64_t input_flops;
-    int64_t output_flops;
-    int64_t layer_flops;
-    
-    // model params
+    int64_t output_f32_f32;
+    int64_t output_q6k_f32;
+    int64_t layer_f32_f32;
+    int64_t layer_f16_f32;
+    int64_t layer_q4k_f32;
+    int64_t layer_q6k_f32;
+
+    model_flops() : 
+        output_f32_f32(0), 
+        output_q6k_f32(0), 
+        layer_f32_f32 (0),
+        layer_f16_f32 (0),
+        layer_q4k_f32 (0),
+        layer_q6k_f32 (0) {}
+};
+
+struct model_params {
     int64_t input_params;
     int64_t output_params;
     int64_t layer_params;
 
-    model_flops() : 
-        input_flops  (0), 
-        output_flops (0), 
-        layer_flops  (0), 
-        input_params (0), 
-        output_params(0), 
+    model_params() :
+        input_params (0),
+        output_params(0),
         layer_params (0) {}
 };
 
 struct device_info {
-    uint32_t           rank;
-    const char *       device_name;
-    float              disk_read_bandwidth;  // in GB/s
-    struct cpu_props   cpu_props;
-    struct memory_info memory;
-    struct gpu_support gpu_support;
-    struct gpu_props   gpu_props;
-    struct model_flops model_flops;
+    uint32_t            rank;
+    const char *        device_name;
+    float               disk_read_bandwidth;  // in GB/s
+    struct cpu_props    cpu_props;
+    struct memory_info  memory;
+    struct gpu_support  gpu_support;
+    struct gpu_props    gpu_props;
+    struct model_flops  model_flops;
+    struct model_params model_params;
 
     device_info() : 
         rank(0), 
@@ -124,13 +133,20 @@ struct device_info {
         memory(), 
         gpu_support(), 
         gpu_props(), 
-        model_flops() {}
+        model_flops(),
+        model_params() {}
 };
 
 enum profiler_backend_type {
     PROFILER_BACKEND_TYPE_CPU   = 0,
     PROFILER_BACKEND_TYPE_METAL = 1,
     PROFILER_BACKEND_TYPE_CUDA  = 2,
+};
+
+enum profiler_layer_type {
+    PROFILER_LAYER_INPUT   = 0,
+    PROFILER_LAYER_OUTPUT  = 1,
+    PROFILER_LAYER_BACKEND = 2,
 };
 
 const char * device_name(void); 

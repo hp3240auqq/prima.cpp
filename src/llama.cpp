@@ -3549,8 +3549,8 @@ static ggml_backend_buffer_type_t llama_default_buffer_type_offload(const llama_
 void llama_profile_device(device_info * dev_info, struct llama_model * model, llama_model_loader * ml, const char * test_file, int n_threads) {
     dev_info->device_name               = device_name();
     dev_info->cpu_props.cores           = device_cpu_cores();
-    dev_info->cpu_props.flops_f32       = device_cpu_flops(model, GGML_TYPE_F32,  GGML_TYPE_F32, n_threads);
-    dev_info->cpu_props.flops_f16       = device_cpu_flops(model, GGML_TYPE_F16,  GGML_TYPE_F16, n_threads);
+    dev_info->cpu_props.flops_f32_f32   = device_cpu_flops(model, GGML_TYPE_F32,  GGML_TYPE_F32, n_threads);
+    dev_info->cpu_props.flops_f16_f32   = device_cpu_flops(model, GGML_TYPE_F16,  GGML_TYPE_F32, n_threads);
     dev_info->cpu_props.flops_q4k_f32   = device_cpu_flops(model, GGML_TYPE_Q4_K, GGML_TYPE_F32, n_threads);
     dev_info->cpu_props.flops_q6k_f32   = device_cpu_flops(model, GGML_TYPE_Q6_K, GGML_TYPE_F32, n_threads);
 
@@ -3582,18 +3582,19 @@ void llama_profile_device(device_info * dev_info, struct llama_model * model, ll
     dev_info->gpu_props.description         = gpu_props.description;
     dev_info->gpu_props.memory_free         = round(gpu_props.memory_free  / (double)(1 << 30) * 100) / 100;
     dev_info->gpu_props.memory_total        = round(gpu_props.memory_total / (double)(1 << 30) * 100) / 100;
-    dev_info->gpu_props.metal_flops_f32     = device_metal_flops(model, GGML_TYPE_F32,  GGML_TYPE_F32);
-    dev_info->gpu_props.metal_flops_f16     = device_metal_flops(model, GGML_TYPE_F16,  GGML_TYPE_F16);
+    dev_info->gpu_props.metal_flops_f32_f32 = device_metal_flops(model, GGML_TYPE_F32,  GGML_TYPE_F32);
+    dev_info->gpu_props.metal_flops_f16_f32 = device_metal_flops(model, GGML_TYPE_F16,  GGML_TYPE_F32);
     dev_info->gpu_props.metal_flops_q4k_f32 = device_metal_flops(model, GGML_TYPE_Q4_K, GGML_TYPE_F32);
     dev_info->gpu_props.metal_flops_q6k_f32 = device_metal_flops(model, GGML_TYPE_Q6_K, GGML_TYPE_F32);
-    dev_info->gpu_props.cuda_flops_f32      = device_cuda_flops (model, GGML_TYPE_F32,  GGML_TYPE_F32);
-    dev_info->gpu_props.cuda_flops_f16      = device_cuda_flops (model, GGML_TYPE_F16,  GGML_TYPE_F16);
+    dev_info->gpu_props.cuda_flops_f32_f32  = device_cuda_flops (model, GGML_TYPE_F32,  GGML_TYPE_F32);
+    dev_info->gpu_props.cuda_flops_f16_f32  = device_cuda_flops (model, GGML_TYPE_F16,  GGML_TYPE_F32);
     dev_info->gpu_props.cuda_flops_q4k_f32  = device_cuda_flops (model, GGML_TYPE_Q4_K, GGML_TYPE_F32);
     dev_info->gpu_props.cuda_flops_q6k_f32  = device_cuda_flops (model, GGML_TYPE_Q6_K, GGML_TYPE_F32);
 
     if (dev_info->rank == 0) {
-        struct model_flops * ffo = &dev_info->model_flops;
-        llama_model_n_flops(model, ml, ffo, 1, 10);
+        struct model_flops  * n_flops  = &dev_info->model_flops;
+        struct model_params * n_params = &dev_info->model_params;
+        llama_model_n_flops(model, ml, n_flops, n_params, 1, 10);
     }
 }
 
@@ -20669,7 +20670,46 @@ static void llama_model_reset_tensors(struct llama_model * model) {
     model->cls_out_b = nullptr;
 }
 
-void llama_model_n_flops(struct llama_model * model, struct llama_model_loader * ml, struct model_flops * ffo, const int64_t n_input, const int64_t n_history) {
+static void count_n_flops(struct model_flops * n_flops, enum ggml_type dtype, enum profiler_layer_type ltype, int64_t n) {
+    switch (ltype) {
+        case PROFILER_LAYER_OUTPUT:
+            switch (dtype) {
+                case GGML_TYPE_F32:
+                    n_flops->output_f32_f32 += n;
+                    break;
+                case GGML_TYPE_Q6_K:
+                    n_flops->output_q6k_f32 += n;
+                    break;
+                default:
+                    throw std::runtime_error("Unrecognized weight type in PROFILER_LAYER_OUTPUT\n");
+            }
+            break;
+
+        case PROFILER_LAYER_BACKEND:
+            switch (dtype) {
+                case GGML_TYPE_F32:
+                    n_flops->layer_f32_f32 += n;
+                    break;
+                case GGML_TYPE_F16:
+                    n_flops->layer_f16_f32 += n;
+                    break;
+                case GGML_TYPE_Q4_K:
+                    n_flops->layer_q4k_f32 += n;
+                    break;
+                case GGML_TYPE_Q6_K:
+                    n_flops->layer_q6k_f32 += n;
+                    break;
+                default:
+                    throw std::runtime_error("Unrecognized weight type in PROFILER_LAYER_BACKEND\n");
+            }
+            break;
+
+        default:
+            throw std::runtime_error("Unrecognized profiler layer type\n");
+    }
+}
+
+void llama_model_n_flops(struct llama_model * model, struct llama_model_loader * ml, struct model_flops * n_flops, struct model_params * n_params, const int64_t n_input, const int64_t n_history) {
     const llama_hparams hparams  = model->hparams;
     const int64_t n_layer        = hparams.n_layer;
     const int64_t n_vocab        = hparams.n_vocab;
@@ -20774,73 +20814,73 @@ void llama_model_n_flops(struct llama_model * model, struct llama_model_loader *
             if (it != tensor_name_map.end()) {
                 switch (it->second) {
                     case 1: { // "token_embd.weight"
-                        ffo->input_flops  += (2 * n_input * n_embd * n_vocab - n_input * n_embd);
-                        ffo->input_params += static_cast<int64_t>(ggml_nelements(cur));
+                        n_params->input_params  += static_cast<int64_t>(ggml_nelements(cur));
                         break;
                     }
                     case 2: { // "output_norm.weight"
-                        ffo->output_flops  += n_input * (8 * n_embd + 1);
-                        ffo->output_params += static_cast<int64_t>(ggml_nelements(cur));
+                        count_n_flops(n_flops, cur->type, PROFILER_LAYER_OUTPUT, n_input * (4 * n_embd + 1));
+                        n_params->output_params += static_cast<int64_t>(ggml_nelements(cur));
                         break;
                     }
                     case 3: { // "output.weight"
-                        ffo->output_flops  += 2 * n_input * n_embd * n_vocab;
-                        ffo->output_flops  += 5 * n_input * n_vocab;
-                        ffo->output_params += static_cast<int64_t>(ggml_nelements(cur));
+                        count_n_flops(n_flops, cur->type,     PROFILER_LAYER_OUTPUT, 2 * n_input * n_embd * n_vocab);
+                        count_n_flops(n_flops, GGML_TYPE_F32, PROFILER_LAYER_OUTPUT, 5 * n_input * n_vocab); // softmax
+                        n_params->output_params += static_cast<int64_t>(ggml_nelements(cur));
                         break;
                     }
                     case 4:  // "blk.0.attn_norm.weight"
                     case 12: // "blk.0.ffn_norm.weight"
                     { 
-                        ffo->layer_flops  += n_input * (8 * n_embd + 1);
-                        ffo->layer_params += static_cast<int64_t>(ggml_nelements(cur));
+                        count_n_flops(n_flops, cur->type, PROFILER_LAYER_BACKEND, n_input * (4 * n_embd + 1));
+                        n_params->layer_params += static_cast<int64_t>(ggml_nelements(cur));
                         break;
                     }
                     case 5: { // "blk.0.attn_q.weight"
-                        ffo->layer_flops  += 2 * n_input * n_embd * (n_head * n_embd_head_k);
-                        ffo->layer_params += static_cast<int64_t>(ggml_nelements(cur));
+                        count_n_flops(n_flops, cur->type,     PROFILER_LAYER_BACKEND, 2 * n_input * n_embd * (n_head * n_embd_head_k));
+                        count_n_flops(n_flops, GGML_TYPE_F32, PROFILER_LAYER_BACKEND, 2 * n_input * n_embd_head_k); // rope
+                        n_params->layer_params += static_cast<int64_t>(ggml_nelements(cur));
                         break;
                     }
                     case 6: { // "blk.0.attn_k.weight"
-                        ffo->layer_flops  += 2 * n_input * n_embd * (n_head * n_embd_k_gqa);
-                        ffo->layer_flops  += 2 * n_input * (n_input + n_history) * n_embd_head_k * n_head; // Q*K with KVCache
-                        ffo->layer_flops  += 7 * n_input * (n_input + n_history) * n_head; // scale, mask, and softmax
-                        ffo->layer_params += static_cast<int64_t>(ggml_nelements(cur));
+                        count_n_flops(n_flops, cur->type,     PROFILER_LAYER_BACKEND, 2 * n_input * n_embd * (n_head * n_embd_k_gqa));
+                        count_n_flops(n_flops, GGML_TYPE_F32, PROFILER_LAYER_BACKEND, 2 * n_input * n_embd_k_gqa); // rope
+                        count_n_flops(n_flops, GGML_TYPE_F16, PROFILER_LAYER_BACKEND, 2 * n_input * (n_input + n_history) * n_embd_head_k * n_head); // compute kq with kvcache
+                        count_n_flops(n_flops, GGML_TYPE_F32, PROFILER_LAYER_BACKEND, 7 * n_input * (n_input + n_history) * n_head); // scale, mask, and softmax
+                        n_params->layer_params += static_cast<int64_t>(ggml_nelements(cur));
                         break;
                     }
                     case 7: { // "blk.0.attn_v.weight"
-                        ffo->layer_flops  += 2 * n_input * n_embd * (n_head * n_embd_v_gqa);
-                        ffo->layer_flops  += n_input * (n_input + n_history) * n_embd_head_k * n_head; // QKV with KVCache
-                        ffo->layer_params += static_cast<int64_t>(ggml_nelements(cur));
+                        count_n_flops(n_flops, cur->type,     PROFILER_LAYER_BACKEND, 2 * n_input * n_embd * (n_head * n_embd_v_gqa));
+                        count_n_flops(n_flops, GGML_TYPE_F16, PROFILER_LAYER_BACKEND, n_input * (n_input + n_history) * n_embd_head_k * n_head); // compute kqv with kvcache
+                        n_params->layer_params += static_cast<int64_t>(ggml_nelements(cur));
                         break;
                     }
                     case 8: { // "blk.0.attn_output.weight"
-                        ffo->layer_flops  += 2 * n_input * (n_head * n_embd_head_k) * n_embd;
-                        ffo->layer_flops  += n_input * n_embd; // shortcut
-                        ffo->layer_params += static_cast<int64_t>(ggml_nelements(cur));
+                        count_n_flops(n_flops, cur->type,     PROFILER_LAYER_BACKEND, 2 * n_input * (n_head * n_embd_head_k) * n_embd);
+                        count_n_flops(n_flops, GGML_TYPE_F32, PROFILER_LAYER_BACKEND, n_input * n_embd); // shortcut
+                        n_params->layer_params += static_cast<int64_t>(ggml_nelements(cur));
                         break;
                     }
                     case 9: { // "blk.0.ffn_gate.weight"
-                        ffo->layer_flops  += 2 * n_input * n_embd * n_ff;
-                        ffo->layer_flops  += 5 * n_input * n_ff; // SiLU
-                        ffo->layer_params += static_cast<int64_t>(ggml_nelements(cur));
+                        count_n_flops(n_flops, cur->type,     PROFILER_LAYER_BACKEND, 2 * n_input * n_embd * n_ff);
+                        count_n_flops(n_flops, GGML_TYPE_F32, PROFILER_LAYER_BACKEND, 5 * n_input * n_ff); // SiLU
+                        n_params->layer_params += static_cast<int64_t>(ggml_nelements(cur));
                         break;
                     }
                     case 10: { // "blk.0.ffn_down.weight"
-                        ffo->layer_flops  += 2 * n_input * n_embd * n_ff;
-                        ffo->layer_flops  += n_input * n_embd; // shortcut
-                        ffo->layer_params += static_cast<int64_t>(ggml_nelements(cur));
+                        count_n_flops(n_flops, cur->type,     PROFILER_LAYER_BACKEND, 2 * n_input * n_embd * n_ff);
+                        count_n_flops(n_flops, GGML_TYPE_F32, PROFILER_LAYER_BACKEND, n_input * n_embd); // shortcut
+                        n_params->layer_params += static_cast<int64_t>(ggml_nelements(cur));
                         break;
                     }
                     case 11: { // "blk.0.ffn_up.weight"
-                        ffo->layer_flops  += 2 * n_input * n_embd * n_ff;
-                        ffo->layer_flops  += n_input * n_ff; // silu(gate(x)) * up(x)
-                        ffo->layer_params += static_cast<int64_t>(ggml_nelements(cur));
+                        count_n_flops(n_flops, cur->type,     PROFILER_LAYER_BACKEND, 2 * n_input * n_embd * n_ff);
+                        count_n_flops(n_flops, GGML_TYPE_F32, PROFILER_LAYER_BACKEND, n_input * n_ff); // silu(gate(x)) * up(x)
+                        n_params->layer_params += static_cast<int64_t>(ggml_nelements(cur));
                         break;
                     }
-                    case 13: { // rope_freqs.weight, for Q and K
-                        ffo->layer_flops  += 8 * n_input * n_head * n_embd_head_k;
-                        ffo->layer_params += static_cast<int64_t>(ggml_nelements(cur));
+                    case 13: { // rope_freqs.weight, has been counted in q and k
+                        n_params->layer_params += static_cast<int64_t>(ggml_nelements(cur));
                         break;
                     }
                     // optional: bias tensors
@@ -20850,29 +20890,29 @@ void llama_model_n_flops(struct llama_model * model, struct llama_model_loader *
                     case 17: // "blk.0.attn_output.bias"
                     case 19: // "blk.0.ffn_down.bias"
                     {
-                        ffo->layer_flops  += n_input * n_embd; 
-                        ffo->layer_params += static_cast<int64_t>(ggml_nelements(cur));
+                        count_n_flops(n_flops, cur->type, PROFILER_LAYER_BACKEND, n_input * n_embd);
+                        n_params->layer_params += static_cast<int64_t>(ggml_nelements(cur));
                         break;
                     }
                     case 18: // "blk.0.ffn_gate.bias"
                     case 20: // "blk.0.ffn_up.bias"
                     {
-                        ffo->layer_flops  += n_input * n_ff;
-                        ffo->layer_params += static_cast<int64_t>(ggml_nelements(cur));
+                        count_n_flops(n_flops, cur->type, PROFILER_LAYER_BACKEND, n_input * n_ff);
+                        n_params->layer_params += static_cast<int64_t>(ggml_nelements(cur));
                         break; 
                     }
                     // optional: expert tensors
                     case 21: { // "blk.0.ffn_gate_inp.weight"
-                        ffo->layer_flops  += 2 * n_input * n_embd * n_expert;
-                        ffo->layer_params += static_cast<int64_t>(ggml_nelements(cur));
+                        count_n_flops(n_flops, cur->type, PROFILER_LAYER_BACKEND, 2 * n_input * n_embd * n_expert);
+                        n_params->layer_params += static_cast<int64_t>(ggml_nelements(cur));
                         break;
                     }
                     case 22: // "blk.0.ffn_gate_exps.weight"
                     case 23: // "blk.0.ffn_down_exps.weight"
                     case 24: // "blk.0.ffn_up_exps.weight"
                     { 
-                        ffo->layer_flops  += 2 * n_input * n_embd * n_ff * n_expert;
-                        ffo->layer_params += static_cast<int64_t>(ggml_nelements(cur));
+                        count_n_flops(n_flops, cur->type, PROFILER_LAYER_BACKEND, 2 * n_input * n_embd * n_ff * n_expert);
+                        n_params->layer_params += static_cast<int64_t>(ggml_nelements(cur));
                         break;
                     }
                     default:
