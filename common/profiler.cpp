@@ -21,6 +21,7 @@
 
 #ifdef GGML_USE_CUDA
     #include "ggml-cuda.h"
+    #include <cuda_runtime.h>
 #endif
 
 #include <cmath>
@@ -33,7 +34,6 @@
 #include <vector>
 #include <inttypes.h>
 #include <thread>
-#include <cuda_runtime.h>
 
 const char * device_name() {
     static char device_name[256];
@@ -522,10 +522,7 @@ float device_memory_bw(int n_thread) {
 }
 
 float device_cuda_memory_bw(struct llama_model * model) {
-#ifndef GGML_USE_CUDA
-    return 0.0f;
-#endif
-
+#ifdef GGML_USE_CUDA
     const int n_embd = llama_n_embd(model) * 2;
     std::vector<float> matrix_A(n_embd * n_embd, 1.0f);
 
@@ -581,6 +578,9 @@ float device_cuda_memory_bw(struct llama_model * model) {
     ggml_backend_free(backend);
 
     return bandwidth;
+#else
+    return 0.0f;
+#endif
 }
 
 int device_has_metal(void) {

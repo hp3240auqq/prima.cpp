@@ -17564,6 +17564,7 @@ static void ggml_compute_forward(struct ggml_compute_params * params, struct ggm
                 ggml_compute_forward_opt_step_adamw(params, tensor);
             }
             break;
+        case GGML_OP_READ:
         case GGML_OP_NONE:
             {
                 // nop
@@ -18719,6 +18720,7 @@ static void ggml_compute_backward(struct ggml_context * ctx, struct ggml_tensor 
             {
                 GGML_ABORT("fatal error"); // not supported
             }
+        case GGML_OP_READ:
         case GGML_OP_NONE:
             {
                 // nop
