@@ -530,6 +530,7 @@ extern "C" {
         GGML_OP_OPT_STEP_ADAMW,
 
         GGML_OP_COUNT,
+        GGML_OP_READ,
     };
 
     enum ggml_unary_op {
