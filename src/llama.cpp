@@ -3558,9 +3558,9 @@ void llama_profile_device(device_info * dev_info, struct llama_model * model, ll
 
     dev_info->memory.total_physical     = round(device_physical_memory(false) / (double)(1 << 30) * 100) / 100;
     dev_info->memory.available_physical = round(device_physical_memory(true)  / (double)(1 << 30) * 100) / 100;
-    dev_info->memory.total_swap         = round(device_swap_memory    (false) / (double)(1 << 30) * 100) / 100;
-    dev_info->memory.available_swap     = round(device_swap_memory    (true)  / (double)(1 << 30) * 100) / 100;
-    dev_info->memory.bandwidth          = round(device_memory_bw      (500)   / (double)(1 << 30) * 100) / 100;
+    dev_info->memory.total_swap         = round(device_swap_memory(false)     / (double)(1 << 30) * 100) / 100;
+    dev_info->memory.available_swap     = round(device_swap_memory(true)      / (double)(1 << 30) * 100) / 100;
+    dev_info->memory.read_bandwidth     = device_memory_bw(n_threads);
 
     dev_info->disk_read_bandwidth       = round(device_disk_read_bw(test_file, 500) / (double)(1 << 30) * 100) / 100;
 
@@ -3584,6 +3584,7 @@ void llama_profile_device(device_info * dev_info, struct llama_model * model, ll
     dev_info->gpu_props.description         = gpu_props.description;
     dev_info->gpu_props.memory_free         = round(gpu_props.memory_free  / (double)(1 << 30) * 100) / 100;
     dev_info->gpu_props.memory_total        = round(gpu_props.memory_total / (double)(1 << 30) * 100) / 100;
+    dev_info->gpu_props.read_bandwidth      = device_cuda_memory_bw(model);
     dev_info->gpu_props.metal_flops_f32_f32 = device_metal_flops(model, GGML_TYPE_F32,  GGML_TYPE_F32);
     dev_info->gpu_props.metal_flops_f16_f32 = device_metal_flops(model, GGML_TYPE_F16,  GGML_TYPE_F32);
     dev_info->gpu_props.metal_flops_q4k_f32 = device_metal_flops(model, GGML_TYPE_Q4_K, GGML_TYPE_F32);
@@ -3598,7 +3599,9 @@ void llama_profile_device(device_info * dev_info, struct llama_model * model, ll
     if (dev_info->rank == 0) {
         struct model_flops  * n_flops  = &dev_info->model_flops;
         struct model_params * n_params = &dev_info->model_params;
-        llama_model_n_flops(model, ml, n_flops, n_params, 1, 10);
+        enum ggml_type inp_embd_dtype  = GGML_TYPE_F32;
+        llama_model_n_flops(model, ml, n_flops, n_params, 1, 32, &inp_embd_dtype);
+        n_flops->inp_embd_ms = device_inp_embd_delay(model, inp_embd_dtype, 1, n_threads);
     }
 }
 
@@ -20766,6 +20769,7 @@ static void count_n_params(struct model_params * n_params, enum ggml_type dtype,
                     break;
                 case GGML_TYPE_Q8_0:
                     n_params->output_q80 += n_i64t;
+                    break;
                 default:
                     throw std::runtime_error("Unrecognized weight type in PROFILER_LAYER_OUTPUT\n");
             }
@@ -20798,7 +20802,14 @@ static void count_n_params(struct model_params * n_params, enum ggml_type dtype,
     }
 }
 
-void llama_model_n_flops(struct llama_model * model, struct llama_model_loader * ml, struct model_flops * n_flops, struct model_params * n_params, const int64_t n_input, const int64_t n_history) {
+void llama_model_n_flops(
+            struct llama_model * model, 
+     struct llama_model_loader * ml, 
+            struct model_flops * n_flops, 
+           struct model_params * n_params, 
+                 const int64_t   n_input, 
+                 const int64_t   n_history, 
+                enum ggml_type * inp_embd_dtype) {
     const llama_hparams hparams  = model->hparams;
     const int64_t n_layer        = hparams.n_layer;
     const int64_t n_vocab        = hparams.n_vocab;
@@ -20904,6 +20915,7 @@ void llama_model_n_flops(struct llama_model * model, struct llama_model_loader *
                 switch (it->second) {
                     case 1: { // "token_embd.weight"
                         count_n_params(n_params, cur->type,     PROFILER_LAYER_INPUT, ggml_nelements(cur));
+                        *inp_embd_dtype = cur->type;
                         break;
                     }
                     case 2: { // "output_norm.weight"

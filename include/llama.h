@@ -531,7 +531,8 @@ extern "C" {
                         struct model_flops * n_flops,
                        struct model_params * n_params,
                              const int64_t   n_input,
-                             const int64_t   n_history);
+                             const int64_t   n_history,
+                            enum ggml_type * inp_embd_dtype);
 
     // Get a llama model tensor
     LLAMA_API struct ggml_tensor * llama_get_model_tensor(struct llama_model * model, const char * name);

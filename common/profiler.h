@@ -26,18 +26,18 @@ struct cpu_props {
 };
 
 struct memory_info {
-    float        total_physical;      // in GB
-    float        available_physical;  // in GB
-    float        total_swap;          // in GB
-    float        available_swap;      // in GB
-    float        bandwidth;           // in GB/s
+    float        total_physical;     // in GB
+    float        available_physical; // in GB
+    float        total_swap;         // in GB
+    float        available_swap;     // in GB
+    float        read_bandwidth;     // in GB/s
 
     memory_info() : 
         total_physical    (0.0f), 
         available_physical(0.0f), 
         total_swap        (0.0f), 
         available_swap    (0.0f), 
-        bandwidth         (0.0f) {}
+        read_bandwidth    (0.0f) {}
 };
 
 struct gpu_support {
@@ -64,6 +64,7 @@ struct gpu_props {
     const char * description;
     float        memory_free;         // in GB
     float        memory_total;        // in GB
+    float        read_bandwidth;      // in GB/s
     float        metal_flops_f32_f32; // in GFLOPS
     float        metal_flops_f16_f32; // in GFLOPS
     float        metal_flops_q4k_f32; // in GFLOPS
@@ -80,6 +81,7 @@ struct gpu_props {
         description(""), 
         memory_free        (0.0f), 
         memory_total       (0.0f), 
+        read_bandwidth     (1.0f),
         metal_flops_f32_f32(0.0f), 
         metal_flops_f16_f32(0.0f),
         metal_flops_q4k_f32(0.0f),
@@ -93,6 +95,7 @@ struct gpu_props {
 };
 
 struct model_flops {
+    float   inp_embd_ms;
     int64_t output_f32_f32;
     int64_t output_f16_f32;
     int64_t output_q4k_f32;
@@ -105,6 +108,7 @@ struct model_flops {
     int64_t layer_q80_f32;
 
     model_flops() : 
+        inp_embd_ms(0.0f),
         output_f32_f32(0), 
         output_f16_f32(0),
         output_q4k_f32(0),
@@ -193,10 +197,12 @@ uint32_t device_cpu_cores      (void);
 float    device_cpu_flops      (struct llama_model * model, enum ggml_type src0t, enum ggml_type src1t, int n_threads);
 float    device_metal_flops    (struct llama_model * model, enum ggml_type src0t, enum ggml_type src1t);
 float    device_cuda_flops     (struct llama_model * model, enum ggml_type src0t, enum ggml_type src1t);
+float    device_inp_embd_delay (struct llama_model * model, enum ggml_type src0t, int n_tokens, int n_threads);
 uint64_t device_physical_memory(bool available);
 uint64_t device_swap_memory    (bool available);
 uint64_t device_disk_read_bw   (const char * test_file, size_t buffer_size_mb);
-uint64_t device_memory_bw      (size_t buffer_size_mb);
+float    device_memory_bw      (int n_thread);
+float    device_cuda_memory_bw (struct llama_model * model);
 void     device_get_props      (struct llama_model * model, int device, struct ggml_backend_dev_props * props); 
 void     device_print_props    (struct device_info * dev_info_set, int n, struct llama_model * model);
 
