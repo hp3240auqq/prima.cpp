@@ -3547,7 +3547,7 @@ static ggml_backend_buffer_type_t llama_default_buffer_type_offload(const llama_
     GGML_UNUSED(model);
 }
 
-void llama_profile_device(device_info * dev_info, struct llama_model * model, llama_model_loader * ml, const char * test_file, int n_threads) {
+void llama_profile_device(device_info * dev_info, struct llama_model * model, llama_model_loader * ml, int n_threads) {
     dev_info->device_name               = device_name();
     dev_info->cpu_props.cores           = device_cpu_cores();
     dev_info->cpu_props.flops_f32_f32   = device_cpu_flops(model, GGML_TYPE_F32,  GGML_TYPE_F32, n_threads);
@@ -3562,7 +3562,8 @@ void llama_profile_device(device_info * dev_info, struct llama_model * model, ll
     dev_info->memory.available_swap     = round(device_swap_memory(true)      / (double)(1 << 30) * 100) / 100;
     dev_info->memory.read_bandwidth     = device_memory_bw(n_threads);
 
-    dev_info->disk_read_bandwidth       = round(device_disk_read_bw(test_file, 500) / (double)(1 << 30) * 100) / 100;
+    device_disk_seq_bw(&dev_info->disk.read_seq_bw, &dev_info->disk.write_seq_bw);
+    device_disk_rnd_bw(&dev_info->disk.read_rnd_bw, &dev_info->disk.write_rnd_bw);
 
     dev_info->gpu_support.metal         = device_has_metal();
     dev_info->gpu_support.cuda          = device_has_cuda();

@@ -4,6 +4,10 @@
 #include "ggml.h"
 #include "llama.h"
 
+#define DISK_TEST_TOTAL_BYTE 500L * 1024 * 1024
+#define DISK_TEST_SEQ_BLOCK  100L * 1024 * 1024
+#define DISK_TEST_RND_BLOCK  4096
+
 struct cpu_props {
     const char * name;
     const char * description;
@@ -26,10 +30,10 @@ struct cpu_props {
 };
 
 struct memory_info {
-    float        total_physical;     // in GB
-    float        available_physical; // in GB
-    float        total_swap;         // in GB
-    float        available_swap;     // in GB
+    float        total_physical;     // in GiB
+    float        available_physical; // in GiB
+    float        total_swap;         // in GiB
+    float        available_swap;     // in GiB
     float        read_bandwidth;     // in GB/s
 
     memory_info() : 
@@ -62,8 +66,8 @@ struct gpu_support {
 struct gpu_props {
     const char * name;
     const char * description;
-    float        memory_free;         // in GB
-    float        memory_total;        // in GB
+    float        memory_free;         // in GiB
+    float        memory_total;        // in GiB
     float        read_bandwidth;      // in GB/s
     float        metal_flops_f32_f32; // in GFLOPS
     float        metal_flops_f16_f32; // in GFLOPS
@@ -81,7 +85,7 @@ struct gpu_props {
         description(""), 
         memory_free        (0.0f), 
         memory_total       (0.0f), 
-        read_bandwidth     (1.0f),
+        read_bandwidth     (0.0f),
         metal_flops_f32_f32(0.0f), 
         metal_flops_f16_f32(0.0f),
         metal_flops_q4k_f32(0.0f),
@@ -156,10 +160,23 @@ struct model_params {
         layer_q80 (0) {}
 };
 
+struct disk_props {
+    float read_seq_bw;  // in GB/s
+    float read_rnd_bw;  // in GB/s
+    float write_seq_bw; // in GB/s
+    float write_rnd_bw; // in GB/s
+
+    disk_props() :
+        read_seq_bw (0.0f),
+        read_rnd_bw (0.0f),
+        write_seq_bw(0.0f),
+        write_rnd_bw(0.0f) {}
+};
+
 struct device_info {
     uint32_t            rank;
     const char *        device_name;
-    float               disk_read_bandwidth;  // in GB/s
+    struct disk_props   disk;
     struct cpu_props    cpu_props;
     struct memory_info  memory;
     struct gpu_support  gpu_support;
@@ -170,7 +187,7 @@ struct device_info {
     device_info() : 
         rank(0), 
         device_name(""), 
-        disk_read_bandwidth(0.0f), 
+        disk(),
         cpu_props(), 
         memory(), 
         gpu_support(), 
@@ -193,18 +210,19 @@ enum profiler_layer_type {
 
 const char * device_name(void); 
 
-uint32_t device_cpu_cores      (void);
-float    device_cpu_flops      (struct llama_model * model, enum ggml_type src0t, enum ggml_type src1t, int n_threads);
-float    device_metal_flops    (struct llama_model * model, enum ggml_type src0t, enum ggml_type src1t);
-float    device_cuda_flops     (struct llama_model * model, enum ggml_type src0t, enum ggml_type src1t);
-float    device_inp_embd_delay (struct llama_model * model, enum ggml_type src0t, int n_tokens, int n_threads);
-uint64_t device_physical_memory(bool available);
-uint64_t device_swap_memory    (bool available);
-uint64_t device_disk_read_bw   (const char * test_file, size_t buffer_size_mb);
-float    device_memory_bw      (int n_thread);
-float    device_cuda_memory_bw (struct llama_model * model);
-void     device_get_props      (struct llama_model * model, int device, struct ggml_backend_dev_props * props); 
-void     device_print_props    (struct device_info * dev_info_set, int n, struct llama_model * model);
+uint32_t device_cpu_cores       (void);
+float    device_cpu_flops       (struct llama_model * model, enum ggml_type src0t, enum ggml_type src1t, int n_threads);
+float    device_metal_flops     (struct llama_model * model, enum ggml_type src0t, enum ggml_type src1t);
+float    device_cuda_flops      (struct llama_model * model, enum ggml_type src0t, enum ggml_type src1t);
+float    device_inp_embd_delay  (struct llama_model * model, enum ggml_type src0t, int n_tokens, int n_threads);
+uint64_t device_physical_memory (bool available);
+uint64_t device_swap_memory     (bool available);
+void     device_disk_seq_bw     (float * read_seq_bw, float * write_seq_bw);
+void     device_disk_rnd_bw     (float * read_rnd_bw, float * write_rnd_bw);
+float    device_memory_bw       (int n_thread);
+float    device_cuda_memory_bw  (struct llama_model * model);
+void     device_get_props       (struct llama_model * model, int device, struct ggml_backend_dev_props * props); 
+void     device_print_props     (struct device_info * dev_info_set, int n, struct llama_model * model);
 
 int      device_has_metal  (void);
 int      device_has_cuda   (void);

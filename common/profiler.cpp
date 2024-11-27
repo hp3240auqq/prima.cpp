@@ -34,6 +34,8 @@
 #include <vector>
 #include <inttypes.h>
 #include <thread>
+#include <random>
+#include <regex>
 
 const char * device_name() {
     static char device_name[256];
@@ -439,49 +441,104 @@ uint64_t device_swap_memory(bool available) {
     return swap_memory;
 }
 
-uint64_t device_disk_read_bw(const char * test_file, size_t buffer_size_mb) {
-    uint64_t speed = 0;
-    size_t buffer_size = buffer_size_mb * 1024 * 1024; // buffer size in bytes
+static void external_fio_impl(float * read_bw, float * write_bw, bool op_rand) {
+    const char * test_file = "fio_test";
+    const char * fio_conf_template = R"(
+[global]
+ioengine=posixaio
+direct=1
+time_based=1
+runtime=2
+size=500M
+group_reporting=1
 
-    try {
-        // open a file for reading
-        std::ifstream file(test_file, std::ios::binary | std::ios::in);
-        if (!file) {
-            LOG_ERR("Unable to open the file at path: %s\n", test_file);
-            return speed;
-        }
+[read-job]
+rw=%s
+bs=%s
+filename=%s
 
-        // prepare buffer for reading
-        std::vector<char> buffer(buffer_size);
+[write-job]
+rw=%s
+bs=%s
+filename=%s
+)";
 
-        auto start_time = std::chrono::high_resolution_clock::now();
+    const char * read_type  = op_rand ? "randread" : "read";
+    const char * write_type = op_rand ? "randwrite" : "write";
+    const char * block_size = op_rand ? "4k" : "1M";
 
-        // read file into buffer
-        file.read(buffer.data(), buffer.size());
-        if (!file) {
-            LOG_ERR("Failed to read enough data from the test file\n");
-            return speed;
-        }
+    // write config to a file
+    char fio_conf[1024];
+    snprintf(fio_conf, sizeof(fio_conf), fio_conf_template, 
+             read_type,  block_size, test_file,
+             write_type, block_size, test_file);
+    const char * conf_file = "config.fio";
+    std::ofstream conf(conf_file);
+    if (!conf) {
+        LOG_INF("Error: Unable to create configuration file\n");
+        return;
+    }
+    conf << fio_conf;
+    conf.close();
 
-        auto end_time = std::chrono::high_resolution_clock::now();
-        std::chrono::duration<double> elapsed_time = end_time - start_time;
-
-        // speed in bytes per second
-        if (elapsed_time.count() > 0) {
-            speed = static_cast<uint64_t>(buffer.size() / elapsed_time.count());
-        }
-
-        buffer.clear();
-        buffer.shrink_to_fit();
-    } catch (const std::exception &e) {
-        LOG_ERR("Exception while calculating disk read speed: %s\n", e.what());
+    // run fio and redirect output to a file
+    const char * output_file = "fio_output.log";
+    std::string command = "fio " + std::string(conf_file) + " > " + std::string(output_file);
+    if (std::system(command.c_str()) != 0) {
+        LOG_INF("Error: Failed to run fio\n");
+        return;
     }
 
-    return speed;
+    // parse fio output
+    std::ifstream result(output_file);
+    if (!result) {
+        LOG_INF("Error: Failed to open fio output file\n");
+        return;
+    }
+    *read_bw = 0.0f;
+    *write_bw = 0.0f;
+    
+    std::string line;
+    std::regex read_regex(R"(READ: bw=([0-9.]+)([a-zA-Z/]+))");
+    std::regex write_regex(R"(WRITE: bw=([0-9.]+)([a-zA-Z/]+))");
+    std::smatch match;
+
+    while (std::getline(result, line)) {
+        if (std::regex_search(line, match, read_regex)) {
+            float value = std::stof(match[1]);
+            std::string unit = match[2];
+            if (unit == "MiB/s") {
+                *read_bw = value * 1024.0f * 1024.0f / 1e9;  // convert MiB/s to GB/s
+            } else if (unit == "MB/s") {
+                *read_bw = value / 1000.0f;  // convert MB/s to GB/s
+            }
+        } else if (std::regex_search(line, match, write_regex)) {
+            float value = std::stof(match[1]);
+            std::string unit = match[2];
+            if (unit == "MiB/s") {
+                *write_bw = value * 1024.0f * 1024.0f / 1e9;  // convert MiB/s to GB/s
+            } else if (unit == "MB/s") {
+                *write_bw = value / 1000.0f;  // convert MB/s to GB/s
+            }
+        }
+    }
+
+    // clean up temporary files
+    std::remove(test_file);
+    std::remove(conf_file);
+    std::remove(output_file);
+}
+
+void device_disk_rnd_bw(float * read_rnd_bw, float * write_rnd_bw) {
+    external_fio_impl(read_rnd_bw, write_rnd_bw, true);
+}
+
+void device_disk_seq_bw(float * read_seq_bw, float * write_seq_bw) {
+    external_fio_impl(read_seq_bw, write_seq_bw, false);
 }
 
 float device_memory_bw(int n_thread) {
-    size_t buffer_size = 5L * 1024 * 1024; // 5m
+    size_t buffer_size = 5L * 1024 * 1024; // 5 MiB
     std::vector<std::thread> thread_pool;
     std::vector<double> results(n_thread);
     std::vector<char *> buffers(n_thread);
@@ -579,6 +636,7 @@ float device_cuda_memory_bw(struct llama_model * model) {
 
     return bandwidth;
 #else
+    (void)model;
     return 0.0f;
 #endif
 }
@@ -662,26 +720,56 @@ static float device_compute_delay(struct device_info & dev_info, int n_layers) {
 static float device_memory_access_delay(struct device_info & dev_info, int n_layers) {
     struct model_params n_params = dev_info.model_params;
 
-    int64_t total_params = 0;
-    total_params += n_params.layer_f32 * 4 +
-                    n_params.layer_f16 * 2 +
-                    n_params.layer_q4k / 2 +
-                    n_params.layer_q6k * 3 / 8 +
-                    n_params.layer_q80;
+    int64_t total_bytes = 0;
+    total_bytes += n_params.layer_f32 * 4 +
+                   n_params.layer_f16 * 2 +
+                   n_params.layer_q4k / 2 +
+                   n_params.layer_q6k * 3 / 8 +
+                   n_params.layer_q80;
 
-    total_params *= n_layers;
+    total_bytes *= n_layers;
 
-    total_params += n_params.output_f32 * 4 +
-                    n_params.output_f16 * 2 +
-                    n_params.output_q4k / 2 +
-                    n_params.output_q6k * 3 / 8 +
-                    n_params.output_q80;
+    total_bytes += n_params.output_f32 * 4 +
+                   n_params.output_f16 * 2 +
+                   n_params.output_q4k / 2 +
+                   n_params.output_q6k * 3 / 8 +
+                   n_params.output_q80;
 
 #ifdef GGML_USE_CUDA
-    return (double)total_params / 1e6 / dev_info.gpu_props.read_bandwidth;
+    return (double)total_bytes / 1e6 / dev_info.gpu_props.read_bandwidth; // ms
 #else
-    return (double)total_params / 1e6 / dev_info.memory.read_bandwidth;
+    return (double)total_bytes / 1e6 / dev_info.memory.read_bandwidth; // ms
 #endif
+}
+
+static float device_disk_access_delay(struct device_info & dev_info, int n_layers) {
+    struct model_params n_params = dev_info.model_params;
+
+    int64_t total_bytes = 0;
+    total_bytes += n_params.layer_f32 * 4 +
+                   n_params.layer_f16 * 2 +
+                   n_params.layer_q4k / 2 +
+                   n_params.layer_q6k * 3 / 8 +
+                   n_params.layer_q80;
+
+    total_bytes *= n_layers;
+
+    total_bytes += n_params.output_f32 * 4 +
+                   n_params.output_f16 * 2 +
+                   n_params.output_q4k / 2 +
+                   n_params.output_q6k * 3 / 8 +
+                   n_params.output_q80;
+    
+    float total_gbytes = (double)total_bytes / 1e9; // convert to GB
+    float mem_avail = dev_info.memory.available_physical * 1024.0f * 1024.0f * 1024.0f / 1e9; // convert to GB
+    float disk_read_bw = dev_info.disk.read_seq_bw; // GB/s
+    return std::max(0.0, static_cast<double>(total_gbytes - mem_avail) / disk_read_bw * 1000); // convert to ms
+}
+
+static float device_swap_access_delay(struct device_info & dev_info, int n_layers) {
+    (void)dev_info;
+    (void)n_layers;
+    return 0.0f;
 }
 
 void device_print_props(struct device_info * dev_info_set, int n, struct llama_model * model) {
@@ -771,15 +859,33 @@ void device_print_props(struct device_info * dev_info_set, int n, struct llama_m
     }
     LOG_INF("\n");
 
-    LOG_INF("| Mem Read  Bandwidth (GB/s)   ");
+    LOG_INF("| Mem Read Bandwidth (GB/s)    ");
     for (int i = 0; i < n; ++i) {
         LOG_INF("| %-10.2f   ", dev_info_set[i].memory.read_bandwidth);
     }
     LOG_INF("\n");
 
-    LOG_INF("| Disk Read Bandwidth (GB/s)   ");
+    LOG_INF("| Disk Read Seq Speed (GB/s)   ");
     for (int i = 0; i < n; ++i) {
-        LOG_INF("| %-10.2f   ", dev_info_set[i].disk_read_bandwidth);
+        LOG_INF("| %-10.2f   ", dev_info_set[i].disk.read_seq_bw);
+    }
+    LOG_INF("\n");
+
+    LOG_INF("| Disk Write Seq Speed (GB/s)  ");
+    for (int i = 0; i < n; ++i) {
+        LOG_INF("| %-10.2f   ", dev_info_set[i].disk.write_seq_bw);
+    }
+    LOG_INF("\n");
+
+    LOG_INF("| Disk Read Rnd Speed (GB/s)   ");
+    for (int i = 0; i < n; ++i) {
+        LOG_INF("| %-10.2f   ", dev_info_set[i].disk.read_rnd_bw);
+    }
+    LOG_INF("\n");
+
+    LOG_INF("| Disk Write Rnd Speed (GB/s)  ");
+    for (int i = 0; i < n; ++i) {
+        LOG_INF("| %-10.2f   ", dev_info_set[i].disk.write_rnd_bw);
     }
     LOG_INF("\n");
 
@@ -1015,10 +1121,13 @@ void device_print_props(struct device_info * dev_info_set, int n, struct llama_m
     LOG_INF("| %-10" PRId64 "   ", dev_info_set[0].model_params.output_q80);
     LOG_INF("\n");
 
+    // todo: calculate for each device, not only master
     float latency = 0.0f;
     int n_layers  = llama_model_n_layers(model);
     latency += device_compute_delay(dev_info_set[0], n_layers);
     latency += device_memory_access_delay(dev_info_set[0], n_layers);
+    latency += device_disk_access_delay(dev_info_set[0], n_layers); // if physical memory is not enough, some tensor weights will be released from memory and reloaded by mmap later
+    latency += device_swap_access_delay(dev_info_set[0], n_layers); // if physical memory is not enough, activations will be stored in swap, which causes additional disk io with random access
 
     LOG_INF("| Token latency (ms)           ");
     LOG_INF("| %-10.2f   ", latency);
@@ -1043,7 +1152,7 @@ size_t serialize(const struct device_info * dev_info, char ** buffer) {
                       + cpu_description_len
                       + gpu_name_len
                       + gpu_description_len
-                      + sizeof(float)       // disk_read_bandwidth
+                      + sizeof(struct disk_props)
                       + sizeof(uint32_t)    // cpu_props.cores
                       + sizeof(float) * 5    // cpu_props.flops_f32_f32, cpu_props.flops_f16_f32, cpu_props.flops_q4k_f32, cpu_props.flops_q6k_f32, cpu_props.flops_q80_f32
                       + sizeof(struct memory_info)
@@ -1086,8 +1195,8 @@ size_t serialize(const struct device_info * dev_info, char ** buffer) {
     ptr += gpu_description_len;
 
     // copy the non-string members
-    memcpy(ptr, &dev_info->disk_read_bandwidth, sizeof(float));
-    ptr += sizeof(float);
+    memcpy(ptr, &dev_info->disk, sizeof(struct disk_props));
+    ptr += sizeof(struct disk_props);
 
     memcpy(ptr, &dev_info->cpu_props.cores, sizeof(uint32_t));
     ptr += sizeof(uint32_t);
@@ -1203,8 +1312,8 @@ void deserialize(const char * buffer, struct device_info * dev_info) {
     ptr += gpu_description_len;
 
     // other non-string members
-    memcpy(&dev_info->disk_read_bandwidth, ptr, sizeof(float));
-    ptr += sizeof(float);
+    memcpy(&dev_info->disk, ptr, sizeof(struct disk_props));
+    ptr += sizeof(struct disk_props);
 
     memcpy(&dev_info->cpu_props.cores, ptr, sizeof(uint32_t));
     ptr += sizeof(uint32_t);
