@@ -413,8 +413,7 @@ extern "C" {
     LLAMA_API void llama_profile_device(
                 struct device_info        * dev_info, 
                 struct llama_model        * model, 
-                struct llama_model_loader * ml, 
-                const char                * test_file, 
+                struct llama_model_loader * ml,
                 int                         n_threads);
 
     LLAMA_API ggml_backend_buffer_type_t llama_dev_buffer_type(struct llama_model * model, int device);
