@@ -441,7 +441,21 @@ uint64_t device_swap_memory(bool available) {
     return swap_memory;
 }
 
-static void external_fio_impl(float * read_bw, float * write_bw, bool op_rand) {
+static size_t get_page_size() {
+    size_t page_size = 0;
+
+#ifdef _WIN32
+    SYSTEM_INFO si;
+    GetSystemInfo(&si);
+    page_size = si.dwPageSize;
+#elif defined(__APPLE__) || defined(__linux__)
+    page_size = sysconf(_SC_PAGESIZE);
+#endif
+
+    return page_size;
+}
+
+static void external_fio_impl(float * read_bw, float * write_bw, bool op_rand, int n_threads) {
     const char * test_file = "fio_test";
     const char * fio_conf_template = R"(
 [global]
@@ -456,22 +470,37 @@ group_reporting=1
 rw=%s
 bs=%s
 filename=%s
+numjobs=%d
 
 [write-job]
 rw=%s
 bs=%s
 filename=%s
+numjobs=%d
 )";
+
+    size_t page_size = get_page_size();
+    if (page_size == 0) {
+        LOG_INF("Error: Unable to get system page size\n");
+        return;
+    }
+    // format the page size as a readable string (e.g., "16k" or "4k")
+    char page_size_str[8];
+    if (page_size >= 1024) {
+        snprintf(page_size_str, sizeof(page_size_str), "%zuk", page_size / 1024);
+    } else {
+        snprintf(page_size_str, sizeof(page_size_str), "%zu", page_size);
+    }
 
     const char * read_type  = op_rand ? "randread" : "read";
     const char * write_type = op_rand ? "randwrite" : "write";
-    const char * block_size = op_rand ? "4k" : "1M";
+    const char * block_size = op_rand ? page_size_str : "1M";
 
     // write config to a file
     char fio_conf[1024];
     snprintf(fio_conf, sizeof(fio_conf), fio_conf_template, 
-             read_type,  block_size, test_file,
-             write_type, block_size, test_file);
+             read_type,  block_size, test_file, n_threads,
+             write_type, block_size, test_file, n_threads);
     const char * conf_file = "config.fio";
     std::ofstream conf(conf_file);
     if (!conf) {
@@ -529,12 +558,12 @@ filename=%s
     std::remove(output_file);
 }
 
-void device_disk_rnd_bw(float * read_rnd_bw, float * write_rnd_bw) {
-    external_fio_impl(read_rnd_bw, write_rnd_bw, true);
+void device_disk_rnd_bw(float * read_rnd_bw, float * write_rnd_bw, int n_threads) {
+    external_fio_impl(read_rnd_bw, write_rnd_bw, true, n_threads);
 }
 
-void device_disk_seq_bw(float * read_seq_bw, float * write_seq_bw) {
-    external_fio_impl(read_seq_bw, write_seq_bw, false);
+void device_disk_seq_bw(float * read_seq_bw, float * write_seq_bw, int n_threads) {
+    external_fio_impl(read_seq_bw, write_seq_bw, false, n_threads);
 }
 
 float device_memory_bw(int n_thread) {
@@ -762,14 +791,9 @@ static float device_disk_access_delay(struct device_info & dev_info, int n_layer
     
     float total_gbytes = (double)total_bytes / 1e9; // convert to GB
     float mem_avail = dev_info.memory.available_physical * 1024.0f * 1024.0f * 1024.0f / 1e9; // convert to GB
-    float disk_read_bw = dev_info.disk.read_seq_bw; // GB/s
+    // todo: consider activations which also consumes the available memory
+    float disk_read_bw = dev_info.disk.read_rnd_bw; // GB/s
     return std::max(0.0, static_cast<double>(total_gbytes - mem_avail) / disk_read_bw * 1000); // convert to ms
-}
-
-static float device_swap_access_delay(struct device_info & dev_info, int n_layers) {
-    (void)dev_info;
-    (void)n_layers;
-    return 0.0f;
 }
 
 void device_print_props(struct device_info * dev_info_set, int n, struct llama_model * model) {
@@ -1127,8 +1151,7 @@ void device_print_props(struct device_info * dev_info_set, int n, struct llama_m
     latency += device_compute_delay(dev_info_set[0], n_layers);
     latency += device_memory_access_delay(dev_info_set[0], n_layers);
     latency += device_disk_access_delay(dev_info_set[0], n_layers); // if physical memory is not enough, some tensor weights will be released from memory and reloaded by mmap later
-    latency += device_swap_access_delay(dev_info_set[0], n_layers); // if physical memory is not enough, activations will be stored in swap, which causes additional disk io with random access
-
+    
     LOG_INF("| Token latency (ms)           ");
     LOG_INF("| %-10.2f   ", latency);
     LOG_INF("\n");

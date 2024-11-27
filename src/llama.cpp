@@ -3562,8 +3562,8 @@ void llama_profile_device(device_info * dev_info, struct llama_model * model, ll
     dev_info->memory.available_swap     = round(device_swap_memory(true)      / (double)(1 << 30) * 100) / 100;
     dev_info->memory.read_bandwidth     = device_memory_bw(n_threads);
 
-    device_disk_seq_bw(&dev_info->disk.read_seq_bw, &dev_info->disk.write_seq_bw);
-    device_disk_rnd_bw(&dev_info->disk.read_rnd_bw, &dev_info->disk.write_rnd_bw);
+    device_disk_seq_bw(&dev_info->disk.read_seq_bw, &dev_info->disk.write_seq_bw, n_threads);
+    device_disk_rnd_bw(&dev_info->disk.read_rnd_bw, &dev_info->disk.write_rnd_bw, n_threads);
 
     dev_info->gpu_support.metal         = device_has_metal();
     dev_info->gpu_support.cuda          = device_has_cuda();

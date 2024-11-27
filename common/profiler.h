@@ -217,8 +217,8 @@ float    device_cuda_flops      (struct llama_model * model, enum ggml_type src0
 float    device_inp_embd_delay  (struct llama_model * model, enum ggml_type src0t, int n_tokens, int n_threads);
 uint64_t device_physical_memory (bool available);
 uint64_t device_swap_memory     (bool available);
-void     device_disk_seq_bw     (float * read_seq_bw, float * write_seq_bw);
-void     device_disk_rnd_bw     (float * read_rnd_bw, float * write_rnd_bw);
+void     device_disk_seq_bw     (float * read_seq_bw, float * write_seq_bw, int n_threads);
+void     device_disk_rnd_bw     (float * read_rnd_bw, float * write_rnd_bw, int n_threads);
 float    device_memory_bw       (int n_thread);
 float    device_cuda_memory_bw  (struct llama_model * model);
 void     device_get_props       (struct llama_model * model, int device, struct ggml_backend_dev_props * props); 
