@@ -8,6 +8,7 @@
 #define DISK_TEST_SEQ_BLOCK  100L * 1024 * 1024
 #define DISK_TEST_RND_BLOCK  4096
 
+
 struct cpu_props {
     const char * name;
     const char * description;
@@ -222,7 +223,7 @@ void     device_disk_rnd_bw     (float * read_rnd_bw, float * write_rnd_bw, int 
 float    device_memory_bw       (int n_thread);
 float    device_cuda_memory_bw  (struct llama_model * model);
 void     device_get_props       (struct llama_model * model, int device, struct ggml_backend_dev_props * props); 
-void     device_print_props     (struct device_info * dev_info_set, int n, struct llama_model * model);
+void     device_print_props     (struct device_info * dev_info_set, int n, struct llama_model * model, const struct llama_context_params cparams);
 
 int      device_has_metal  (void);
 int      device_has_cuda   (void);

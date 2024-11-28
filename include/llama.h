@@ -523,6 +523,9 @@ extern "C" {
     // Returns the total number of parameters in the model
     LLAMA_API uint64_t llama_model_n_params(const struct llama_model * model);
 
+    // Return the size of KV cache in the model
+    LLAMA_API uint64_t llama_model_kvcache_size(const struct llama_model * model, const struct llama_context_params cparams);
+
     // Return the total number of float operations in the model
     LLAMA_API void llama_model_n_flops(
                         struct llama_model * model, 

@@ -20808,6 +20808,13 @@ static void count_n_params(struct model_params * n_params, enum ggml_type dtype,
     }
 }
 
+uint64_t llama_model_kvcache_size(const struct llama_model * model, const struct llama_context_params cparams) {
+    const llama_hparams hparams = model->hparams;
+    uint64_t ne_k = static_cast<uint64_t>(hparams.n_embd_k_gqa()) * cparams.n_ctx * ggml_type_size(cparams.type_k);
+    uint64_t ne_v = static_cast<uint64_t>(hparams.n_embd_v_gqa()) * cparams.n_ctx * ggml_type_size(cparams.type_v);
+    return (ne_k + ne_v) * llama_model_n_layers(model);
+}
+
 void llama_model_n_flops(
             struct llama_model * model, 
      struct llama_model_loader * ml, 

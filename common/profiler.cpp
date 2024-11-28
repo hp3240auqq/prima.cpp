@@ -876,8 +876,10 @@ static float device_memory_access_delay(struct device_info & dev_info, int n_lay
 #endif
 }
 
-static float device_disk_access_delay(struct device_info & dev_info, int n_layers) {
-    struct model_params n_params = dev_info.model_params;
+static float device_disk_access_delay(struct device_info & dev_info, struct llama_model * model, const struct llama_context_params cparams) {
+    auto n_params     = dev_info.model_params;
+    int n_layers      = llama_model_n_layers(model);
+    double kv_size_gb = static_cast<double>(llama_model_kvcache_size(model, cparams)) / 1e9; // convert to GB
 
     int64_t total_bytes = 0;
     total_bytes += n_params.layer_f32 * 4 +
@@ -895,13 +897,18 @@ static float device_disk_access_delay(struct device_info & dev_info, int n_layer
                    n_params.output_q80;
     
     float total_gbytes = (double)total_bytes / 1e9; // convert to GB
-    float mem_avail = dev_info.memory.available_physical * 1024.0f * 1024.0f * 1024.0f / 1e9; // convert to GB
+    float mem_avail    = dev_info.memory.available_physical * 1024.0f * 1024.0f * 1024.0f / 1e9; // convert to GB
+          mem_avail   -= static_cast<float>(kv_size_gb);
     // todo: consider activations which also consumes the available memory
+#ifdef __linux__
+    float disk_read_bw = dev_info.disk.read_seq_bw; // GB/s
+#else
     float disk_read_bw = dev_info.disk.read_rnd_bw; // GB/s
+#endif
     return std::max(0.0, static_cast<double>(total_gbytes - mem_avail) / disk_read_bw * 1000); // convert to ms
 }
 
-void device_print_props(struct device_info * dev_info_set, int n, struct llama_model * model) {
+void device_print_props(struct device_info * dev_info_set, int n, struct llama_model * model, const struct llama_context_params cparams) {
     LOG_INF("\n-------------------------------------------------------------------------------------------\n");
     LOG_INF("| Property                     ");
     for (int i = 0; i < n; ++i) {
@@ -1255,7 +1262,7 @@ void device_print_props(struct device_info * dev_info_set, int n, struct llama_m
     int n_layers  = llama_model_n_layers(model);
     latency += device_compute_delay(dev_info_set[0], n_layers);
     latency += device_memory_access_delay(dev_info_set[0], n_layers);
-    latency += device_disk_access_delay(dev_info_set[0], n_layers); // if physical memory is not enough, some tensor weights will be released from memory and reloaded by mmap later
+    latency += device_disk_access_delay(dev_info_set[0], model, cparams); // if physical memory is not enough, some tensor weights will be released from memory and reloaded by mmap later
     
     LOG_INF("| Token latency (ms)           ");
     LOG_INF("| %-10.2f   ", latency);
