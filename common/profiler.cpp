@@ -9,8 +9,15 @@
 #elif defined(__linux__)
     #include <unistd.h>
     #include <sys/sysinfo.h>
+    #include <sys/stat.h>
+    #include <sys/types.h>
+    #include <fcntl.h>
+    #include <unistd.h>
+    #include <dirent.h>
 #elif defined(__APPLE__) && defined(__MACH__)
     #include <sys/sysctl.h>
+    #include <sys/param.h>
+    #include <sys/mount.h>
     #include <mach/mach.h>
     #include <unistd.h>
 #endif
@@ -455,6 +462,89 @@ static size_t get_page_size() {
     return page_size;
 }
 
+static std::string get_default_device_path() {
+#ifdef __linux__
+    // find the first block device under /sys/block
+    const std::string block_path = "/sys/block/";
+    DIR * dir = opendir(block_path.c_str());
+    if (!dir) {
+        LOG_INF("Unable to open %s\n", block_path.c_str());
+        return "";
+    }
+    struct dirent * entry;
+    while ((entry = readdir(dir)) != nullptr) {
+        if (entry->d_name[0] != '.') { // ignore hidden files/directories
+            std::string device = entry->d_name;
+            closedir(dir);
+            return "/dev/" + device;
+        }
+    }
+    closedir(dir);
+    LOG_INF("No block devices found in %s\n", block_path.c_str());
+    return "";
+#elif __APPLE__
+    // use the root device as a default
+    return "/";
+#elif _WIN32
+    // use the default drive (usually C:)
+    char volume_name[MAX_PATH];
+    if (GetVolumeInformation("C:\\", volume_name, sizeof(volume_name), NULL, NULL, NULL, NULL, 0)) {
+        return "C:\\";
+    } else {
+        LOG_INF("Failed to determine default volume\n");
+        return "";
+    }
+#else
+    LOG_INF("Unsupported platform\n");
+    return "";
+#endif
+}
+
+static size_t get_default_readahead_size() {
+    const std::string device_path = get_default_device_path();
+
+#ifdef __linux__
+    std::string device = device_path.empty() ? get_default_device_path() : device_path;
+    if (device.empty()) return 0;
+
+    // read from sysfs
+    std::string sysfs_path = "/sys/block/" + device.substr(device.find_last_of("/") + 1) + "/queue/read_ahead_kb";
+    std::ifstream file(sysfs_path);
+    if (file.is_open()) {
+        size_t read_ahead_kb;
+        file >> read_ahead_kb;
+        file.close();
+        return read_ahead_kb * 1024; // convert to bytes
+    } else {
+        std::cerr << "Unable to open: " << sysfs_path << "\n";
+        return 0;
+    }
+#elif __APPLE__
+    // use statfs to determine default block size
+    struct statfs stats;
+    std::string path = device_path.empty() ? "/" : device_path;
+    if (statfs(path.c_str(), &stats) == 0) {
+        return stats.f_iosize; // return in bytes
+    } else {
+        LOG_INF("statfs failed\n");
+        return 0;
+    }
+#elif _WIN32
+    // use GetDiskFreeSpace to get default cluster size
+    std::string drive = device_path.empty() ? "C:\\" : device_path;
+    DWORD sectorsPerCluster, bytesPerSector, numberOfFreeClusters, totalNumberOfClusters;
+    if (GetDiskFreeSpace(drive.c_str(), &sectorsPerCluster, &bytesPerSector, &numberOfFreeClusters, &totalNumberOfClusters)) {
+        return sectorsPerCluster * bytesPerSector; // return in bytes
+    } else {
+        LOG_INF("GetDiskFreeSpace failed\n");
+        return 0;
+    }
+#else
+    LOG_INF("Unsupported platform\n");
+    return 0;
+#endif
+}
+
 static void external_fio_impl(float * read_bw, float * write_bw, bool op_rand, int n_threads) {
     const char * test_file = "fio_test";
     const char * fio_conf_template = R"(
@@ -492,9 +582,24 @@ numjobs=%d
         snprintf(page_size_str, sizeof(page_size_str), "%zu", page_size);
     }
 
+    size_t readahead_size = get_default_readahead_size();
+    if (readahead_size == 0) {
+        LOG_INF("Error: Unable to get system readahead size\n");
+        return;
+    }
+    // format the readahead size as a readable string (e.g., "128k" or "1m")
+    char readahead_str[8];
+    if (readahead_size >= 1024 * 1024) {
+        snprintf(readahead_str, sizeof(readahead_str), "%zuM", readahead_size / 1024 / 1024);
+    } else if (readahead_size >= 1024) {
+        snprintf(readahead_str, sizeof(readahead_str), "%zuk", readahead_size / 1024);
+    } else {
+        snprintf(readahead_str, sizeof(readahead_str), "%zu",  readahead_size);
+    }
+
     const char * read_type  = op_rand ? "randread" : "read";
     const char * write_type = op_rand ? "randwrite" : "write";
-    const char * block_size = op_rand ? page_size_str : "1M";
+    const char * block_size = op_rand ? page_size_str : readahead_str;
 
     // write config to a file
     char fio_conf[1024];
