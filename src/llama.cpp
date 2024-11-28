@@ -3547,6 +3547,11 @@ static ggml_backend_buffer_type_t llama_default_buffer_type_offload(const llama_
     GGML_UNUSED(model);
 }
 
+void llama_perf_context_sync(struct llama_context * ctx, const struct llama_model * model) {
+    ctx->t_start_us = model->t_start_us;
+    ctx->t_load_us  = model->t_load_us;
+}
+
 void llama_profile_device(device_info * dev_info, struct llama_model * model, llama_model_loader * ml, int n_threads) {
     dev_info->device_name               = device_name();
     dev_info->cpu_props.cores           = device_cpu_cores();

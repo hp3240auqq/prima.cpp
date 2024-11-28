@@ -944,6 +944,8 @@ struct llama_init_result llama_init_from_gpt_params(gpt_params & params) {
         return iparams;
     }
 
+    llama_perf_context_sync(lctx, model);
+
     if (llama_context_setup_backend(model, cparams, lctx) == nullptr) {
         LOG_ERR("%s: failed to setup context with model '%s'\n", __func__, params.model.c_str());
         llama_free_model(model);
