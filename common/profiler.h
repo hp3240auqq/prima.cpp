@@ -35,14 +35,14 @@ struct memory_info {
     float        available_physical; // in GiB
     float        total_swap;         // in GiB
     float        available_swap;     // in GiB
-    float        read_bandwidth;     // in GB/s
+    float        cpu_read_ram_bw;     // in GB/s
 
     memory_info() : 
         total_physical    (0.0f), 
         available_physical(0.0f), 
         total_swap        (0.0f), 
         available_swap    (0.0f), 
-        read_bandwidth    (0.0f) {}
+        cpu_read_ram_bw   (0.0f) {}
 };
 
 struct gpu_support {
@@ -69,12 +69,13 @@ struct gpu_props {
     const char * description;
     float        memory_free;         // in GiB
     float        memory_total;        // in GiB
-    float        read_bandwidth;      // in GB/s
+    float        metal_read_vram_bw;  // in GB/s
     float        metal_flops_f32_f32; // in GFLOPS
     float        metal_flops_f16_f32; // in GFLOPS
     float        metal_flops_q4k_f32; // in GFLOPS
     float        metal_flops_q6k_f32; // in GFLOPS
     float        metal_flops_q80_f32; // in GFLOPS
+    float        cuda_read_vram_bw;   // in GB/s
     float        cuda_flops_f32_f32;  // in GFLOPS
     float        cuda_flops_f16_f32;  // in GFLOPS
     float        cuda_flops_q4k_f32;  // in GFLOPS
@@ -86,12 +87,13 @@ struct gpu_props {
         description(""), 
         memory_free        (0.0f), 
         memory_total       (0.0f), 
-        read_bandwidth     (0.0f),
+        metal_read_vram_bw (0.0f),
         metal_flops_f32_f32(0.0f), 
         metal_flops_f16_f32(0.0f),
         metal_flops_q4k_f32(0.0f),
         metal_flops_q6k_f32(0.0f),
         metal_flops_q80_f32(0.0f),
+        cuda_read_vram_bw  (0.0f),
         cuda_flops_f32_f32 (0.0f), 
         cuda_flops_f16_f32 (0.0f), 
         cuda_flops_q4k_f32 (0.0f), 
@@ -211,19 +213,20 @@ enum profiler_layer_type {
 
 const char * device_name(void); 
 
-uint32_t device_cpu_cores       (void);
-float    device_cpu_flops       (struct llama_model * model, enum ggml_type src0t, enum ggml_type src1t, int n_threads);
-float    device_metal_flops     (struct llama_model * model, enum ggml_type src0t, enum ggml_type src1t);
-float    device_cuda_flops      (struct llama_model * model, enum ggml_type src0t, enum ggml_type src1t);
-float    device_inp_embd_delay  (struct llama_model * model, enum ggml_type src0t, int n_tokens, int n_threads);
-uint64_t device_physical_memory (bool available);
-uint64_t device_swap_memory     (bool available);
-void     device_disk_seq_bw     (float * read_seq_bw, float * write_seq_bw, int n_threads);
-void     device_disk_rnd_bw     (float * read_rnd_bw, float * write_rnd_bw, int n_threads);
-float    device_memory_bw       (int n_thread);
-float    device_cuda_memory_bw  (struct llama_model * model);
-void     device_get_props       (struct llama_model * model, int device, struct ggml_backend_dev_props * props); 
-void     device_print_props     (struct device_info * dev_info_set, int n, struct llama_model * model, const struct llama_context_params cparams);
+uint32_t device_cpu_cores         (void);
+float    device_cpu_flops         (struct llama_model * model, enum ggml_type src0t, enum ggml_type src1t, int n_threads);
+float    device_metal_flops       (struct llama_model * model, enum ggml_type src0t, enum ggml_type src1t);
+float    device_cuda_flops        (struct llama_model * model, enum ggml_type src0t, enum ggml_type src1t);
+float    device_inp_embd_delay    (struct llama_model * model, enum ggml_type src0t, int n_tokens, int n_threads);
+uint64_t device_physical_memory   (bool available);
+uint64_t device_swap_memory       (bool available);
+void     device_disk_seq_bw       (float * read_seq_bw, float * write_seq_bw, int n_threads);
+void     device_disk_rnd_bw       (float * read_rnd_bw, float * write_rnd_bw, int n_threads);
+float    device_memory_bw         (int n_thread);
+float    device_metal_read_vram_bw(struct llama_model * model);
+float    device_cuda_read_vram_bw (struct llama_model * model);
+void     device_get_props         (struct llama_model * model, int device, struct ggml_backend_dev_props * props); 
+void     device_print_props       (struct device_info * dev_info_set, int n, struct llama_model * model, const struct llama_context_params cparams);
 
 int      device_has_metal  (void);
 int      device_has_cuda   (void);

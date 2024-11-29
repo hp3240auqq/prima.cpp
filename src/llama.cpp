@@ -3555,17 +3555,17 @@ void llama_perf_context_sync(struct llama_context * ctx, const struct llama_mode
 void llama_profile_device(device_info * dev_info, struct llama_model * model, llama_model_loader * ml, int n_threads) {
     dev_info->device_name               = device_name();
     dev_info->cpu_props.cores           = device_cpu_cores();
-    dev_info->cpu_props.flops_f32_f32   = device_cpu_flops(model, GGML_TYPE_F32,  GGML_TYPE_F32, n_threads);
-    dev_info->cpu_props.flops_f16_f32   = device_cpu_flops(model, GGML_TYPE_F16,  GGML_TYPE_F32, n_threads);
-    dev_info->cpu_props.flops_q4k_f32   = device_cpu_flops(model, GGML_TYPE_Q4_K, GGML_TYPE_F32, n_threads);
-    dev_info->cpu_props.flops_q6k_f32   = device_cpu_flops(model, GGML_TYPE_Q6_K, GGML_TYPE_F32, n_threads);
-    dev_info->cpu_props.flops_q80_f32   = device_cpu_flops(model, GGML_TYPE_Q8_0, GGML_TYPE_F32, n_threads);
+    // dev_info->cpu_props.flops_f32_f32   = device_cpu_flops(model, GGML_TYPE_F32,  GGML_TYPE_F32, n_threads);
+    // dev_info->cpu_props.flops_f16_f32   = device_cpu_flops(model, GGML_TYPE_F16,  GGML_TYPE_F32, n_threads);
+    // dev_info->cpu_props.flops_q4k_f32   = device_cpu_flops(model, GGML_TYPE_Q4_K, GGML_TYPE_F32, n_threads);
+    // dev_info->cpu_props.flops_q6k_f32   = device_cpu_flops(model, GGML_TYPE_Q6_K, GGML_TYPE_F32, n_threads);
+    // dev_info->cpu_props.flops_q80_f32   = device_cpu_flops(model, GGML_TYPE_Q8_0, GGML_TYPE_F32, n_threads);
 
     dev_info->memory.total_physical     = round(device_physical_memory(false) / (double)(1 << 30) * 100) / 100;
     dev_info->memory.available_physical = round(device_physical_memory(true)  / (double)(1 << 30) * 100) / 100;
     dev_info->memory.total_swap         = round(device_swap_memory(false)     / (double)(1 << 30) * 100) / 100;
     dev_info->memory.available_swap     = round(device_swap_memory(true)      / (double)(1 << 30) * 100) / 100;
-    dev_info->memory.read_bandwidth     = device_memory_bw(n_threads);
+    dev_info->memory.cpu_read_ram_bw    = device_memory_bw(n_threads);
 
     device_disk_seq_bw(&dev_info->disk.read_seq_bw, &dev_info->disk.write_seq_bw, n_threads);
     device_disk_rnd_bw(&dev_info->disk.read_rnd_bw, &dev_info->disk.write_rnd_bw, n_threads);
@@ -3590,12 +3590,13 @@ void llama_profile_device(device_info * dev_info, struct llama_model * model, ll
     dev_info->gpu_props.description         = gpu_props.description;
     dev_info->gpu_props.memory_free         = round(gpu_props.memory_free  / (double)(1 << 30) * 100) / 100;
     dev_info->gpu_props.memory_total        = round(gpu_props.memory_total / (double)(1 << 30) * 100) / 100;
-    dev_info->gpu_props.read_bandwidth      = device_cuda_memory_bw(model);
+    dev_info->gpu_props.metal_read_vram_bw  = device_metal_read_vram_bw(model);
     dev_info->gpu_props.metal_flops_f32_f32 = device_metal_flops(model, GGML_TYPE_F32,  GGML_TYPE_F32);
     dev_info->gpu_props.metal_flops_f16_f32 = device_metal_flops(model, GGML_TYPE_F16,  GGML_TYPE_F32);
     dev_info->gpu_props.metal_flops_q4k_f32 = device_metal_flops(model, GGML_TYPE_Q4_K, GGML_TYPE_F32);
     dev_info->gpu_props.metal_flops_q6k_f32 = device_metal_flops(model, GGML_TYPE_Q6_K, GGML_TYPE_F32);
     dev_info->gpu_props.metal_flops_q80_f32 = device_metal_flops(model, GGML_TYPE_Q8_0, GGML_TYPE_F32);
+    dev_info->gpu_props.cuda_read_vram_bw   = device_cuda_read_vram_bw(model);
     dev_info->gpu_props.cuda_flops_f32_f32  = device_cuda_flops (model, GGML_TYPE_F32,  GGML_TYPE_F32);
     dev_info->gpu_props.cuda_flops_f16_f32  = device_cuda_flops (model, GGML_TYPE_F16,  GGML_TYPE_F32);
     dev_info->gpu_props.cuda_flops_q4k_f32  = device_cuda_flops (model, GGML_TYPE_Q4_K, GGML_TYPE_F32);
@@ -19623,6 +19624,7 @@ struct llama_context_params llama_context_default_params() {
         /*.n_world                     =*/ 1,
         /*.rank                        =*/ 0,
         /*.n_layer_window              =*/ {32},
+        /*.n_gpu_layers                =*/ 0,
         /*.unload                      =*/ false,
         /*.master_ip                   =*/ nullptr,
         /*.next_node_ip                =*/ nullptr,
@@ -20829,17 +20831,19 @@ uint64_t llama_model_compute_buf_size(const struct llama_model * model, const st
     const uint64_t n_output   = hparams.n_vocab * cparams.n_ubatch;
 
     // compute buffer size for input, each layer, and output
-    // const uint64_t n_buf_inp  = (n_inp_toks + n_inp_embd) * ggml_type_size(GGML_TYPE_F32);  // do not consider memory compression
-    const uint64_t n_buf_inp  = (n_inp_toks + n_inp_embd) * ggml_type_size(GGML_TYPE_F32) / 2; // consider compressed memory with ratio 2:1
+    const uint64_t n_buf_inp  = (n_inp_toks + n_inp_embd) * ggml_type_size(GGML_TYPE_F32);  // do not consider memory compression
     const uint64_t n_buf_act  = (n_bak_embd + n_inp_pos + n_kq_mask + 
                                  n_inp_out_ids + n_norm + n_qcur + n_kq
                                 ) * ggml_type_size(GGML_TYPE_F32);
-    // const uint64_t n_buf_out  = (n_out_embd + n_output) * ggml_type_size(GGML_TYPE_F32);    // do not consider memory compression
-    const uint64_t n_buf_out  = (n_out_embd + n_output) * ggml_type_size(GGML_TYPE_F32) / 2;   // consider compressed memory with ratio 2:1
+    const uint64_t n_buf_out  = (n_out_embd + n_output) * ggml_type_size(GGML_TYPE_F32);    // do not consider memory compression
 
     uint64_t n_buf_total = 0;
     if (cparams.rank == 0) {
-        n_buf_total = n_buf_inp + n_buf_act + n_buf_out;
+        if (compress_memory) {
+            n_buf_total = n_buf_inp / 2 + n_buf_act + n_buf_out / 2; // consider compressed memory with ratio 2:1
+        } else {
+            n_buf_total = n_buf_inp + n_buf_act + n_buf_out;
+        }
     } else {
         n_buf_total = n_buf_act;
     }
