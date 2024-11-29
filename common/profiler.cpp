@@ -985,19 +985,19 @@ void device_print_props(struct device_info * dev_info_set, int n, struct llama_m
     }
     LOG_INF("\n");
 
-    LOG_INF("| Physical Mem Available (GB)  ");
+    LOG_INF("| Physical Mem Available (GiB) ");
     for (int i = 0; i < n; ++i) {
         LOG_INF("| %-10.2f   ", dev_info_set[i].memory.available_physical);
     }
     LOG_INF("\n");
 
-    LOG_INF("| Swap Mem Total (GB)          ");
+    LOG_INF("| Swap Mem Total (GiB)         ");
     for (int i = 0; i < n; ++i) {
         LOG_INF("| %-10.2f   ", dev_info_set[i].memory.total_swap);
     }
     LOG_INF("\n");
 
-    LOG_INF("| Swap Mem Available (GB)      ");
+    LOG_INF("| Swap Mem Available (GiB)     ");
     for (int i = 0; i < n; ++i) {
         LOG_INF("| %-10.2f   ", dev_info_set[i].memory.available_swap);
     }
@@ -1087,13 +1087,13 @@ void device_print_props(struct device_info * dev_info_set, int n, struct llama_m
     }
     LOG_INF("\n");
 
-    LOG_INF("| GPU Mem Free (GB)            ");
+    LOG_INF("| GPU Mem Free (GiB)           ");
     for (int i = 0; i < n; ++i) {
         LOG_INF("| %-10.2f   ", dev_info_set[i].gpu_props.memory_free);
     }
     LOG_INF("\n");
 
-    LOG_INF("| GPU Mem Total (GB)           ");
+    LOG_INF("| GPU Mem Total (GiB)          ");
     for (int i = 0; i < n; ++i) {
         LOG_INF("| %-10.2f   ", dev_info_set[i].gpu_props.memory_total);
     }
