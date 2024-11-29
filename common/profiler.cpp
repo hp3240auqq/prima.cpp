@@ -43,26 +43,7 @@
 #include <thread>
 #include <random>
 #include <regex>
-#include <fcntl.h>
 
-static int disable_log() {
-    int stdout_fd = dup(STDOUT_FILENO); 
-    int null_fd = open("/dev/null", O_WRONLY);
-    if (null_fd == -1) {
-        LOG_INF("Failed to open /dev/null\n");
-        return -1;
-    }
-    dup2(null_fd, STDOUT_FILENO);
-    close(null_fd);
-    return stdout_fd;
-}
-
-static void enable_log(int stdout_fd) {
-    if (stdout_fd != -1) {
-        dup2(stdout_fd, STDOUT_FILENO);
-        close(stdout_fd);
-    }
-}
 
 const char * device_name() {
     static char device_name[256];
@@ -208,9 +189,7 @@ float device_cpu_flops(struct llama_model * model, enum ggml_type src0t, enum gg
 
 float device_metal_flops(struct llama_model * model, enum ggml_type src0t, enum ggml_type src1t) {
 #ifdef GGML_USE_METAL
-    int fd = disable_log();
     return device_flops(model, src0t, src1t, PROFILER_BACKEND_TYPE_METAL, 4);
-    enable_log(fd);
 #endif
 
     (void)model;
@@ -221,10 +200,7 @@ float device_metal_flops(struct llama_model * model, enum ggml_type src0t, enum 
 
 float device_cuda_flops(struct llama_model * model, enum ggml_type src0t, enum ggml_type src1t) {
 #ifdef GGML_USE_CUDA
-    int fd = disable_log();
-    float ret = device_flops(model, src0t, src1t, PROFILER_BACKEND_TYPE_CUDA, 4)
-    enable_log(fd);
-    return ret;
+    return device_flops(model, src0t, src1t, PROFILER_BACKEND_TYPE_CUDA, 4);
 #endif
 
     (void)model;
@@ -812,9 +788,7 @@ static float device_read_vram_bw(struct llama_model * model, enum profiler_backe
 
 float device_metal_read_vram_bw(struct llama_model * model) {
 #ifdef GGML_USE_METAL
-    int fd = disable_log();
     return device_read_vram_bw(model, PROFILER_BACKEND_TYPE_METAL);
-    enable_log(fd);
 #endif
 
     (void)model;
@@ -823,9 +797,7 @@ float device_metal_read_vram_bw(struct llama_model * model) {
 
 float device_cuda_read_vram_bw(struct llama_model * model) {
 #ifdef GGML_USE_CUDA
-    int fd = disable_log();
     return device_read_vram_bw(model, PROFILER_BACKEND_TYPE_CUDA);
-    enable_log(fd);
 #endif
 
     (void)model;
@@ -871,36 +843,45 @@ void device_get_props(struct llama_model * model, int device, struct ggml_backen
     ggml_backend_dev_get_props(dev, props);
 }
 
-static float device_compute_delay(struct device_info & dev_info, int n_layers) {
-    struct model_flops n_flops = dev_info.model_flops;
-    struct cpu_props cpu = dev_info.cpu_props;
+static float device_compute_delay(struct device_info & dev_info, int n_layers, const struct llama_context_params cparams) {
+    struct model_flops n_flops   = dev_info.model_flops;
+    struct cpu_props cpu         = dev_info.cpu_props;
+    const int n_gpu_layers       = cparams.n_gpu_layers;
+    double gpu_latency_per_layer = 0.0f;
+    double cpu_latency_per_layer = 0.0f;
 
-    double total_latency = 0.0f;
 #ifdef GGML_USE_CUDA
     struct gpu_props gpu = dev_info.gpu_props;
 
-    total_latency += (double)n_flops.layer_f32_f32  / (double)gpu.cuda_flops_f32_f32 / 1e9;
-    total_latency += (double)n_flops.layer_f16_f32  / (double)gpu.cuda_flops_f16_f32 / 1e9;
-    total_latency += (double)n_flops.layer_q4k_f32  / (double)gpu.cuda_flops_q4k_f32 / 1e9;
-    total_latency += (double)n_flops.layer_q6k_f32  / (double)gpu.cuda_flops_q6k_f32 / 1e9;
-    total_latency += (double)n_flops.layer_q80_f32  / (double)gpu.cuda_flops_q80_f32 / 1e9;
+    gpu_latency_per_layer += (double)n_flops.layer_f32_f32  / (double)gpu.cuda_flops_f32_f32 / 1e9;
+    gpu_latency_per_layer += (double)n_flops.layer_f16_f32  / (double)gpu.cuda_flops_f16_f32 / 1e9;
+    gpu_latency_per_layer += (double)n_flops.layer_q4k_f32  / (double)gpu.cuda_flops_q4k_f32 / 1e9;
+    gpu_latency_per_layer += (double)n_flops.layer_q6k_f32  / (double)gpu.cuda_flops_q6k_f32 / 1e9;
+    gpu_latency_per_layer += (double)n_flops.layer_q80_f32  / (double)gpu.cuda_flops_q80_f32 / 1e9;
 #elif GGML_USE_METAL
     struct gpu_props gpu = dev_info.gpu_props;
 
-    total_latency += (double)n_flops.layer_f32_f32  / (double)gpu.metal_flops_f32_f32 / 1e9;
-    total_latency += (double)n_flops.layer_f16_f32  / (double)gpu.metal_flops_f16_f32 / 1e9;
-    total_latency += (double)n_flops.layer_q4k_f32  / (double)gpu.metal_flops_q4k_f32 / 1e9;
-    total_latency += (double)n_flops.layer_q6k_f32  / (double)gpu.metal_flops_q6k_f32 / 1e9;
-    total_latency += (double)n_flops.layer_q80_f32  / (double)gpu.metal_flops_q80_f32 / 1e9;
-#else
-    total_latency += (double)n_flops.layer_f32_f32  / (double)cpu.flops_f32_f32 / 1e9;
-    total_latency += (double)n_flops.layer_f16_f32  / (double)cpu.flops_f16_f32 / 1e9;
-    total_latency += (double)n_flops.layer_q4k_f32  / (double)cpu.flops_q4k_f32 / 1e9;
-    total_latency += (double)n_flops.layer_q6k_f32  / (double)cpu.flops_q6k_f32 / 1e9;
-    total_latency += (double)n_flops.layer_q80_f32  / (double)cpu.flops_q80_f32 / 1e9;
+    gpu_latency_per_layer += (double)n_flops.layer_f32_f32  / (double)gpu.metal_flops_f32_f32 / 1e9;
+    gpu_latency_per_layer += (double)n_flops.layer_f16_f32  / (double)gpu.metal_flops_f16_f32 / 1e9;
+    gpu_latency_per_layer += (double)n_flops.layer_q4k_f32  / (double)gpu.metal_flops_q4k_f32 / 1e9;
+    gpu_latency_per_layer += (double)n_flops.layer_q6k_f32  / (double)gpu.metal_flops_q6k_f32 / 1e9;
+    gpu_latency_per_layer += (double)n_flops.layer_q80_f32  / (double)gpu.metal_flops_q80_f32 / 1e9;
 #endif
 
-    total_latency *= n_layers;
+    cpu_latency_per_layer += (double)n_flops.layer_f32_f32  / (double)cpu.flops_f32_f32 / 1e9;
+    cpu_latency_per_layer += (double)n_flops.layer_f16_f32  / (double)cpu.flops_f16_f32 / 1e9;
+    cpu_latency_per_layer += (double)n_flops.layer_q4k_f32  / (double)cpu.flops_q4k_f32 / 1e9;
+    cpu_latency_per_layer += (double)n_flops.layer_q6k_f32  / (double)cpu.flops_q6k_f32 / 1e9;
+    cpu_latency_per_layer += (double)n_flops.layer_q80_f32  / (double)cpu.flops_q80_f32 / 1e9;
+
+    double total_latency = 0.0f;
+    
+#if defined(GGML_USE_METAL) || defined(GGML_USE_CUDA)
+    total_latency += gpu_latency_per_layer * n_gpu_layers;
+    total_latency += cpu_latency_per_layer * (n_layers - n_gpu_layers);
+#else
+    total_latency *= cpu_latency_per_layer * n_layers;
+#endif
 
     total_latency += (double)n_flops.output_f32_f32 / (double)cpu.flops_f32_f32 / 1e9;
     total_latency += (double)n_flops.output_f16_f32 / (double)cpu.flops_f16_f32 / 1e9;
@@ -947,33 +928,44 @@ static float device_disk_access_delay(struct device_info & dev_info, struct llam
     auto n_params         = dev_info.model_params;
     int n_layers          = llama_model_n_layers(model);
     int n_gpu_layers      = cparams.n_gpu_layers;
-    double kv_size_gb     = static_cast<double>(llama_model_kvcache_size(model, cparams)) / 1e9; // convert to GB
-    double compute_buf_gb = static_cast<double>(llama_model_compute_buf_size(model, cparams, false)) / 1e9; // convert to GB
 
-    int64_t total_bytes = 0;
-    total_bytes += n_params.layer_f32 * 4 +
+#if defined(GGML_USE_METAL) || defined(GGML_USE_CUDA)
+    double cpu_kv_size_gb     = 0.0f;
+    double cpu_compute_buf_gb = 0.0f;
+#else
+    double cpu_kv_size_gb     = static_cast<double>(llama_model_kvcache_size(model, cparams)) / 1e9; // convert to GB
+    double cpu_compute_buf_gb = static_cast<double>(llama_model_compute_buf_size(model, cparams, false)) / 1e9; // convert to GB
+#endif
+
+    int64_t cpu_total_bytes =
+                   n_params.layer_f32 * 4 +
                    n_params.layer_f16 * 2 +
                    n_params.layer_q4k / 2 +
                    n_params.layer_q6k * 3 / 8 +
                    n_params.layer_q80;
 
-    total_bytes *= n_layers;
+#if defined(GGML_USE_METAL) || defined(GGML_USE_CUDA)
+    cpu_total_bytes *= (n_layers - n_gpu_layers);
+#else
+    cpu_total_bytes *= n_layers;
+#endif
 
-    total_bytes += n_params.output_f32 * 4 +
+    cpu_total_bytes += (
+                   n_params.output_f32 * 4 +
                    n_params.output_f16 * 2 +
                    n_params.output_q4k / 2 +
                    n_params.output_q6k * 3 / 8 +
-                   n_params.output_q80;
+                   n_params.output_q80);
     
-    float total_gbytes = (double)total_bytes / 1e9; // convert to GB
-    float mem_avail    = dev_info.memory.available_physical * 1024.0f * 1024.0f * 1024.0f / 1e9; // convert to GB
-          mem_avail   -= static_cast<float>(kv_size_gb);
+    float cpu_total_gbytes = (double)cpu_total_bytes / 1e9; // convert to GB
+    float cpu_mem_avail = dev_info.memory.available_physical * 1024.0f * 1024.0f * 1024.0f / 1e9; // convert to GB
+          cpu_mem_avail -= static_cast<float>(cpu_kv_size_gb);
     
-    if (mem_avail - static_cast<float>(compute_buf_gb) < total_gbytes) {
+    if (cpu_mem_avail - static_cast<float>(cpu_compute_buf_gb) < cpu_total_gbytes) {
         double compressed_compute_buf_gb = static_cast<double>(llama_model_compute_buf_size(model, cparams, true)) / 1e9; // convert to GB
-        mem_avail -= static_cast<float>(compressed_compute_buf_gb);
+        cpu_mem_avail -= static_cast<float>(compressed_compute_buf_gb);
     } else {
-        mem_avail -= static_cast<float>(compute_buf_gb);
+        cpu_mem_avail -= static_cast<float>(cpu_compute_buf_gb);
     }
           
 #ifdef __linux__
@@ -981,7 +973,7 @@ static float device_disk_access_delay(struct device_info & dev_info, struct llam
 #else
     float disk_read_bw = dev_info.disk.read_rnd_bw; // GB/s
 #endif
-    return std::max(0.0, static_cast<double>(total_gbytes - mem_avail) / disk_read_bw * 1000); // convert to ms
+    return std::max(0.0, static_cast<double>(cpu_total_gbytes - cpu_mem_avail) / disk_read_bw * 1000); // convert to ms
 }
 
 void device_print_props(struct device_info * dev_info_set, int n, struct llama_model * model, const struct llama_context_params cparams) {
@@ -1342,10 +1334,8 @@ void device_print_props(struct device_info * dev_info_set, int n, struct llama_m
     // todo: calculate for each device, not only master
     float latency = 0.0f;
     int n_layers  = llama_model_n_layers(model);
-    latency += device_compute_delay(dev_info_set[0], n_layers);
-    LOG_INF("latency: %.2f\n", latency);
+    latency += device_compute_delay(dev_info_set[0], n_layers, cparams);
     latency += device_memory_access_delay(dev_info_set[0], n_layers);
-    LOG_INF("latency: %.2f\n", latency);
     latency += device_disk_access_delay(dev_info_set[0], model, cparams); // if physical memory is not enough, some tensor weights will be released from memory and reloaded by mmap later
     
     LOG_INF("| Token latency (ms)           ");
