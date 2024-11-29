@@ -880,7 +880,7 @@ static float device_compute_delay(struct device_info & dev_info, int n_layers, c
     total_latency += gpu_latency_per_layer * n_gpu_layers;
     total_latency += cpu_latency_per_layer * (n_layers - n_gpu_layers);
 #else
-    total_latency *= cpu_latency_per_layer * n_layers;
+    total_latency += cpu_latency_per_layer * n_layers;
 #endif
 
     total_latency += (double)n_flops.output_f32_f32 / (double)cpu.flops_f32_f32 / 1e9;
@@ -900,8 +900,8 @@ static float device_compute_delay(struct device_info & dev_info, int n_layers, c
 static float device_memory_access_delay(struct device_info & dev_info, int n_layers) {
     struct model_params n_params = dev_info.model_params;
 
-    int64_t total_bytes = 0;
-    total_bytes += n_params.layer_f32 * 4 +
+    int64_t total_bytes = 
+                   n_params.layer_f32 * 4 +
                    n_params.layer_f16 * 2 +
                    n_params.layer_q4k / 2 +
                    n_params.layer_q6k * 3 / 8 +
@@ -929,13 +929,21 @@ static float device_disk_access_delay(struct device_info & dev_info, struct llam
     int n_layers          = llama_model_n_layers(model);
     int n_gpu_layers      = cparams.n_gpu_layers;
 
+    uint64_t cpu_kv_size;
+    uint64_t gpu_kv_size;
+    uint64_t cpu_compute_buf;
+    uint64_t gpu_compute_buf;
+
 #if defined(GGML_USE_METAL) || defined(GGML_USE_CUDA)
-    double cpu_kv_size_gb     = 0.0f;
-    double cpu_compute_buf_gb = 0.0f;
+    llama_model_kvcache_size(&cpu_kv_size, &gpu_kv_size, model, cparams, true);
+    llama_model_compute_buf_size(&cpu_compute_buf, &gpu_compute_buf, model, cparams, true);
 #else
-    double cpu_kv_size_gb     = static_cast<double>(llama_model_kvcache_size(model, cparams)) / 1e9; // convert to GB
-    double cpu_compute_buf_gb = static_cast<double>(llama_model_compute_buf_size(model, cparams, false)) / 1e9; // convert to GB
+    llama_model_kvcache_size(&cpu_kv_size, &gpu_kv_size, model, cparams, false);
+    llama_model_compute_buf_size(&cpu_compute_buf, &gpu_compute_buf, model, cparams, false);
 #endif
+
+    double cpu_kv_size_gb     = static_cast<double>(cpu_kv_size) / 1e9;     // convert to GB
+    double cpu_compute_buf_gb = static_cast<double>(cpu_compute_buf) / 1e9; // convert to GB
 
     int64_t cpu_total_bytes =
                    n_params.layer_f32 * 4 +
@@ -947,6 +955,7 @@ static float device_disk_access_delay(struct device_info & dev_info, struct llam
 #if defined(GGML_USE_METAL) || defined(GGML_USE_CUDA)
     cpu_total_bytes *= (n_layers - n_gpu_layers);
 #else
+    (void)n_gpu_layers;
     cpu_total_bytes *= n_layers;
 #endif
 
@@ -960,13 +969,7 @@ static float device_disk_access_delay(struct device_info & dev_info, struct llam
     float cpu_total_gbytes = (double)cpu_total_bytes / 1e9; // convert to GB
     float cpu_mem_avail = dev_info.memory.available_physical * 1024.0f * 1024.0f * 1024.0f / 1e9; // convert to GB
           cpu_mem_avail -= static_cast<float>(cpu_kv_size_gb);
-    
-    if (cpu_mem_avail - static_cast<float>(cpu_compute_buf_gb) < cpu_total_gbytes) {
-        double compressed_compute_buf_gb = static_cast<double>(llama_model_compute_buf_size(model, cparams, true)) / 1e9; // convert to GB
-        cpu_mem_avail -= static_cast<float>(compressed_compute_buf_gb);
-    } else {
-        cpu_mem_avail -= static_cast<float>(cpu_compute_buf_gb);
-    }
+          cpu_mem_avail -= static_cast<float>(cpu_compute_buf_gb);
           
 #ifdef __linux__
     float disk_read_bw = dev_info.disk.read_seq_bw; // GB/s

@@ -525,10 +525,20 @@ extern "C" {
     LLAMA_API uint64_t llama_model_n_params(const struct llama_model * model);
 
     // Return the size of compute buffer size, including input tensors and activations
-    LLAMA_API uint64_t llama_model_compute_buf_size(const struct llama_model * model, const struct llama_context_params cparams, bool compress_memory);
+    LLAMA_API void llama_model_compute_buf_size(
+                                  uint64_t * cpu_buf,
+                                  uint64_t * gpu_buf,
+                  const struct llama_model * model, 
+         const struct llama_context_params   cparams, 
+                                      bool   use_gpu);
 
     // Return the size of KV cache in the model
-    LLAMA_API uint64_t llama_model_kvcache_size(const struct llama_model * model, const struct llama_context_params cparams);
+    LLAMA_API void llama_model_kvcache_size(
+                                  uint64_t * cpu_cache, 
+                                  uint64_t * gpu_cache, 
+                  const struct llama_model * model, 
+         const struct llama_context_params   cparams,
+                                      bool   use_gpu);
 
     // Return the total number of float operations in the model
     LLAMA_API void llama_model_n_flops(
