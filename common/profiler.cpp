@@ -517,7 +517,7 @@ static size_t get_default_readahead_size() {
         file.close();
         return read_ahead_kb * 1024; // convert to bytes
     } else {
-        std::cerr << "Unable to open: " << sysfs_path << "\n";
+        LOG_INF("Unable to open: %s\n", sysfs_path.c_str());
         return 0;
     }
 #elif __APPLE__
@@ -880,6 +880,8 @@ static float device_compute_delay(struct device_info & dev_info, int n_layers, c
     total_latency += gpu_latency_per_layer * n_gpu_layers;
     total_latency += cpu_latency_per_layer * (n_layers - n_gpu_layers);
 #else
+    (void)n_gpu_layers;
+    (void)gpu_latency_per_layer;
     total_latency += cpu_latency_per_layer * n_layers;
 #endif
 
@@ -897,30 +899,40 @@ static float device_compute_delay(struct device_info & dev_info, int n_layers, c
 }
 
 // estimate the memory access delay, except for the input embedding because it has been considered in n_flops.inp_embd_ms
-static float device_memory_access_delay(struct device_info & dev_info, int n_layers) {
+static float device_memory_access_delay(struct device_info & dev_info, const struct llama_context_params cparams, int n_layers) {
     struct model_params n_params = dev_info.model_params;
 
-    int64_t total_bytes = 
+    int64_t layer_bytes = 
                    n_params.layer_f32 * 4 +
                    n_params.layer_f16 * 2 +
                    n_params.layer_q4k / 2 +
                    n_params.layer_q6k * 3 / 8 +
                    n_params.layer_q80;
 
-    total_bytes *= n_layers;
-
-    total_bytes += n_params.output_f32 * 4 +
+    int64_t output_bytes = 
+                   n_params.output_f32 * 4 +
                    n_params.output_f16 * 2 +
                    n_params.output_q4k / 2 +
                    n_params.output_q6k * 3 / 8 +
                    n_params.output_q80;
 
+#if defined(GGML_USE_CUDA) || defined(GGML_USE_METAL)
+    int64_t vram_bytes = layer_bytes * cparams.n_gpu_layers;
+    int64_t ram_bytes  = layer_bytes * (n_layers - cparams.n_gpu_layers) + output_bytes;
+
 #ifdef GGML_USE_CUDA
-    return (double)total_bytes / 1e6 / dev_info.gpu_props.cuda_read_vram_bw; // ms
+    double vram_access_delay = (double)(vram_bytes) / 1e6 / dev_info.gpu_props.cuda_read_vram_bw;
 #elif GGML_USE_METAL
-    return (double)total_bytes / 1e6 / dev_info.gpu_props.metal_read_vram_bw; // ms
+    double vram_access_delay = (double)(vram_bytes) / 1e6 / dev_info.gpu_props.metal_read_vram_bw;
+#endif
+
+    double ram_access_delay  = (double)(ram_bytes)  / 1e6 / dev_info.memory.cpu_read_ram_bw;
+    return static_cast<float>(vram_access_delay + ram_access_delay); // ms
+
 #else
-    return (double)total_bytes / 1e6 / dev_info.memory.cpu_read_ram_bw; // ms
+    int64_t ram_bytes = layer_bytes * n_layers;
+    double ram_access_delay = (double)(ram_bytes) / 1e6 / dev_info.memory.cpu_read_ram_bw;
+    return static_cast<float>(ram_access_delay); // ms
 #endif
 }
 
@@ -1336,10 +1348,10 @@ void device_print_props(struct device_info * dev_info_set, int n, struct llama_m
 
     // todo: calculate for each device, not only master
     float latency = 0.0f;
-    int n_layers  = llama_model_n_layers(model);
-    latency += device_compute_delay(dev_info_set[0], n_layers, cparams);
-    latency += device_memory_access_delay(dev_info_set[0], n_layers);
-    latency += device_disk_access_delay(dev_info_set[0], model, cparams); // if physical memory is not enough, some tensor weights will be released from memory and reloaded by mmap later
+    int n_layers  = llama_model_n_layers (model);
+    latency += device_compute_delay      (dev_info_set[0], n_layers, cparams);
+    latency += device_memory_access_delay(dev_info_set[0], cparams,  n_layers);
+    latency += device_disk_access_delay  (dev_info_set[0], model,    cparams); // if physical memory is not enough, some tensor weights will be released from memory and reloaded by mmap later
     
     LOG_INF("| Token latency (ms)           ");
     LOG_INF("| %-10.2f   ", latency);
