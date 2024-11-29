@@ -556,6 +556,7 @@ time_based=1
 runtime=2
 size=500M
 group_reporting=1
+cpus_allowed_policy=shared
 
 [read-job]
 rw=%s
@@ -901,6 +902,7 @@ static float device_compute_delay(struct device_info & dev_info, int n_layers, c
 // estimate the memory access delay, except for the input embedding because it has been considered in n_flops.inp_embd_ms
 static float device_memory_access_delay(struct device_info & dev_info, const struct llama_context_params cparams, int n_layers) {
     struct model_params n_params = dev_info.model_params;
+    int n_gpu_layers = cparams.n_gpu_layers;
 
     int64_t layer_bytes = 
                    n_params.layer_f32 * 4 +
@@ -917,8 +919,8 @@ static float device_memory_access_delay(struct device_info & dev_info, const str
                    n_params.output_q80;
 
 #if defined(GGML_USE_CUDA) || defined(GGML_USE_METAL)
-    int64_t vram_bytes = layer_bytes * cparams.n_gpu_layers;
-    int64_t ram_bytes  = layer_bytes * (n_layers - cparams.n_gpu_layers) + output_bytes;
+    int64_t vram_bytes = layer_bytes * n_gpu_layers;
+    int64_t ram_bytes  = layer_bytes * (n_layers - n_gpu_layers) + output_bytes;
 
 #ifdef GGML_USE_CUDA
     double vram_access_delay = (double)(vram_bytes) / 1e6 / dev_info.gpu_props.cuda_read_vram_bw;
@@ -930,7 +932,8 @@ static float device_memory_access_delay(struct device_info & dev_info, const str
     return static_cast<float>(vram_access_delay + ram_access_delay); // ms
 
 #else
-    int64_t ram_bytes = layer_bytes * n_layers;
+    (void)n_gpu_layers;
+    int64_t ram_bytes = layer_bytes * n_layers + output_bytes;
     double ram_access_delay = (double)(ram_bytes) / 1e6 / dev_info.memory.cpu_read_ram_bw;
     return static_cast<float>(ram_access_delay); // ms
 #endif
