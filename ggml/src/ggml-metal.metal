@@ -3275,6 +3275,38 @@ kernel void kernel_cpy_f32_iq4_nl(
     }
 }
 
+kernel void kernel_read_vram(
+    device const float * dst,
+    constant   int64_t & ne0,
+    constant   int64_t & ne1,
+    constant   int64_t & ne2,
+    constant   int64_t & ne3,
+    constant  uint64_t & nb0,
+    constant  uint64_t & nb1,
+    constant  uint64_t & nb2,
+    constant  uint64_t & nb3,
+    uint3 tgpig [[threadgroup_position_in_grid]],
+    uint3 tpitg [[thread_position_in_threadgroup]],
+    uint3 ntg [[threads_per_threadgroup]]
+) {
+    const int64_t i03 = tgpig[2];
+    const int64_t i02 = tgpig[1];
+    const int64_t i01 = tgpig[0];
+
+    const int64_t n  = i03 * ne2 * ne1 * ne0 + i02 * ne1 * ne0 + i01 * ne0;
+
+    const int64_t i3 = n / (ne2 * ne1 * ne0);
+    const int64_t i2 = (n - i3 * ne2 * ne1 * ne0) / (ne1 * ne0);
+    const int64_t i1 = (n - i3 * ne2 * ne1 * ne0 - i2 * ne1 * ne0) / ne0;
+    const int64_t i0 = n - i3 * ne2 * ne1 * ne0 - i2 * ne1 * ne0 - i1 * ne0;
+
+    device const float * dst_data = (device const float *)((device const char *)dst + i3 * nb3 + i2 * nb2 + i1 * nb1 + i0 * nb0);
+
+    for (int64_t i00 = tpitg.x; i00 < ne0; i00 += ntg.x) {
+        volatile float value = dst_data[i00];
+    }
+}
+
 kernel void kernel_concat(
     device  const char * src0,
     device  const char * src1,
