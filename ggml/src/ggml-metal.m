@@ -3009,24 +3009,24 @@ static void ggml_metal_encode_node(
                 int nth = MIN(1024, ne00/ggml_blck_size(dst->type));
 
                 id<MTLCommandBuffer> commandBuffer = ctx->command_buffers[idx];
-                id<MTLComputeCommandEncoder> encoder = [commandBuffer computeCommandEncoder];
+                id<MTLComputeCommandEncoder> encoder_read_only = [commandBuffer computeCommandEncoder];
 
                 id<MTLComputePipelineState> pipeline = ctx->kernels[GGML_METAL_KERNEL_TYPE_READ_VRAM].pipeline;
-                [encoder setComputePipelineState:pipeline];
+                [encoder_read_only setComputePipelineState:pipeline];
 
-                [encoder setBuffer:id_dst offset:offs_dst atIndex:0];
-                [encoder setBytes:&ne0 length:sizeof(int64_t) atIndex:1];
-                [encoder setBytes:&ne1 length:sizeof(int64_t) atIndex:2];
-                [encoder setBytes:&ne2 length:sizeof(int64_t) atIndex:3];
-                [encoder setBytes:&ne3 length:sizeof(int64_t) atIndex:4];
-                [encoder setBytes:&nb0 length:sizeof(uint64_t) atIndex:5];
-                [encoder setBytes:&nb1 length:sizeof(uint64_t) atIndex:6];
-                [encoder setBytes:&nb2 length:sizeof(uint64_t) atIndex:7];
-                [encoder setBytes:&nb3 length:sizeof(uint64_t) atIndex:8];
+                [encoder_read_only setBuffer:id_dst offset:offs_dst atIndex:0];
+                [encoder_read_only setBytes:&ne0 length:sizeof(int64_t) atIndex:1];
+                [encoder_read_only setBytes:&ne1 length:sizeof(int64_t) atIndex:2];
+                [encoder_read_only setBytes:&ne2 length:sizeof(int64_t) atIndex:3];
+                [encoder_read_only setBytes:&ne3 length:sizeof(int64_t) atIndex:4];
+                [encoder_read_only setBytes:&nb0 length:sizeof(uint64_t) atIndex:5];
+                [encoder_read_only setBytes:&nb1 length:sizeof(uint64_t) atIndex:6];
+                [encoder_read_only setBytes:&nb2 length:sizeof(uint64_t) atIndex:7];
+                [encoder_read_only setBytes:&nb3 length:sizeof(uint64_t) atIndex:8];
 
-                [encoder dispatchThreadgroups:MTLSizeMake(ne01, ne02, ne03) threadsPerThreadgroup:MTLSizeMake(nth, 1, 1)];
+                [encoder_read_only dispatchThreadgroups:MTLSizeMake(ne01, ne02, ne03) threadsPerThreadgroup:MTLSizeMake(nth, 1, 1)];
 
-                [encoder endEncoding];
+                [encoder_read_only endEncoding];
                 [commandBuffer commit];
                 [commandBuffer waitUntilCompleted];
             } break;
