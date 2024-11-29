@@ -272,6 +272,7 @@ enum ggml_metal_kernel_type {
     GGML_METAL_KERNEL_TYPE_SIN,
     GGML_METAL_KERNEL_TYPE_COS,
     GGML_METAL_KERNEL_TYPE_SUM_ROWS,
+    GGML_METAL_KERNEL_TYPE_READ_VRAM,
 
     GGML_METAL_KERNEL_TYPE_COUNT
 };
@@ -716,6 +717,7 @@ static struct ggml_backend_metal_context * ggml_metal_init(ggml_backend_dev_t de
         GGML_METAL_ADD_KERNEL(GGML_METAL_KERNEL_TYPE_SIN,                           sin,                            true);
         GGML_METAL_ADD_KERNEL(GGML_METAL_KERNEL_TYPE_COS,                           cos,                            true);
         GGML_METAL_ADD_KERNEL(GGML_METAL_KERNEL_TYPE_SUM_ROWS,                      sum_rows,                       true);
+        GGML_METAL_ADD_KERNEL(GGML_METAL_KERNEL_TYPE_READ_VRAM,                     read_vram,                      true);
     }
 
     [metal_library release];
@@ -827,6 +829,7 @@ static bool ggml_metal_supports_op(const struct ggml_backend_metal_device_contex
         case GGML_OP_REPEAT:
         case GGML_OP_SCALE:
         case GGML_OP_CLAMP:
+        case GGML_OP_READ:
             return true;
         case GGML_OP_SQR:
         case GGML_OP_SQRT:
@@ -940,12 +943,9 @@ static void ggml_metal_encode_node(
         case GGML_OP_VIEW:
         case GGML_OP_TRANSPOSE:
         case GGML_OP_PERMUTE:
-            {
-                // noop -> next node
-            } return;
+            return;
         default:
-            {
-            } break;
+            break;
     }
 
     if (!ggml_metal_supports_op(ctx_dev, dst)) {
@@ -3001,7 +3001,36 @@ static void ggml_metal_encode_node(
 
                 [encoder dispatchThreadgroups:MTLSizeMake(ne01, ne02, ne03) threadsPerThreadgroup:MTLSizeMake(nth, 1, 1)];
             } break;
-       default:
+        case GGML_OP_READ:
+            {
+                GGML_ASSERT(dst != NULL);
+                GGML_ASSERT(id_dst != nil);
+
+                int nth = MIN(1024, ne00/ggml_blck_size(dst->type));
+
+                id<MTLCommandBuffer> commandBuffer = ctx->command_buffers[idx];
+                id<MTLComputeCommandEncoder> encoder = [commandBuffer computeCommandEncoder];
+
+                id<MTLComputePipelineState> pipeline = ctx->kernels[GGML_METAL_KERNEL_TYPE_READ_VRAM].pipeline;
+                [encoder setComputePipelineState:pipeline];
+
+                [encoder setBuffer:id_dst offset:offs_dst atIndex:0];
+                [encoder setBytes:&ne0 length:sizeof(int64_t) atIndex:1];
+                [encoder setBytes:&ne1 length:sizeof(int64_t) atIndex:2];
+                [encoder setBytes:&ne2 length:sizeof(int64_t) atIndex:3];
+                [encoder setBytes:&ne3 length:sizeof(int64_t) atIndex:4];
+                [encoder setBytes:&nb0 length:sizeof(uint64_t) atIndex:5];
+                [encoder setBytes:&nb1 length:sizeof(uint64_t) atIndex:6];
+                [encoder setBytes:&nb2 length:sizeof(uint64_t) atIndex:7];
+                [encoder setBytes:&nb3 length:sizeof(uint64_t) atIndex:8];
+
+                [encoder dispatchThreadgroups:MTLSizeMake(ne01, ne02, ne03) threadsPerThreadgroup:MTLSizeMake(nth, 1, 1)];
+
+                [encoder endEncoding];
+                [commandBuffer commit];
+                [commandBuffer waitUntilCompleted];
+            } break;
+        default:
             {
                 GGML_LOG_ERROR("%s: error: node %3d, op = %8s not implemented\n", __func__, idx, ggml_op_name(dst->op));
                 GGML_ABORT("fatal error");
