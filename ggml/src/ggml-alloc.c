@@ -593,7 +593,7 @@ static void ggml_gallocr_alloc_graph_impl(ggml_gallocr_t galloc, struct ggml_cgr
         }
 
         if (node->flags & GGML_TENSOR_FLAG_INPUT) {
-            ggml_gallocr_allocate_node(galloc, graph->nodes[i], get_node_buffer_id(node_buffer_ids, i));
+            ggml_gallocr_allocate_node(galloc, node, get_node_buffer_id(node_buffer_ids, i));
         }
 
         for (int j = 0; j < GGML_MAX_SRC; j++) {
