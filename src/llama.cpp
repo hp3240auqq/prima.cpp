@@ -3555,11 +3555,11 @@ void llama_perf_context_sync(struct llama_context * ctx, const struct llama_mode
 void llama_profile_device(device_info * dev_info, struct llama_model * model, llama_model_loader * ml, int n_threads) {
     dev_info->device_name               = device_name();
     dev_info->cpu_props.cores           = device_cpu_cores();
-    // dev_info->cpu_props.flops_f32_f32   = device_cpu_flops(model, GGML_TYPE_F32,  GGML_TYPE_F32, n_threads);
-    // dev_info->cpu_props.flops_f16_f32   = device_cpu_flops(model, GGML_TYPE_F16,  GGML_TYPE_F32, n_threads);
-    // dev_info->cpu_props.flops_q4k_f32   = device_cpu_flops(model, GGML_TYPE_Q4_K, GGML_TYPE_F32, n_threads);
-    // dev_info->cpu_props.flops_q6k_f32   = device_cpu_flops(model, GGML_TYPE_Q6_K, GGML_TYPE_F32, n_threads);
-    // dev_info->cpu_props.flops_q80_f32   = device_cpu_flops(model, GGML_TYPE_Q8_0, GGML_TYPE_F32, n_threads);
+    dev_info->cpu_props.flops_f32_f32   = device_cpu_flops(model, GGML_TYPE_F32,  GGML_TYPE_F32, n_threads);
+    dev_info->cpu_props.flops_f16_f32   = device_cpu_flops(model, GGML_TYPE_F16,  GGML_TYPE_F32, n_threads);
+    dev_info->cpu_props.flops_q4k_f32   = device_cpu_flops(model, GGML_TYPE_Q4_K, GGML_TYPE_F32, n_threads);
+    dev_info->cpu_props.flops_q6k_f32   = device_cpu_flops(model, GGML_TYPE_Q6_K, GGML_TYPE_F32, n_threads);
+    dev_info->cpu_props.flops_q80_f32   = device_cpu_flops(model, GGML_TYPE_Q8_0, GGML_TYPE_F32, n_threads);
 
     dev_info->memory.total_physical     = round(device_physical_memory(false) / (double)(1 << 30) * 100) / 100;
     dev_info->memory.available_physical = round(device_physical_memory(true)  / (double)(1 << 30) * 100) / 100;
