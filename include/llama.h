@@ -523,6 +523,9 @@ extern "C" {
     // Returns the total number of parameters in the model
     LLAMA_API uint64_t llama_model_n_params(const struct llama_model * model);
 
+    // Return the size of compute buffer size, including input tensors and activations
+    LLAMA_API uint64_t llama_model_compute_buf_size(const struct llama_model * model, const struct llama_context_params cparams, bool compress_memory);
+
     // Return the size of KV cache in the model
     LLAMA_API uint64_t llama_model_kvcache_size(const struct llama_model * model, const struct llama_context_params cparams);
 

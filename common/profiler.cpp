@@ -877,9 +877,10 @@ static float device_memory_access_delay(struct device_info & dev_info, int n_lay
 }
 
 static float device_disk_access_delay(struct device_info & dev_info, struct llama_model * model, const struct llama_context_params cparams) {
-    auto n_params     = dev_info.model_params;
-    int n_layers      = llama_model_n_layers(model);
-    double kv_size_gb = static_cast<double>(llama_model_kvcache_size(model, cparams)) / 1e9; // convert to GB
+    auto n_params         = dev_info.model_params;
+    int n_layers          = llama_model_n_layers(model);
+    double kv_size_gb     = static_cast<double>(llama_model_kvcache_size(model, cparams)) / 1e9; // convert to GB
+    double compute_buf_gb = static_cast<double>(llama_model_compute_buf_size(model, cparams, false)) / 1e9; // convert to GB
 
     int64_t total_bytes = 0;
     total_bytes += n_params.layer_f32 * 4 +
@@ -899,7 +900,14 @@ static float device_disk_access_delay(struct device_info & dev_info, struct llam
     float total_gbytes = (double)total_bytes / 1e9; // convert to GB
     float mem_avail    = dev_info.memory.available_physical * 1024.0f * 1024.0f * 1024.0f / 1e9; // convert to GB
           mem_avail   -= static_cast<float>(kv_size_gb);
-    // todo: consider activations which also consumes the available memory
+    
+    if (mem_avail - static_cast<float>(compute_buf_gb) < total_gbytes) {
+        double compressed_compute_buf_gb = static_cast<double>(llama_model_compute_buf_size(model, cparams, true)) / 1e9; // convert to GB
+        mem_avail -= static_cast<float>(compressed_compute_buf_gb);
+    } else {
+        mem_avail -= static_cast<float>(compute_buf_gb);
+    }
+          
 #ifdef __linux__
     float disk_read_bw = dev_info.disk.read_seq_bw; // GB/s
 #else
