@@ -556,7 +556,6 @@ time_based=1
 runtime=2
 size=500M
 group_reporting=1
-cpus_allowed_policy=shared
 
 [read-job]
 rw=%s
