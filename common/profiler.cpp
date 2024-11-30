@@ -328,7 +328,28 @@ float device_inp_embd_delay(struct llama_model * model, enum ggml_type src0t, in
     return (float)elapsed_ms;
 }
 
-uint64_t device_physical_memory(bool available) {
+static bool device_is_docker_container() {
+#if defined(__linux__)
+    struct stat buffer;
+    if (stat("/.dockerenv", &buffer) == 0) {
+        return true;
+    }
+
+    std::ifstream cgroup_file("/proc/1/cgroup");
+    std::string line;
+    while (std::getline(cgroup_file, line)) {
+        if (line.find("docker") != std::string::npos || 
+            line.find("containerd") != std::string::npos) {
+            return true;
+        }
+    }
+    cgroup_file.close();
+#endif
+
+    return false;
+}
+
+static uint64_t device_host_physical_memory(bool available) {
     uint64_t memory = 0;
 
 #if defined(_WIN32) || defined(_WIN64)
@@ -388,7 +409,36 @@ uint64_t device_physical_memory(bool available) {
     return memory;
 }
 
-uint64_t device_swap_memory(bool available) {
+static uint64_t device_cgroup_physical_memory(bool available) {
+    const char * file_path = available
+                                ? "/sys/fs/cgroup/memory/memory.usage_in_bytes" 
+                                : "/sys/fs/cgroup/memory/memory.limit_in_bytes";
+    uint64_t memory_info = 0;
+    std::ifstream file(file_path);
+    if (file.is_open()) {
+        std::string line;
+        if (std::getline(file, line)) {
+            memory_info = std::stoull(line);
+        }
+        file.close();
+    }
+    return memory_info;
+}
+
+uint64_t device_physical_memory(bool available) {
+    if (device_is_docker_container()) {
+        uint64_t memory_total = device_cgroup_physical_memory(false);
+        if (available) {
+            uint64_t memory_usage = device_cgroup_physical_memory(true);
+            return memory_total - memory_usage;
+        }
+        return memory_total;
+    } else {
+        return device_host_physical_memory(available);
+    }
+}
+
+static uint64_t device_host_swap_memory(bool available) {
     uint64_t swap_memory = 0;
 
 #if defined(_WIN32) || defined(_WIN64)
@@ -447,6 +497,33 @@ uint64_t device_swap_memory(bool available) {
 #endif
 
     return swap_memory;
+}
+
+static uint64_t device_cgroup_swap_memory(bool available) {
+    if (available) return 0;
+    
+#if defined(__linux__)
+    uint64_t swap_limit = 0;
+    std::ifstream mem_swap_file("/sys/fs/cgroup/memory/memory.memsw.limit_in_bytes");
+    if (mem_swap_file.is_open()) {
+        std::string line;
+        if (std::getline(mem_swap_file, line)) {
+            swap_limit = std::stoull(line);
+        }
+        mem_swap_file.close();
+    }
+    return swap_limit;
+#else
+    return 0; // Unsupported on non-Linux platforms
+#endif
+}
+
+uint64_t device_swap_memory(bool available) {
+    if (device_is_docker_container()) {
+        return device_cgroup_swap_memory(available);
+    } else {
+        return device_host_swap_memory(available);
+    }
 }
 
 static size_t get_page_size() {
