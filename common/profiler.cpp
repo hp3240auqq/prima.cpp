@@ -410,18 +410,47 @@ static uint64_t device_host_physical_memory(bool available) {
 }
 
 static uint64_t device_cgroup_physical_memory(bool available) {
-    const char * file_path = available
-                                ? "/sys/fs/cgroup/memory/memory.usage_in_bytes" 
-                                : "/sys/fs/cgroup/memory/memory.limit_in_bytes";
-    uint64_t memory_info = 0;
+    uint64_t memory_info   = 0;
+    const char * file_path = nullptr;
+    
+    std::ifstream cgroup_file("/proc/cgroups");
+    bool is_cgroup_v2 = false;
+    if (cgroup_file.is_open()) {
+        std::string line;
+        while (std::getline(cgroup_file, line)) {
+            if (line.find("0") != std::string::npos) {
+                is_cgroup_v2 = true;
+                break;
+            }
+        }
+        cgroup_file.close();
+    }
+
+    if (is_cgroup_v2) {
+        file_path = available
+                        ? "/sys/fs/cgroup/memory.current" 
+                        : "/sys/fs/cgroup/memory.max";    
+    } else {
+        file_path = available
+                        ? "/sys/fs/cgroup/memory/memory.usage_in_bytes" 
+                        : "/sys/fs/cgroup/memory/memory.limit_in_bytes"; 
+    }
+
     std::ifstream file(file_path);
     if (file.is_open()) {
         std::string line;
         if (std::getline(file, line)) {
-            memory_info = std::stoull(line);
+            try {
+                memory_info = std::stoull(line);
+            } catch (const std::exception &e) {
+                memory_info = 0;
+            }
         }
         file.close();
+    } else {
+        memory_info = 0;
     }
+
     return memory_info;
 }
 
@@ -501,17 +530,43 @@ static uint64_t device_host_swap_memory(bool available) {
 
 static uint64_t device_cgroup_swap_memory(bool available) {
     if (available) return 0;
-    
+
 #if defined(__linux__)
-    uint64_t swap_limit = 0;
-    std::ifstream mem_swap_file("/sys/fs/cgroup/memory/memory.memsw.limit_in_bytes");
+    const char * file_path = nullptr;
+    uint64_t swap_limit    = 0;
+
+    std::ifstream cgroup_file("/proc/cgroups");
+    bool is_cgroup_v2 = false;
+    if (cgroup_file.is_open()) {
+        std::string line;
+        while (std::getline(cgroup_file, line)) {
+            if (line.find("0") != std::string::npos) {
+                is_cgroup_v2 = true;
+                break;
+            }
+        }
+        cgroup_file.close();
+    }
+
+    if (is_cgroup_v2) {
+        file_path = "/sys/fs/cgroup/memory.swap.max"; 
+    } else {
+        file_path = "/sys/fs/cgroup/memory/memory.memsw.limit_in_bytes"; 
+    }
+
+    std::ifstream mem_swap_file(file_path);
     if (mem_swap_file.is_open()) {
         std::string line;
         if (std::getline(mem_swap_file, line)) {
-            swap_limit = std::stoull(line);
+            try {
+                swap_limit = std::stoull(line);
+            } catch (const std::exception &e) {
+                swap_limit = 0;
+            }
         }
         mem_swap_file.close();
     }
+
     return swap_limit;
 #else
     return 0; // Unsupported on non-Linux platforms
