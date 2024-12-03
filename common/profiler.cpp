@@ -733,16 +733,18 @@ numjobs=%d
     const char * write_type = op_rand ? "randwrite" : "write";
     const char * block_size = op_rand ? page_size_str : readahead_str;
 
-    const char * ioengine = "posixaio";
-    bool retry_with_sync = false;
+    const char * ioengine    = "posixaio";
+    bool retry_with_sync     = false;
+    const char * output_file = "fio_output.log";
+    const char * conf_file   = "config.fio";
 
     do {
         char fio_conf[1024];
         snprintf(fio_conf, sizeof(fio_conf), fio_conf_template, ioengine,
-                 read_type, block_size, test_file, n_threads,
+                 read_type,  block_size, test_file, n_threads,
                  write_type, block_size, test_file, n_threads);
 
-        const char * conf_file = "config.fio";
+        
         std::ofstream conf(conf_file);
         if (!conf) {
             LOG_INF("Error: Unable to create configuration file\n");
@@ -751,7 +753,6 @@ numjobs=%d
         conf << fio_conf;
         conf.close();
 
-        const char * output_file = "fio_output.log";
         std::string command = "fio " + std::string(conf_file) + " > " + std::string(output_file) + " 2>&1";
         int ret = std::system(command.c_str());
 
