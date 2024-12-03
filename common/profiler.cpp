@@ -1116,11 +1116,13 @@ static float device_disk_access_delay(struct device_info & dev_info, struct llam
           cpu_mem_avail -= static_cast<float>(cpu_kv_size_gb);
           cpu_mem_avail -= static_cast<float>(cpu_compute_buf_gb);
           
-#ifdef __linux__
-    float disk_read_bw = dev_info.disk.read_seq_bw; // GB/s
-#else
+// #ifdef __linux__
+//     float disk_read_bw = dev_info.disk.read_seq_bw; // GB/s
+// #else
+//     float disk_read_bw = dev_info.disk.read_rnd_bw; // GB/s
+// #endif
+
     float disk_read_bw = dev_info.disk.read_rnd_bw; // GB/s
-#endif
     return std::max(0.0, static_cast<double>(cpu_total_gbytes - cpu_mem_avail) / disk_read_bw * 1000); // convert to ms
 }
 
