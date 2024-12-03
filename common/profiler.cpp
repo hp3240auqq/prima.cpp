@@ -1211,7 +1211,7 @@ void device_print_props(struct device_info * dev_info_set, int n, struct llama_m
     }
     LOG_INF("\n");
 
-    LOG_INF("| Mem Read Bandwidth (GB/s)    ");
+    LOG_INF("| CPU RAM Read BW (GB/s)       ");
     for (int i = 0; i < n; ++i) {
         LOG_INF("| %-10.2f   ", dev_info_set[i].memory.cpu_read_ram_bw);
     }
