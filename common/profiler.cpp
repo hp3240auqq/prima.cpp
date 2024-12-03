@@ -649,7 +649,6 @@ static size_t get_default_readahead_size() {
         file.close();
         return read_ahead_kb * 1024; // convert to bytes
     } else {
-        LOG_INF("Unable to open: %s\n", sysfs_path.c_str());
         return 0;
     }
 #elif __APPLE__
@@ -717,8 +716,8 @@ numjobs=%d
 
     size_t readahead_size = get_default_readahead_size();
     if (readahead_size == 0) {
-        LOG_INF("Error: Unable to get system readahead size\n");
-        return;
+        LOG_INF("Error: Unable to get system readahead size, use 128KB by default\n");
+        readahead_size = 128 * 1024;
     }
     // format the readahead size as a readable string (e.g., "128k" or "1m")
     char readahead_str[8];
