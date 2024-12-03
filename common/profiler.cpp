@@ -703,8 +703,8 @@ numjobs=%d
 
     size_t page_size = get_page_size();
     if (page_size == 0) {
-        LOG_INF("Error: Unable to get system page size\n");
-        return;
+        LOG_INF("Unable to get system page size, use 4KB by default\n");
+        page_size = 4 * 1024;
     }
     // format the page size as a readable string (e.g., "16k" or "4k")
     char page_size_str[8];
@@ -716,7 +716,7 @@ numjobs=%d
 
     size_t readahead_size = get_default_readahead_size();
     if (readahead_size == 0) {
-        LOG_INF("Error: Unable to get system readahead size, use 128KB by default\n");
+        LOG_INF("Unable to get system readahead size, use 128KB by default\n");
         readahead_size = 128 * 1024;
     }
     // format the readahead size as a readable string (e.g., "128k" or "1m")
