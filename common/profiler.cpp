@@ -681,7 +681,7 @@ static void external_fio_impl(float * read_bw, float * write_bw, bool op_rand, i
     const char * test_file = "fio_test";
     const char * fio_conf_template = R"(
 [global]
-ioengine=posixaio
+ioengine=%s
 direct=1
 time_based=1
 runtime=2
@@ -733,27 +733,36 @@ numjobs=%d
     const char * write_type = op_rand ? "randwrite" : "write";
     const char * block_size = op_rand ? page_size_str : readahead_str;
 
-    // write config to a file
-    char fio_conf[1024];
-    snprintf(fio_conf, sizeof(fio_conf), fio_conf_template, 
-             read_type,  block_size, test_file, n_threads,
-             write_type, block_size, test_file, n_threads);
-    const char * conf_file = "config.fio";
-    std::ofstream conf(conf_file);
-    if (!conf) {
-        LOG_INF("Error: Unable to create configuration file\n");
-        return;
-    }
-    conf << fio_conf;
-    conf.close();
+    const char * ioengine = "posixaio";
+    bool retry_with_sync = false;
 
-    // run fio and redirect output to a file
-    const char * output_file = "fio_output.log";
-    std::string command = "fio " + std::string(conf_file) + " > " + std::string(output_file);
-    if (std::system(command.c_str()) != 0) {
-        LOG_INF("Error: Failed to run fio\n");
-        return;
-    }
+    do {
+        char fio_conf[1024];
+        snprintf(fio_conf, sizeof(fio_conf), fio_conf_template, ioengine,
+                 read_type, block_size, test_file, n_threads,
+                 write_type, block_size, test_file, n_threads);
+
+        const char * conf_file = "config.fio";
+        std::ofstream conf(conf_file);
+        if (!conf) {
+            LOG_INF("Error: Unable to create configuration file\n");
+            return;
+        }
+        conf << fio_conf;
+        conf.close();
+
+        const char * output_file = "fio_output.log";
+        std::string command = "fio " + std::string(conf_file) + " > " + std::string(output_file) + " 2>&1";
+        int ret = std::system(command.c_str());
+
+        if (ret == 0) {
+            retry_with_sync = false; // Execution succeeded
+        } else {
+            LOG_INF("Engine posixaio not loadable, retrying with sync engine\n");
+            ioengine = "sync";
+            retry_with_sync = true;
+        }
+    } while (retry_with_sync);
 
     // parse fio output
     std::ifstream result(output_file);
