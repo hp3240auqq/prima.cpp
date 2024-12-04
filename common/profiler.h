@@ -7,6 +7,7 @@
 #define DISK_TEST_TOTAL_BYTE 500L * 1024 * 1024
 #define DISK_TEST_SEQ_BLOCK  100L * 1024 * 1024
 #define DISK_TEST_RND_BLOCK  4096
+#define MEM_TEST_BLOCK_SIZE  64 * 1024
 
 
 struct cpu_props {

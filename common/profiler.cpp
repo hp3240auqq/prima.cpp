@@ -360,8 +360,9 @@ static int is_uma_arch() {
     }
 
     return is_arm64;
-#endif
+#else
     return 0;
+#endif
 }
 
 static uint64_t device_host_physical_memory(bool available) {
@@ -841,43 +842,50 @@ void device_disk_seq_bw(float * read_seq_bw, float * write_seq_bw, int n_threads
 }
 
 float device_memory_bw(int n_thread) {
-    size_t buffer_size = 5L * 1024 * 1024; // 5 MiB
-    std::vector<std::thread> thread_pool;
+    // simulate large model weights, set to 100 MiB
+    size_t buffer_size = 100L * 1024 * 1024;
+    std::vector<char> data(buffer_size);
+    std::fill(data.begin(), data.end(), 1); // initialize data to avoid lazy loading
+
     std::vector<double> results(n_thread);
-    std::vector<char *> buffers(n_thread);
 
-    for (int i = 0; i < n_thread; ++i) {
-        buffers[i] = new char[buffer_size];
-    }
-
-    auto memory_bw_test = [](char * buffer, size_t size, double & result) {
-        // read test
-        volatile char temp = 0;
+    // memory bandwidth test function
+    auto memory_bw_test = [](char * data, size_t total_size, size_t block_size, double & result) {
+        size_t n_iters = total_size / block_size; 
+        volatile char temp = 0; // volatile to prevent compiler optimization
         auto start = std::chrono::high_resolution_clock::now();
-        for (size_t i = 0; i < size; i += 64) {
-            temp += buffer[i];
+        
+        for (size_t i = 0; i < n_iters; i++) {
+            // simulate block-wise sequential access
+            size_t offset = i * block_size;
+            for (size_t j = 0; j < block_size; j += 64) {
+                temp += data[offset + j];
+            }
         }
+
         auto end = std::chrono::high_resolution_clock::now();
         std::chrono::duration<double> elapsed = end - start;
-        result = size / elapsed.count() / 1e9; // GB/s
+        result = total_size / elapsed.count() / 1e9; // GB/s
+
+        (void)temp;
     };
 
+    std::vector<std::thread> thread_pool;
     for (int i = 0; i < n_thread; ++i) {
-        thread_pool.emplace_back(memory_bw_test, buffers[i], buffer_size, std::ref(results[i]));
+        thread_pool.emplace_back(
+            memory_bw_test, 
+            data.data(), 
+            buffer_size / n_thread, 
+            MEM_TEST_BLOCK_SIZE, 
+            std::ref(results[i])
+        );
     }
+
     for (auto & t : thread_pool) {
         t.join();
     }
 
-    double bandwidth = 0.0f;
-    for (double result : results) {
-        bandwidth += result;
-    }
-
-    for (int i = 0; i < n_thread; ++i) {
-        delete[] buffers[i];
-    }
-
+    double bandwidth = std::accumulate(results.begin(), results.end(), 0.0);
     return static_cast<float>(bandwidth);
 }
 
