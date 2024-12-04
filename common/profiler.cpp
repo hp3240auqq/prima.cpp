@@ -164,6 +164,39 @@ static float device_flops(struct llama_model * model, enum ggml_type src0t, enum
         ggml_backend_cpu_set_n_threads(backend, n_threads);
     }
 
+#if 0
+    // use scheduler
+    std::vector<ggml_backend_buffer_type_t> backend_buft;
+    std::vector<ggml_backend_t> backends = {backend};
+    if (!ggml_backend_is_cpu(backend)) {
+        backends.push_back(ggml_backend_cpu_init());
+    }
+
+    for (ggml_backend_t bak : backends) {
+        if (ggml_backend_is_cpu(bak)) {
+            backend_buft.push_back(ggml_backend_cpu_buffer_type());
+        } else {
+            backend_buft.push_back(ggml_backend_get_default_buffer_type(bak));
+        }
+    }
+    
+    ggml_backend_sched_t sched = ggml_backend_sched_new(backends.data(), backend_buft.data(), backends.size(), 128, false);
+
+    bool ok = ggml_backend_sched_reserve(sched, gf);
+    if (!ok) {
+        LOG_INF("%s: failed to allocate compute buffers\n", __func__);
+        ggml_free(ctx_cgraph);
+        ggml_gallocr_free(allocr);
+        ggml_free(ctx);
+        ggml_backend_buffer_free(buffer);
+        ggml_backend_free(backend);
+        return 0.0f;
+    }
+
+    ggml_backend_sched_reset(sched);
+    ggml_backend_sched_alloc_graph(sched, gf);
+#endif
+
     // warm-up
     // ggml_backend_graph_compute(backend, gf);
 
