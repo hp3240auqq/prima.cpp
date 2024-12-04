@@ -1522,7 +1522,7 @@ void device_print_props(struct device_info * dev_info_set, int n, struct llama_m
     float latency = 0.0f;
     int n_layers  = llama_model_n_layers (model);
     latency += device_compute_delay      (dev_info_set[0], n_layers, cparams);
-    // latency += device_memory_access_delay(dev_info_set[0], cparams,  n_layers);
+    latency += device_memory_access_delay(dev_info_set[0], cparams,  n_layers);
     latency += device_disk_access_delay  (dev_info_set[0], model,    cparams); // if physical memory is not enough, some tensor weights will be released from memory and reloaded by mmap later
     
     LOG_INF("| Token latency (ms)           ");
