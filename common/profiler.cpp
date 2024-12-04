@@ -389,20 +389,27 @@ static uint64_t device_host_physical_memory(bool available) {
     }
 
 #elif defined(__APPLE__) && defined(__MACH__)
-    if (available) {
-        mach_port_t host = mach_host_self();
-        vm_statistics64_data_t vm_stats;
-        mach_msg_type_number_t count = HOST_VM_INFO64_COUNT;
+    mach_port_t host = mach_host_self();
+    vm_statistics64_data_t vm_stats;
+    mach_msg_type_number_t count = HOST_VM_INFO64_COUNT;
 
+    uint64_t total_memory = 0;
+    size_t len = sizeof(total_memory);
+    int mib[2] = {CTL_HW, HW_MEMSIZE};
+
+    if (sysctl(mib, 2, &total_memory, &len, NULL, 0) != 0) {
+        LOG_INF("sysctl failed\n");
+        return 0;
+    }
+
+    if (available) {
         if (host_statistics64(host, HOST_VM_INFO64, (host_info64_t)&vm_stats, &count) == KERN_SUCCESS) {
-            memory = (vm_stats.free_count + vm_stats.inactive_count) * sysconf(_SC_PAGESIZE);
+            memory = (vm_stats.internal_page_count - vm_stats.purgeable_count) * sysconf(_SC_PAGESIZE);
+        } else {
+            LOG_INF("host_statistics64 failed\n");
         }
     } else {
-        int mib[2];
-        size_t len = sizeof(memory);
-        mib[0] = CTL_HW;
-        mib[1] = HW_MEMSIZE;
-        sysctl(mib, 2, &memory, &len, NULL, 0);
+        memory = total_memory;
     }
 #endif
 
@@ -743,7 +750,6 @@ numjobs=%d
         snprintf(fio_conf, sizeof(fio_conf), fio_conf_template, ioengine,
                  read_type,  block_size, test_file, n_threads,
                  write_type, block_size, test_file, n_threads);
-
         
         std::ofstream conf(conf_file);
         if (!conf) {
