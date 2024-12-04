@@ -350,6 +350,7 @@ static bool device_is_docker_container() {
 }
 
 static int is_uma_arch() {
+#if defined(__APPLE__) && defined(__MACH__)
     int is_arm64 = 0;
     size_t size = sizeof(is_arm64);
 
@@ -359,6 +360,8 @@ static int is_uma_arch() {
     }
 
     return is_arm64;
+#endif
+    return 0;
 }
 
 static uint64_t device_host_physical_memory(bool available) {
