@@ -349,6 +349,18 @@ static bool device_is_docker_container() {
     return false;
 }
 
+static int is_uma_arch() {
+    int is_arm64 = 0;
+    size_t size = sizeof(is_arm64);
+
+    // check whether it is Apple Silicon (ARM64)
+    if (sysctlbyname("hw.optional.arm64", &is_arm64, &size, NULL, 0) != 0) {
+        return 0;
+    }
+
+    return is_arm64;
+}
+
 static uint64_t device_host_physical_memory(bool available) {
     uint64_t memory = 0;
 
@@ -404,7 +416,14 @@ static uint64_t device_host_physical_memory(bool available) {
 
     if (available) {
         if (host_statistics64(host, HOST_VM_INFO64, (host_info64_t)&vm_stats, &count) == KERN_SUCCESS) {
-            memory = total_memory - (vm_stats.internal_page_count - vm_stats.purgeable_count) * sysconf(_SC_PAGESIZE);
+            size_t page_size = sysconf(_SC_PAGESIZE);
+
+            if (is_uma_arch()) { // Mac UMA with ARM64
+                // memory = (vm_stats.free_count + vm_stats.inactive_count) * page_size;
+                memory = vm_stats.free_count * page_size; // use "sudo purge" before launching
+            } else { // Mac with x86_64
+                memory = total_memory - (vm_stats.internal_page_count - vm_stats.purgeable_count) * page_size;
+            }
         } else {
             LOG_INF("host_statistics64 failed\n");
         }
@@ -1501,7 +1520,7 @@ void device_print_props(struct device_info * dev_info_set, int n, struct llama_m
     float latency = 0.0f;
     int n_layers  = llama_model_n_layers (model);
     latency += device_compute_delay      (dev_info_set[0], n_layers, cparams);
-    latency += device_memory_access_delay(dev_info_set[0], cparams,  n_layers);
+    // latency += device_memory_access_delay(dev_info_set[0], cparams,  n_layers);
     latency += device_disk_access_delay  (dev_info_set[0], model,    cparams); // if physical memory is not enough, some tensor weights will be released from memory and reloaded by mmap later
     
     LOG_INF("| Token latency (ms)           ");
