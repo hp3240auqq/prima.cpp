@@ -404,7 +404,7 @@ static uint64_t device_host_physical_memory(bool available) {
 
     if (available) {
         if (host_statistics64(host, HOST_VM_INFO64, (host_info64_t)&vm_stats, &count) == KERN_SUCCESS) {
-            memory = (vm_stats.internal_page_count - vm_stats.purgeable_count) * sysconf(_SC_PAGESIZE);
+            memory = total_memory - (vm_stats.internal_page_count - vm_stats.purgeable_count) * sysconf(_SC_PAGESIZE);
         } else {
             LOG_INF("host_statistics64 failed\n");
         }
