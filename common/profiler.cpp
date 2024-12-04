@@ -419,8 +419,7 @@ static uint64_t device_host_physical_memory(bool available) {
             size_t page_size = sysconf(_SC_PAGESIZE);
 
             if (is_uma_arch()) { // Mac UMA with ARM64
-                // memory = (vm_stats.free_count + vm_stats.inactive_count) * page_size;
-                memory = vm_stats.free_count * page_size; // use "sudo purge" before launching
+                memory = (vm_stats.free_count + vm_stats.inactive_count) * page_size;
             } else { // Mac with x86_64
                 memory = total_memory - (vm_stats.internal_page_count - vm_stats.purgeable_count) * page_size;
             }
