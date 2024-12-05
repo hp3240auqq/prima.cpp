@@ -20866,7 +20866,7 @@ void llama_model_kvcache_size(
     uint64_t ne_k = static_cast<uint64_t>(hparams.n_embd_k_gqa()) * cparams.n_ctx * ggml_type_size(cparams.type_k);
     uint64_t ne_v = static_cast<uint64_t>(hparams.n_embd_v_gqa()) * cparams.n_ctx * ggml_type_size(cparams.type_v);
     if (use_gpu) {
-        int n_gpu_layers = cparams.n_gpu_layers;
+        int n_gpu_layers = std::min(cparams.n_gpu_layers, hparams.n_layer);
         *gpu_cache = (ne_k + ne_v) * n_gpu_layers;
         *cpu_cache = (ne_k + ne_v) * (llama_model_n_layers(model) - n_gpu_layers);
     } else {
