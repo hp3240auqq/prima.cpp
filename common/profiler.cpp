@@ -141,9 +141,12 @@ static float device_flops(struct llama_model * model, enum ggml_type src0t, enum
     struct ggml_cgraph  * gf         = NULL;
     struct ggml_context * ctx_cgraph = NULL;
     struct ggml_tensor  * cur        = NULL;
+    struct ggml_tensor  * cur1       = NULL;
+    struct ggml_tensor  * cur2       = NULL;
+    struct ggml_tensor  * cur3       = NULL;
     {
         struct ggml_init_params params0 = {
-            /*.mem_size   =*/ ggml_tensor_overhead() * (n_repeat + 2) + ggml_graph_overhead(),
+            /*.mem_size   =*/ ggml_tensor_overhead() * (5 * n_repeat + 1) + ggml_graph_overhead(),
             /*.mem_buffer =*/ NULL,
             /*.no_alloc   =*/ true, // the tensors will be allocated later by ggml_gallocr_alloc_graph()
         };
@@ -151,8 +154,12 @@ static float device_flops(struct llama_model * model, enum ggml_type src0t, enum
 
         gf = ggml_new_graph(ctx_cgraph);
         cur = ggml_mul_mat(ctx_cgraph, tensor_a, tensor_b);
-        for (int i = 0; i < n_repeat - 1; i++) {
-            cur = ggml_mul_mat(ctx_cgraph, tensor_a, cur);
+        for (int i = 0; i < n_repeat; i++) {
+            cur1 = ggml_mul_mat(ctx_cgraph, tensor_a, cur);
+            cur2 = ggml_mul_mat(ctx_cgraph, tensor_a, cur);
+            cur  = ggml_add(ctx_cgraph, cur1, cur2);
+            cur3 = ggml_mul_mat(ctx_cgraph, tensor_a, cur);
+            cur  = ggml_add(ctx_cgraph, cur, cur3);
         }
         ggml_build_forward_expand(gf, cur);
     }
@@ -164,7 +171,6 @@ static float device_flops(struct llama_model * model, enum ggml_type src0t, enum
         ggml_backend_cpu_set_n_threads(backend, n_threads);
     }
 
-#if 0
     // use scheduler
     std::vector<ggml_backend_buffer_type_t> backend_buft;
     std::vector<ggml_backend_t> backends = {backend};
@@ -180,7 +186,7 @@ static float device_flops(struct llama_model * model, enum ggml_type src0t, enum
         }
     }
     
-    ggml_backend_sched_t sched = ggml_backend_sched_new(backends.data(), backend_buft.data(), backends.size(), 128, false);
+    ggml_backend_sched_t sched = ggml_backend_sched_new(backends.data(), backend_buft.data(), backends.size(), 256, false);
 
     bool ok = ggml_backend_sched_reserve(sched, gf);
     if (!ok) {
@@ -195,17 +201,17 @@ static float device_flops(struct llama_model * model, enum ggml_type src0t, enum
 
     ggml_backend_sched_reset(sched);
     ggml_backend_sched_alloc_graph(sched, gf);
-#endif
 
     // warm-up
-    // ggml_backend_graph_compute(backend, gf);
+    ggml_backend_graph_compute(backend, gf);
 
     const int64_t t_start = ggml_time_us();
     ggml_backend_graph_compute(backend, gf);
     const int64_t t_end = ggml_time_us();
 
     double elapsed_seconds = ((double)t_end - (double)t_start) / 1e6; // convert to seconds
-    double flops = (2.0 * n_repeat * (double)n_embd * (double)n_embd * (double)n_embd) / elapsed_seconds / 1e9; // convert to GFLOPS
+    double flops = (2.0 * (double)n_embd * (double)n_embd * (double)n_embd + 
+                   n_repeat * 4 * 2.0 * (double)n_embd * (double)n_embd * (double)n_embd) / elapsed_seconds / 1e9; // convert to GFLOPS
 
     ggml_free(ctx_cgraph);
     ggml_gallocr_free(allocr);
