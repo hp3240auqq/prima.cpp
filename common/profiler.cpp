@@ -1161,13 +1161,15 @@ static float device_disk_access_delay(struct device_info & dev_info, struct llam
     int n_gpu_layers      = std::min(static_cast<int>(cparams.n_gpu_layers), n_layers);
     int n_vocab           = llama_n_vocab(model);
 
-    int64_t cpu_total_bytes = (
+    int64_t input_bytes = (
                 n_params.input_f32 * 4 +
                 n_params.input_f16 * 2 +
                 n_params.input_q4k / 2 +
                 n_params.input_q6k * 3 / 8 +
                 n_params.input_q80) / n_vocab; // lookup table, retrieve only n_embd elements
     
+    int64_t cpu_total_bytes = input_bytes;
+
     int64_t layer_bytes =
                 n_params.layer_f32 * 4 +
                 n_params.layer_f16 * 2 +
@@ -1214,7 +1216,9 @@ static float device_disk_access_delay(struct device_info & dev_info, struct llam
         double total_kv_size_gib     = cpu_kv_size_gib + gpu_kv_size_gib;
         double total_compute_buf_gib = cpu_compute_buf_gib + gpu_compute_buf_gib;
         if (total_bytes_gib + total_kv_size_gib + total_compute_buf_gib < dev_info.memory.total_physical) {
-            return 0.0f;
+            float disk_read_bw = dev_info.disk.read_rnd_bw;
+            // each time one new row of lookup table will be loaded
+            return static_cast<double>(input_bytes) / 1e9 / disk_read_bw * 1000; // convert to ms
         } else {
             LOG_INF("swap occurs, not allowed\n");
             // double need_swap_gib = total_bytes_gib + total_kv_size_gib + total_compute_buf_gib - dev_info.memory.total_physical;
