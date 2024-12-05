@@ -5340,6 +5340,7 @@ struct llama_model_loader {
         }(__func__);
 
         if (upload_backend) {
+            throw std::runtime_error("async uploads is not supported now\n");
             LLAMA_LOG_DEBUG("%s: using async uploads for device %s, buffer type %s, backend %s\n", __func__,
                 ggml_backend_dev_name(ggml_backend_get_device(upload_backend)),
                 ggml_backend_buft_name(ggml_backend_buffer_get_type(bufs.at(0))),
