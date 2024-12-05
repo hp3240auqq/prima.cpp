@@ -31,6 +31,7 @@
     #include <cuda_runtime.h>
 #endif
 
+#include <algorithm>
 #include <cmath>
 #include <chrono>
 #include <fstream>
@@ -1061,7 +1062,8 @@ void device_get_props(struct llama_model * model, int device, struct ggml_backen
 static float device_compute_delay(struct device_info & dev_info, int n_layers, const struct llama_context_params cparams) {
     struct model_flops n_flops   = dev_info.model_flops;
     struct cpu_props cpu         = dev_info.cpu_props;
-    const int n_gpu_layers       = cparams.n_gpu_layers;
+    int n_gpu_layers             = std::min(static_cast<int>(cparams.n_gpu_layers), n_layers);
+
     double gpu_latency_per_layer = 0.0f;
     double cpu_latency_per_layer = 0.0f;
 
@@ -1116,7 +1118,7 @@ static float device_compute_delay(struct device_info & dev_info, int n_layers, c
 // estimate the memory access delay, except for the input embedding because it has been considered in n_flops.inp_embd_ms
 static float device_memory_access_delay(struct device_info & dev_info, const struct llama_context_params cparams, int n_layers) {
     struct model_params n_params = dev_info.model_params;
-    int n_gpu_layers = cparams.n_gpu_layers;
+    int n_gpu_layers = std::min(static_cast<int>(cparams.n_gpu_layers), n_layers);
 
     int64_t layer_bytes = 
                    n_params.layer_f32 * 4 +
@@ -1156,7 +1158,37 @@ static float device_memory_access_delay(struct device_info & dev_info, const str
 static float device_disk_access_delay(struct device_info & dev_info, struct llama_model * model, const struct llama_context_params cparams) {
     auto n_params         = dev_info.model_params;
     int n_layers          = llama_model_n_layers(model);
-    int n_gpu_layers      = cparams.n_gpu_layers;
+    int n_gpu_layers      = std::min(static_cast<int>(cparams.n_gpu_layers), n_layers);
+    int n_vocab           = llama_n_vocab(model);
+
+    int64_t cpu_total_bytes = (
+                n_params.input_f32 * 4 +
+                n_params.input_f16 * 2 +
+                n_params.input_q4k / 2 +
+                n_params.input_q6k * 3 / 8 +
+                n_params.input_q80) / n_vocab; // lookup table, retrieve only n_embd elements
+    
+    int64_t layer_bytes =
+                n_params.layer_f32 * 4 +
+                n_params.layer_f16 * 2 +
+                n_params.layer_q4k / 2 +
+                n_params.layer_q6k * 3 / 8 +
+                n_params.layer_q80;
+
+#if defined(GGML_USE_METAL) || defined(GGML_USE_CUDA)
+    cpu_total_bytes += layer_bytes * (n_layers - n_gpu_layers);
+    int64_t gpu_total_bytes = layer_bytes * n_gpu_layers;
+#else
+    (void)n_gpu_layers;
+    cpu_total_bytes += layer_bytes * n_layers;
+#endif
+
+    cpu_total_bytes += (
+                n_params.output_f32 * 4 +
+                n_params.output_f16 * 2 +
+                n_params.output_q4k / 2 +
+                n_params.output_q6k * 3 / 8 +
+                n_params.output_q80);
 
     uint64_t cpu_kv_size;
     uint64_t gpu_kv_size;
@@ -1171,43 +1203,38 @@ static float device_disk_access_delay(struct device_info & dev_info, struct llam
     llama_model_compute_buf_size(&cpu_compute_buf, &gpu_compute_buf, model, cparams, false);
 #endif
 
-    double cpu_kv_size_gb     = static_cast<double>(cpu_kv_size) / 1e9;     // convert to GB
-    double cpu_compute_buf_gb = static_cast<double>(cpu_compute_buf) / 1e9; // convert to GB
+    double cpu_kv_size_gib     = static_cast<double>(cpu_kv_size) / 1024.0 / 1024.0 / 1024.0;     // convert to GiB
+    double gpu_kv_size_gib     = static_cast<double>(gpu_kv_size) / 1024.0 / 1024.0 / 1024.0;     // convert to GiB
+    double cpu_compute_buf_gib = static_cast<double>(cpu_compute_buf) / 1024.0 / 1024.0 / 1024.0; // convert to GiB
+    double gpu_compute_buf_gib = static_cast<double>(gpu_compute_buf) / 1024.0 / 1024.0 / 1024.0; // convert to GiB
 
-    int64_t cpu_total_bytes =
-                   n_params.layer_f32 * 4 +
-                   n_params.layer_f16 * 2 +
-                   n_params.layer_q4k / 2 +
-                   n_params.layer_q6k * 3 / 8 +
-                   n_params.layer_q80;
-
-#if defined(GGML_USE_METAL) || defined(GGML_USE_CUDA)
-    cpu_total_bytes *= (n_layers - n_gpu_layers);
-#else
-    (void)n_gpu_layers;
-    cpu_total_bytes *= n_layers;
+#if defined(GGML_USE_METAL)
+    if (n_gpu_layers > 0) {
+        double total_bytes_gib       = static_cast<double>(cpu_total_bytes + gpu_total_bytes) / 1024.0 / 1024.0 / 1024.0;
+        double total_kv_size_gib     = cpu_kv_size_gib + gpu_kv_size_gib;
+        double total_compute_buf_gib = cpu_compute_buf_gib + gpu_compute_buf_gib;
+        if (total_bytes_gib + total_kv_size_gib + total_compute_buf_gib < dev_info.memory.total_physical) {
+            return 0.0f;
+        } else {
+            LOG_INF("swap occurs, not allowed\n");
+            // double need_swap_gib = total_bytes_gib + total_kv_size_gib + total_compute_buf_gib - dev_info.memory.total_physical;
+            // float disk_read_bw = dev_info.disk.read_rnd_bw; // GB/s, todo: write and read speed
+            // return need_swap_gib / disk_read_bw * 2 * 1000; // convert to ms
+            return 1e9;
+        }
+    }
 #endif
 
-    cpu_total_bytes += (
-                   n_params.output_f32 * 4 +
-                   n_params.output_f16 * 2 +
-                   n_params.output_q4k / 2 +
-                   n_params.output_q6k * 3 / 8 +
-                   n_params.output_q80);
-    
-    float cpu_total_gbytes = (double)cpu_total_bytes / 1e9; // convert to GB
-    float cpu_mem_avail = dev_info.memory.available_physical * 1024.0f * 1024.0f * 1024.0f / 1e9; // convert to GB
-          cpu_mem_avail -= static_cast<float>(cpu_kv_size_gb);
-          cpu_mem_avail -= static_cast<float>(cpu_compute_buf_gb);
-          
-// #ifdef __linux__
-//     float disk_read_bw = dev_info.disk.read_seq_bw; // GB/s
-// #else
-//     float disk_read_bw = dev_info.disk.read_rnd_bw; // GB/s
-// #endif
+    (void)gpu_kv_size_gib;
+    (void)gpu_compute_buf_gib;
 
-    float disk_read_bw = dev_info.disk.read_rnd_bw; // GB/s
-    return std::max(0.0, static_cast<double>(cpu_total_gbytes - cpu_mem_avail) / disk_read_bw * 1000); // convert to ms
+    float cpu_total_bytes_gib = (double)cpu_total_bytes / 1024.0 / 1024.0 / 1024.0; // convert to GiB
+    float cpu_mem_avail = dev_info.memory.available_physical; // GiB
+          cpu_mem_avail -= static_cast<float>(cpu_kv_size_gib);
+          cpu_mem_avail -= static_cast<float>(cpu_compute_buf_gib);
+
+    float disk_read_bw = dev_info.disk.read_rnd_bw * 1e9 / 1024.0 / 1024.0 / 1024.0; // convert GB/s to GiB/s
+    return std::max(0.0, static_cast<double>(cpu_total_bytes_gib - cpu_mem_avail) / disk_read_bw * 1000); // convert to ms
 }
 
 void device_print_props(struct device_info * dev_info_set, int n, struct llama_model * model, const struct llama_context_params cparams) {
@@ -1570,7 +1597,7 @@ void device_print_props(struct device_info * dev_info_set, int n, struct llama_m
     int n_layers  = llama_model_n_layers (model);
     latency += device_compute_delay      (dev_info_set[0], n_layers, cparams);
     latency += device_memory_access_delay(dev_info_set[0], cparams,  n_layers);
-    latency += device_disk_access_delay  (dev_info_set[0], model,    cparams); // if physical memory is not enough, some tensor weights will be released from memory and reloaded by mmap later
+    latency += device_disk_access_delay  (dev_info_set[0], model,    cparams); // if physical memory is not enough, some mapped data will be released and reloaded later
     
     LOG_INF("| Token latency (ms)           ");
     LOG_INF("| %-10.2f   ", latency);
