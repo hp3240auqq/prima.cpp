@@ -3552,15 +3552,36 @@ void llama_perf_context_sync(struct llama_context * ctx, const struct llama_mode
     ctx->t_load_us  = model->t_load_us;
 }
 
+static bool is_dtype_exist(struct model_params * n_params, enum ggml_type dtype) {
+    switch (dtype) {
+        case GGML_TYPE_F32:
+        case GGML_TYPE_F16:    
+            return true;
+        case GGML_TYPE_Q4_K:
+            return n_params->layer_q4k > 0 || n_params->output_q4k > 0;
+        case GGML_TYPE_Q5_K:
+            return n_params->layer_q5k > 0 || n_params->output_q5k > 0;
+        case GGML_TYPE_Q6_K:
+            return n_params->layer_q6k > 0 || n_params->output_q6k > 0;
+        case GGML_TYPE_Q8_0:
+            return n_params->layer_q80 > 0 || n_params->output_q80 > 0;
+        default:
+            throw std::runtime_error("Unrecognized data type\n");
+    }
+}
+
 void llama_profile_device(device_info * dev_info, struct llama_model * model, llama_model_loader * ml, int n_threads) {
+    struct model_flops  * n_flops  = &dev_info->model_flops;
+    struct model_params * n_params = &dev_info->model_params;
+    
+    if (dev_info->rank == 0) {    
+        enum ggml_type inp_embd_dtype  = GGML_TYPE_F32;
+        llama_model_n_flops(model, ml, n_flops, n_params, 1, 32, &inp_embd_dtype);
+        n_flops->inp_embd_ms = device_inp_embd_delay(model, inp_embd_dtype, 1, n_threads);
+    }
+
     dev_info->device_name               = device_name();
     dev_info->cpu_props.cores           = device_cpu_cores();
-    dev_info->cpu_props.flops_f32_f32   = device_cpu_flops(model, GGML_TYPE_F32,  GGML_TYPE_F32, n_threads);
-    dev_info->cpu_props.flops_f16_f32   = device_cpu_flops(model, GGML_TYPE_F16,  GGML_TYPE_F32, n_threads);
-    dev_info->cpu_props.flops_q4k_f32   = device_cpu_flops(model, GGML_TYPE_Q4_K, GGML_TYPE_F32, n_threads);
-    dev_info->cpu_props.flops_q6k_f32   = device_cpu_flops(model, GGML_TYPE_Q6_K, GGML_TYPE_F32, n_threads);
-    dev_info->cpu_props.flops_q80_f32   = device_cpu_flops(model, GGML_TYPE_Q8_0, GGML_TYPE_F32, n_threads);
-
     dev_info->memory.total_physical     = round(device_physical_memory(false) / (double)(1 << 30) * 100) / 100;
     dev_info->memory.available_physical = round(device_physical_memory(true)  / (double)(1 << 30) * 100) / 100;
     dev_info->memory.total_swap         = round(device_swap_memory(false)     / (double)(1 << 30) * 100) / 100;
@@ -3591,24 +3612,42 @@ void llama_profile_device(device_info * dev_info, struct llama_model * model, ll
     dev_info->gpu_props.memory_free         = round(gpu_props.memory_free  / (double)(1 << 30) * 100) / 100;
     dev_info->gpu_props.memory_total        = round(gpu_props.memory_total / (double)(1 << 30) * 100) / 100;
     dev_info->gpu_props.metal_read_vram_bw  = device_metal_read_vram_bw(model);
-    dev_info->gpu_props.metal_flops_f32_f32 = device_metal_flops(model, GGML_TYPE_F32,  GGML_TYPE_F32);
-    dev_info->gpu_props.metal_flops_f16_f32 = device_metal_flops(model, GGML_TYPE_F16,  GGML_TYPE_F32);
-    dev_info->gpu_props.metal_flops_q4k_f32 = device_metal_flops(model, GGML_TYPE_Q4_K, GGML_TYPE_F32);
-    dev_info->gpu_props.metal_flops_q6k_f32 = device_metal_flops(model, GGML_TYPE_Q6_K, GGML_TYPE_F32);
-    dev_info->gpu_props.metal_flops_q80_f32 = device_metal_flops(model, GGML_TYPE_Q8_0, GGML_TYPE_F32);
     dev_info->gpu_props.cuda_read_vram_bw   = device_cuda_read_vram_bw(model);
-    dev_info->gpu_props.cuda_flops_f32_f32  = device_cuda_flops (model, GGML_TYPE_F32,  GGML_TYPE_F32);
-    dev_info->gpu_props.cuda_flops_f16_f32  = device_cuda_flops (model, GGML_TYPE_F16,  GGML_TYPE_F32);
-    dev_info->gpu_props.cuda_flops_q4k_f32  = device_cuda_flops (model, GGML_TYPE_Q4_K, GGML_TYPE_F32);
-    dev_info->gpu_props.cuda_flops_q6k_f32  = device_cuda_flops (model, GGML_TYPE_Q6_K, GGML_TYPE_F32);
-    dev_info->gpu_props.cuda_flops_q80_f32  = device_cuda_flops (model, GGML_TYPE_Q8_0, GGML_TYPE_F32);
 
-    if (dev_info->rank == 0) {
-        struct model_flops  * n_flops  = &dev_info->model_flops;
-        struct model_params * n_params = &dev_info->model_params;
-        enum ggml_type inp_embd_dtype  = GGML_TYPE_F32;
-        llama_model_n_flops(model, ml, n_flops, n_params, 1, 32, &inp_embd_dtype);
-        n_flops->inp_embd_ms = device_inp_embd_delay(model, inp_embd_dtype, 1, n_threads);
+    if (is_dtype_exist(n_params, GGML_TYPE_F32)) {
+        dev_info->cpu_props.flops_f32_f32       = device_cpu_flops  (model, GGML_TYPE_F32,  GGML_TYPE_F32, n_threads);
+        dev_info->gpu_props.metal_flops_f32_f32 = device_metal_flops(model, GGML_TYPE_F32,  GGML_TYPE_F32);
+        dev_info->gpu_props.cuda_flops_f32_f32  = device_cuda_flops (model, GGML_TYPE_F32,  GGML_TYPE_F32);
+    }
+
+    if (is_dtype_exist(n_params, GGML_TYPE_F16)) {
+        dev_info->cpu_props.flops_f16_f32       = device_cpu_flops  (model, GGML_TYPE_F16,  GGML_TYPE_F32, n_threads);
+        dev_info->gpu_props.metal_flops_f16_f32 = device_metal_flops(model, GGML_TYPE_F16,  GGML_TYPE_F32);
+        dev_info->gpu_props.cuda_flops_f16_f32  = device_cuda_flops (model, GGML_TYPE_F16,  GGML_TYPE_F32);
+    }
+
+    if (is_dtype_exist(n_params, GGML_TYPE_Q4_K)) {
+        dev_info->cpu_props.flops_q4k_f32       = device_cpu_flops  (model, GGML_TYPE_Q4_K, GGML_TYPE_F32, n_threads);
+        dev_info->gpu_props.metal_flops_q4k_f32 = device_metal_flops(model, GGML_TYPE_Q4_K, GGML_TYPE_F32);
+        dev_info->gpu_props.cuda_flops_q4k_f32  = device_cuda_flops (model, GGML_TYPE_Q4_K, GGML_TYPE_F32);
+    }
+
+    if (is_dtype_exist(n_params, GGML_TYPE_Q5_K)) {
+        dev_info->cpu_props.flops_q5k_f32       = device_cpu_flops  (model, GGML_TYPE_Q5_K, GGML_TYPE_F32, n_threads);
+        dev_info->gpu_props.metal_flops_q5k_f32 = device_metal_flops(model, GGML_TYPE_Q5_K, GGML_TYPE_F32);
+        dev_info->gpu_props.cuda_flops_q5k_f32  = device_cuda_flops (model, GGML_TYPE_Q5_K, GGML_TYPE_F32);
+    }
+
+    if (is_dtype_exist(n_params, GGML_TYPE_Q6_K)) {
+        dev_info->cpu_props.flops_q6k_f32       = device_cpu_flops  (model, GGML_TYPE_Q6_K, GGML_TYPE_F32, n_threads);
+        dev_info->gpu_props.metal_flops_q6k_f32 = device_metal_flops(model, GGML_TYPE_Q6_K, GGML_TYPE_F32);
+        dev_info->gpu_props.cuda_flops_q6k_f32  = device_cuda_flops (model, GGML_TYPE_Q6_K, GGML_TYPE_F32);
+    }
+
+    if (is_dtype_exist(n_params, GGML_TYPE_Q8_0)) {
+        dev_info->cpu_props.flops_q80_f32       = device_cpu_flops  (model, GGML_TYPE_Q8_0, GGML_TYPE_F32, n_threads);
+        dev_info->gpu_props.metal_flops_q80_f32 = device_metal_flops(model, GGML_TYPE_Q8_0, GGML_TYPE_F32);
+        dev_info->gpu_props.cuda_flops_q80_f32  = device_cuda_flops (model, GGML_TYPE_Q8_0, GGML_TYPE_F32);
     }
 }
 
@@ -20699,6 +20738,9 @@ static void count_n_flops(struct model_flops * n_flops, enum ggml_type dtype, en
                 case GGML_TYPE_Q4_K:
                     n_flops->output_q4k_f32 += n;
                     break;
+                case GGML_TYPE_Q5_K:
+                    n_flops->output_q5k_f32 += n;
+                    break;
                 case GGML_TYPE_Q6_K:
                     n_flops->output_q6k_f32 += n;
                     break;
@@ -20720,6 +20762,9 @@ static void count_n_flops(struct model_flops * n_flops, enum ggml_type dtype, en
                     break;
                 case GGML_TYPE_Q4_K:
                     n_flops->layer_q4k_f32 += n;
+                    break;
+                case GGML_TYPE_Q5_K:
+                    n_flops->layer_q5k_f32 += n;
                     break;
                 case GGML_TYPE_Q6_K:
                     n_flops->layer_q6k_f32 += n;
@@ -20751,6 +20796,9 @@ static void count_n_params(struct model_params * n_params, enum ggml_type dtype,
                 case GGML_TYPE_Q4_K:
                     n_params->input_q4k += n_i64t;
                     break;
+                case GGML_TYPE_Q5_K:
+                    n_params->input_q5k += n_i64t;
+                    break;
                 case GGML_TYPE_Q6_K:
                     n_params->input_q6k += n_i64t;
                     break;
@@ -20773,6 +20821,9 @@ static void count_n_params(struct model_params * n_params, enum ggml_type dtype,
                 case GGML_TYPE_Q4_K:
                     n_params->output_q4k += n_i64t;
                     break;
+                case GGML_TYPE_Q5_K:
+                    n_params->output_q5k += n_i64t;
+                    break;
                 case GGML_TYPE_Q6_K:
                     n_params->output_q6k += n_i64t;
                     break;
@@ -20794,6 +20845,9 @@ static void count_n_params(struct model_params * n_params, enum ggml_type dtype,
                     break;
                 case GGML_TYPE_Q4_K:
                     n_params->layer_q4k += n_i64t;
+                    break;
+                case GGML_TYPE_Q5_K:
+                    n_params->layer_q5k += n_i64t;
                     break;
                 case GGML_TYPE_Q6_K:
                     n_params->layer_q6k += n_i64t;
