@@ -767,7 +767,7 @@ filename=%s
 numjobs=%d
 
 [read-job]
-startdelay=2.5
+startdelay=1.5
 rw=%s
 bs=%s
 filename=%s
