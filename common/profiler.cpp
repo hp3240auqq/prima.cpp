@@ -204,7 +204,7 @@ static float device_flops(struct llama_model * model, enum ggml_type src0t, enum
     ggml_backend_sched_alloc_graph(sched, gf);
 
     // warm-up
-    ggml_backend_graph_compute(backend, gf);
+    // ggml_backend_graph_compute(backend, gf);
 
     const int64_t t_start = ggml_time_us();
     ggml_backend_graph_compute(backend, gf);
@@ -755,17 +755,19 @@ static void external_fio_impl(float * read_bw, float * write_bw, bool op_rand, i
 ioengine=%s
 direct=1
 time_based=1
-runtime=2
-size=500M
+runtime=1
+size=4G
 group_reporting=1
+iodepth=1
 
-[read-job]
+[write-job]
 rw=%s
 bs=%s
 filename=%s
 numjobs=%d
 
-[write-job]
+[read-job]
+startdelay=2.5
 rw=%s
 bs=%s
 filename=%s
@@ -1173,6 +1175,7 @@ static float device_disk_access_delay(struct device_info & dev_info, struct llam
                 n_params.input_f32 * 4 +
                 n_params.input_f16 * 2 +
                 n_params.input_q4k * 4 / 8 +
+                n_params.input_q5k * 5 / 8 +
                 n_params.input_q6k * 6 / 8 +
                 n_params.input_q80) / n_vocab; // lookup table, retrieve only n_embd elements
     
@@ -1231,9 +1234,6 @@ static float device_disk_access_delay(struct device_info & dev_info, struct llam
             return static_cast<double>(input_bytes) / 1e9 / disk_read_bw * 1000; // convert to ms
         } else {
             LOG_INF("swap occurs, not allowed\n");
-            // double need_swap_gib = total_bytes_gib + total_kv_size_gib + total_compute_buf_gib - dev_info.memory.total_physical;
-            // float disk_read_bw = dev_info.disk.read_rnd_bw; // GB/s, todo: write and read speed
-            // return need_swap_gib / disk_read_bw * 2 * 1000; // convert to ms
             return 1e9;
         }
     }
@@ -1243,12 +1243,16 @@ static float device_disk_access_delay(struct device_info & dev_info, struct llam
     (void)gpu_compute_buf_gib;
 
     float cpu_total_bytes_gib = (double)cpu_total_bytes / 1024.0 / 1024.0 / 1024.0; // convert to GiB
-    float cpu_mem_avail = dev_info.memory.available_physical; // GiB
-          cpu_mem_avail -= static_cast<float>(cpu_kv_size_gib);
-          cpu_mem_avail -= static_cast<float>(cpu_compute_buf_gib);
-
-    float disk_read_bw = dev_info.disk.read_rnd_bw * 1e9 / 1024.0 / 1024.0 / 1024.0; // convert GB/s to GiB/s
-    return std::max(0.0, static_cast<double>(cpu_total_bytes_gib - cpu_mem_avail) / disk_read_bw * 1000); // convert to ms
+    float cpu_mem_avail       = dev_info.memory.available_physical; // GiB
+    float disk_read_bw        = dev_info.disk.read_rnd_bw * 1e9 / 1024.0 / 1024.0 / 1024.0; // convert GB/s to GiB/s
+    
+    if (cpu_total_bytes_gib + cpu_kv_size_gib + cpu_compute_buf_gib > cpu_mem_avail) {
+        // if physical memory reaches busy, all mapped tensors should be re-loaded
+        return cpu_total_bytes_gib / disk_read_bw * 1000;  // convert to ms
+    } else {
+        // if physical memory is enough, all mapped tensors can be stored in memory and will not be released
+        return 0.0f;
+    }
 }
 
 void device_print_props(struct device_info * dev_info_set, int n, struct llama_model * model, const struct llama_context_params cparams) {
@@ -1650,7 +1654,7 @@ void device_print_props(struct device_info * dev_info_set, int n, struct llama_m
     latency += device_compute_delay      (dev_info_set[0], n_layers, cparams);
     latency += device_memory_access_delay(dev_info_set[0], cparams,  n_layers);
     latency += device_disk_access_delay  (dev_info_set[0], model,    cparams); // if physical memory is not enough, some mapped data will be released and reloaded later
-    
+
     LOG_INF("| Token latency (ms)           ");
     LOG_INF("| %-10.2f   ", latency);
     LOG_INF("\n");
