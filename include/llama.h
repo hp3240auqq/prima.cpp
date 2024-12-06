@@ -415,6 +415,7 @@ extern "C" {
                 struct device_info        * dev_info, 
                 struct llama_model        * model, 
                 struct llama_model_loader * ml,
+                int                         n_predict,
                 int                         n_threads);
 
     LLAMA_API ggml_backend_buffer_type_t llama_dev_buffer_type(struct llama_model * model, int device);
