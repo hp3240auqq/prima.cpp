@@ -1212,10 +1212,10 @@ static float device_disk_access_delay(struct device_info & dev_info, struct llam
     uint64_t gpu_compute_buf;
 
 #if defined(GGML_USE_METAL) || defined(GGML_USE_CUDA)
-    llama_total_kv_size(&cpu_kv_size, &gpu_kv_size, model, cparams, true);
+    llama_kv_size(&cpu_kv_size, &gpu_kv_size, model, cparams, true);
     llama_model_compute_buf_size(&cpu_compute_buf, &gpu_compute_buf, model, cparams, true);
 #else
-    llama_total_kv_size(&cpu_kv_size, &gpu_kv_size, model, cparams, false);
+    llama_kv_size(&cpu_kv_size, &gpu_kv_size, model, cparams, false);
     llama_model_compute_buf_size(&cpu_compute_buf, &gpu_compute_buf, model, cparams, false);
 #endif
 
@@ -1249,8 +1249,16 @@ static float device_disk_access_delay(struct device_info & dev_info, struct llam
     float disk_read_bw        = dev_info.disk.read_rnd_bw * 1e9 / 1024.0 / 1024.0 / 1024.0; // convert GB/s to GiB/s
     
     if (cpu_total_bytes_gib + cpu_kv_size_gib + cpu_compute_buf_gib > cpu_mem_avail) {
+
+#if defined(__APPLE__) && defined(__MACH__)
         // if physical memory reaches busy, all mapped tensors should be re-loaded
         return cpu_total_bytes_gib / disk_read_bw * 1000;  // convert to ms
+#else
+        // only part of the mapped tensors needs to be re-loaded
+        float gbytes_to_load = cpu_total_bytes_gib - (cpu_mem_avail - cpu_kv_size_gib - cpu_compute_buf_gib);
+        return gbytes_to_load / disk_read_bw * 1000;  // convert to ms
+#endif
+
     } else {
         // if physical memory is enough, all mapped tensors can be stored in memory and will not be released
         return 0.0f;
