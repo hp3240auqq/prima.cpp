@@ -3884,7 +3884,7 @@ static bool llama_kv_cache_init(
             return false;
         }
         ggml_backend_buffer_clear(buf, 0);
-        LLAMA_LOG_INFO("%s: %10s KV buffer size = %8.2f MiB\n", __func__, ggml_backend_buffer_name(buf), ggml_backend_buffer_get_size(buf)/1024.0/1024.0);
+        LLAMA_LOG_INFO("%s: %11s KV buffer size = %8.2f MiB\n", __func__, ggml_backend_buffer_name(buf), ggml_backend_buffer_get_size(buf)/1024.0/1024.0);
         cache.bufs.push_back(buf);
     }
 
@@ -7373,10 +7373,10 @@ static bool llm_load_tensors_impl(
             GGML_ASSERT(local_i != -1);
 
             if (local_i % window_size >= window_size - n_gpu_layers) {
-                LLAMA_LOG_INFO("Layer %i assigned to gpu (cache index %i)\n", i, local_i);
+                // LLAMA_LOG_INFO("Layer %i assigned to gpu (cache index %i)\n", i, local_i);
                 model.buft_layer[local_i] = llama_default_buffer_type_offload(model, main_gpu);
             } else {
-                LLAMA_LOG_INFO("Layer %i assigned to cpu (cache index %i)\n", i, local_i);
+                // LLAMA_LOG_INFO("Layer %i assigned to cpu (cache index %i)\n", i, local_i);
                 model.buft_layer[local_i] = llama_default_buffer_type_cpu(model, true);
             }
         }
