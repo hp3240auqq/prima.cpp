@@ -3570,7 +3570,14 @@ static bool is_dtype_exist(struct model_params * n_params, enum ggml_type dtype)
     }
 }
 
-void llama_profile_device(device_info * dev_info, struct llama_model * model, llama_model_loader * ml, int n_predict, int n_threads) {
+void llama_profile_device(
+                device_info * dev_info, 
+         struct llama_model * model, 
+         llama_model_loader * ml, 
+                        int   n_predict,
+                        int   n_ctx, 
+                        int   n_threads,
+                       bool   flash_attn) {
     dev_info->device_name               = device_name();
     dev_info->cpu_props.cores           = device_cpu_cores();
 
@@ -3584,7 +3591,7 @@ void llama_profile_device(device_info * dev_info, struct llama_model * model, ll
     struct model_params * n_params = &dev_info->model_params;
     if (dev_info->rank == 0) {    
         enum ggml_type inp_embd_dtype  = GGML_TYPE_F32;
-        llama_model_n_flops(model, ml, n_flops, n_params, 1, n_predict, &inp_embd_dtype);
+        llama_model_n_flops(model, ml, n_flops, n_params, n_predict, n_ctx, &inp_embd_dtype, flash_attn);
         n_flops->inp_embd_ms = device_inp_embd_delay(model, inp_embd_dtype, 1, n_threads);
     }
 
@@ -3611,8 +3618,8 @@ void llama_profile_device(device_info * dev_info, struct llama_model * model, ll
     dev_info->gpu_props.description         = gpu_props.description;
     dev_info->gpu_props.memory_free         = round(gpu_props.memory_free  / (double)(1 << 30) * 100) / 100;
     dev_info->gpu_props.memory_total        = round(gpu_props.memory_total / (double)(1 << 30) * 100) / 100;
-    dev_info->gpu_props.metal_read_vram_bw  = device_metal_read_vram_bw(model);
-    dev_info->gpu_props.cuda_read_vram_bw   = device_cuda_read_vram_bw(model);
+    dev_info->gpu_props.metal_read_vram_bw  = device_metal_read_vram_bw();
+    dev_info->gpu_props.cuda_read_vram_bw   = device_cuda_read_vram_bw();
 
     if (is_dtype_exist(n_params, GGML_TYPE_F32)) {
         dev_info->cpu_props.flops_f32_f32       = device_cpu_flops  (model, GGML_TYPE_F32,  GGML_TYPE_F32, n_threads);
@@ -19669,6 +19676,7 @@ struct llama_context_params llama_context_default_params() {
         /*.master_ip                   =*/ nullptr,
         /*.next_node_ip                =*/ nullptr,
         /*.n_ctx                       =*/ 512,
+        /*.n_predict                   =*/ 512,
         /*.n_batch                     =*/ 2048,
         /*.n_ubatch                    =*/ 512,
         /*.n_seq_max                   =*/ 1,
@@ -20910,22 +20918,49 @@ void llama_model_compute_buf_size(
     }
 }
 
-void llama_model_kvcache_size(
+void llama_total_kv_size(
                             uint64_t * cpu_cache, 
                             uint64_t * gpu_cache, 
             const struct llama_model * model, 
    const struct llama_context_params   cparams, 
                                 bool   use_gpu) {
     const llama_hparams hparams = model->hparams;
-    uint64_t ne_k = static_cast<uint64_t>(hparams.n_embd_k_gqa()) * cparams.n_ctx * ggml_type_size(cparams.type_k);
-    uint64_t ne_v = static_cast<uint64_t>(hparams.n_embd_v_gqa()) * cparams.n_ctx * ggml_type_size(cparams.type_v);
+    uint64_t nb_k = static_cast<uint64_t>(hparams.n_embd_k_gqa()) * cparams.n_ctx * ggml_type_size(cparams.type_k);
+    uint64_t nb_v = static_cast<uint64_t>(hparams.n_embd_v_gqa()) * cparams.n_ctx * ggml_type_size(cparams.type_v);
     if (use_gpu) {
         int n_gpu_layers = std::min(cparams.n_gpu_layers, hparams.n_layer);
-        *gpu_cache = (ne_k + ne_v) * n_gpu_layers;
-        *cpu_cache = (ne_k + ne_v) * (llama_model_n_layers(model) - n_gpu_layers);
+        *gpu_cache = (nb_k + nb_v) * n_gpu_layers;
+        *cpu_cache = (nb_k + nb_v) * (llama_model_n_layers(model) - n_gpu_layers);
     } else {
         *gpu_cache = 0;
-        *cpu_cache = (ne_k + ne_v) * llama_model_n_layers(model);
+        *cpu_cache = (nb_k + nb_v) * llama_model_n_layers(model);
+    }
+}
+
+void llama_kv_size(
+                            uint64_t * cpu_cache, 
+                            uint64_t * gpu_cache, 
+            const struct llama_model * model, 
+   const struct llama_context_params   cparams, 
+                                bool   use_gpu) {
+    const llama_hparams hparams = model->hparams;
+    const int64_t n_layer      = llama_model_n_layers(model);
+    const int64_t n_ctx        = cparams.n_ctx;
+    const int64_t n_history    = cparams.n_predict;
+    const int64_t n_pad        = cparams.flash_attn ? 256u : 32u;
+    const int64_t n_kv         = std::min(n_ctx, std::max(n_pad, GGML_PAD(n_history, n_pad)));
+    const int64_t n_embd_k_gqa = static_cast<int64_t>(hparams.n_embd_k_gqa());
+    const int64_t n_embd_v_gqa = static_cast<int64_t>(hparams.n_embd_v_gqa());
+
+    const int64_t nb_k = n_embd_k_gqa * n_kv * ggml_type_size(cparams.type_k);
+    const int64_t nb_v = n_embd_v_gqa * n_kv * ggml_type_size(cparams.type_v);
+    if (use_gpu) {
+        const int64_t n_gpu_layers = std::min(n_layer, static_cast<int64_t>(cparams.n_gpu_layers));
+        *gpu_cache = (nb_k + nb_v) * n_gpu_layers;
+        *cpu_cache = (nb_k + nb_v) * (n_layer - n_gpu_layers);
+    } else {
+        *gpu_cache = 0;
+        *cpu_cache = (nb_k + nb_v) * n_layer;
     }
 }
 
@@ -20934,20 +20969,23 @@ void llama_model_n_flops(
      struct llama_model_loader * ml, 
             struct model_flops * n_flops, 
            struct model_params * n_params, 
-                 const int64_t   n_input, 
-                 const int64_t   n_history, 
-                enum ggml_type * inp_embd_dtype) {
+                 const int64_t   n_history,
+                 const int64_t   n_ctx, 
+                enum ggml_type * inp_embd_dtype,
+                          bool   flash_attn) {
     const llama_hparams hparams  = model->hparams;
     const int64_t n_layer        = hparams.n_layer;
     const int64_t n_vocab        = hparams.n_vocab;
     const int64_t n_embd         = hparams.n_embd;
     const int64_t n_head         = hparams.n_head();
+    const int64_t n_head_kv      = hparams.n_head_kv();
     const int64_t n_ff           = hparams.n_ff();
-    const int64_t n_embd_k_gqa   = hparams.n_embd_k_gqa();
-    const int64_t n_embd_v_gqa   = hparams.n_embd_v_gqa();
     const int64_t n_embd_head_k  = hparams.n_embd_head_k;
+    const int64_t n_embd_head_v  = hparams.n_embd_head_v;
     const int64_t n_expert       = hparams.n_expert;
-    
+    const int64_t n_pad          = flash_attn ? 256u : 32u;
+    const int64_t n_kv           = std::min(n_ctx, std::max(n_pad, GGML_PAD(n_history, n_pad)));
+
     // assign all the tensors on CPU by default
     model->buft_input  = llama_default_buffer_type_cpu(*model, true);
     model->buft_output = llama_default_buffer_type_cpu(*model, true);
@@ -21045,64 +21083,66 @@ void llama_model_n_flops(
                     break;
                 }
                 case 2: { // "output_norm.weight"
-                    count_n_flops (n_flops,  cur->type,     PROFILER_LAYER_OUTPUT, n_input * (4 * n_embd + 1));
+                    count_n_flops (n_flops,  GGML_TYPE_F32, PROFILER_LAYER_OUTPUT, 4 * n_embd + 1); // rms_norm
+                    count_n_flops (n_flops,  cur->type,     PROFILER_LAYER_OUTPUT, n_embd); // norm weights
                     count_n_params(n_params, cur->type,     PROFILER_LAYER_OUTPUT, ggml_nelements(cur));
                     break;
                 }
                 case 3: { // "output.weight"
-                    count_n_flops (n_flops,  cur->type,     PROFILER_LAYER_OUTPUT, 2 * n_input * n_embd * n_vocab);
-                    count_n_flops (n_flops,  GGML_TYPE_F32, PROFILER_LAYER_OUTPUT, 5 * n_input * n_vocab); // softmax
+                    count_n_flops (n_flops,  cur->type,     PROFILER_LAYER_OUTPUT, 2 * n_embd * n_vocab);
+                    count_n_flops (n_flops,  GGML_TYPE_F32, PROFILER_LAYER_OUTPUT, 5 * n_vocab); // softmax
                     count_n_params(n_params, cur->type,     PROFILER_LAYER_OUTPUT, ggml_nelements(cur));
                     break;
                 }
                 case 4:  // "blk.0.attn_norm.weight"
                 case 12: // "blk.0.ffn_norm.weight"
                 { 
-                    count_n_flops (n_flops,  cur->type,     PROFILER_LAYER_BACKEND, n_input * (4 * n_embd + 1));
+                    count_n_flops (n_flops,  GGML_TYPE_F32, PROFILER_LAYER_BACKEND, 4 * n_embd + 1); // rms norm
+                    count_n_flops (n_flops,  cur->type,     PROFILER_LAYER_BACKEND, n_embd); // norm weights
                     count_n_params(n_params, cur->type,     PROFILER_LAYER_BACKEND, ggml_nelements(cur));
                     break;
                 }
                 case 5: { // "blk.0.attn_q.weight"
-                    count_n_flops (n_flops,  cur->type,     PROFILER_LAYER_BACKEND, 2 * n_input * n_embd * (n_head * n_embd_head_k));
-                    count_n_flops (n_flops,  GGML_TYPE_F32, PROFILER_LAYER_BACKEND, 2 * n_input * n_embd_head_k); // rope
+                    count_n_flops (n_flops,  cur->type,     PROFILER_LAYER_BACKEND, 2 * n_embd * n_embd);
+                    count_n_flops (n_flops,  GGML_TYPE_F32, PROFILER_LAYER_BACKEND, 2.5 * n_embd); // rope
                     count_n_params(n_params, cur->type,     PROFILER_LAYER_BACKEND, ggml_nelements(cur));
                     break;
                 }
                 case 6: { // "blk.0.attn_k.weight"
-                    count_n_flops (n_flops,  cur->type,     PROFILER_LAYER_BACKEND, 2 * n_input * n_embd * (n_head * n_embd_k_gqa));
-                    count_n_flops (n_flops,  GGML_TYPE_F32, PROFILER_LAYER_BACKEND, 2 * n_input * n_embd_k_gqa); // rope
-                    count_n_flops (n_flops,  GGML_TYPE_F16, PROFILER_LAYER_BACKEND, 2 * n_input * (n_input + n_history) * n_embd_head_k * n_head); // compute kq with kvcache
-                    count_n_flops (n_flops,  GGML_TYPE_F32, PROFILER_LAYER_BACKEND, 7 * n_input * (n_input + n_history) * n_head); // scale, mask, and softmax
+                    count_n_flops (n_flops,  cur->type,     PROFILER_LAYER_BACKEND, 2 * n_embd * n_head_kv * n_embd_head_k);
+                    count_n_flops (n_flops,  GGML_TYPE_F32, PROFILER_LAYER_BACKEND, 2.5 * n_embd_head_k * n_head_kv); // rope
+                    count_n_flops (n_flops,  GGML_TYPE_F16, PROFILER_LAYER_BACKEND, 2 * n_embd_head_k * n_head * n_kv * n_head_kv); // compute kq with kvcache
+                    count_n_flops (n_flops,  GGML_TYPE_F32, PROFILER_LAYER_BACKEND, 7 * n_head * n_kv); // scale, mask, and softmax
                     count_n_params(n_params, cur->type,     PROFILER_LAYER_BACKEND, ggml_nelements(cur));
                     break;
                 }
                 case 7: { // "blk.0.attn_v.weight"
-                    count_n_flops (n_flops,  cur->type,     PROFILER_LAYER_BACKEND, 2 * n_input * n_embd * (n_head * n_embd_v_gqa));
-                    count_n_flops (n_flops,  GGML_TYPE_F16, PROFILER_LAYER_BACKEND, n_input * (n_input + n_history) * n_embd_head_k * n_head); // compute kqv with kvcache
+                    count_n_flops (n_flops,  cur->type,     PROFILER_LAYER_BACKEND, 2 * n_embd * n_head_kv * n_embd_head_v);
+                    count_n_flops (n_flops,  GGML_TYPE_F16, PROFILER_LAYER_BACKEND, 2 * n_embd_head_v * n_head * n_kv * n_head_kv); // compute kqv with kvcache
                     count_n_params(n_params, cur->type,     PROFILER_LAYER_BACKEND, ggml_nelements(cur));
                     break;
                 }
                 case 8: { // "blk.0.attn_output.weight"
-                    count_n_flops (n_flops,  cur->type,     PROFILER_LAYER_BACKEND, 2 * n_input * (n_head * n_embd_head_k) * n_embd);
-                    count_n_flops (n_flops,  GGML_TYPE_F32, PROFILER_LAYER_BACKEND, n_input * n_embd); // shortcut
+                    count_n_flops (n_flops,  cur->type,     PROFILER_LAYER_BACKEND, 2 * n_embd * n_embd);
+                    count_n_flops (n_flops,  GGML_TYPE_F32, PROFILER_LAYER_BACKEND, n_embd); // shortcut
                     count_n_params(n_params, cur->type,     PROFILER_LAYER_BACKEND, ggml_nelements(cur));
                     break;
                 }
                 case 9: { // "blk.0.ffn_gate.weight"
-                    count_n_flops (n_flops,  cur->type,     PROFILER_LAYER_BACKEND, 2 * n_input * n_embd * n_ff);
-                    count_n_flops (n_flops,  GGML_TYPE_F32, PROFILER_LAYER_BACKEND, 5 * n_input * n_ff); // SiLU
+                    count_n_flops (n_flops,  cur->type,     PROFILER_LAYER_BACKEND, 2 * n_embd * n_ff);
+                    count_n_flops (n_flops,  GGML_TYPE_F32, PROFILER_LAYER_BACKEND, 8 * n_ff); // SiLU
                     count_n_params(n_params, cur->type,     PROFILER_LAYER_BACKEND, ggml_nelements(cur));
                     break;
                 }
                 case 10: { // "blk.0.ffn_down.weight"
-                    count_n_flops (n_flops,  cur->type,     PROFILER_LAYER_BACKEND, 2 * n_input * n_embd * n_ff);
-                    count_n_flops (n_flops,  GGML_TYPE_F32, PROFILER_LAYER_BACKEND, n_input * n_embd); // shortcut
+                    count_n_flops (n_flops,  cur->type,     PROFILER_LAYER_BACKEND, 2 * n_embd * n_ff);
+                    count_n_flops (n_flops,  GGML_TYPE_F32, PROFILER_LAYER_BACKEND, n_embd); // shortcut
                     count_n_params(n_params, cur->type,     PROFILER_LAYER_BACKEND, ggml_nelements(cur));
                     break;
                 }
                 case 11: { // "blk.0.ffn_up.weight"
-                    count_n_flops (n_flops,  cur->type,     PROFILER_LAYER_BACKEND, 2 * n_input * n_embd * n_ff);
-                    count_n_flops (n_flops,  GGML_TYPE_F32, PROFILER_LAYER_BACKEND, n_input * n_ff); // silu(gate(x)) * up(x)
+                    count_n_flops (n_flops,  cur->type,     PROFILER_LAYER_BACKEND, 2 * n_embd * n_ff);
+                    count_n_flops (n_flops,  GGML_TYPE_F32, PROFILER_LAYER_BACKEND, n_ff); // silu(gate(x)) * up(x)
                     count_n_params(n_params, cur->type,     PROFILER_LAYER_BACKEND, ggml_nelements(cur));
                     break;
                 }
@@ -21117,20 +21157,20 @@ void llama_model_n_flops(
                 case 17: // "blk.0.attn_output.bias"
                 case 19: // "blk.0.ffn_down.bias"
                 {
-                    count_n_flops (n_flops,  cur->type,     PROFILER_LAYER_BACKEND, n_input * n_embd);
+                    count_n_flops (n_flops,  cur->type,     PROFILER_LAYER_BACKEND, n_embd);
                     count_n_params(n_params, cur->type,     PROFILER_LAYER_BACKEND, ggml_nelements(cur));
                     break;
                 }
                 case 18: // "blk.0.ffn_gate.bias"
                 case 20: // "blk.0.ffn_up.bias"
                 {
-                    count_n_flops (n_flops,  cur->type,     PROFILER_LAYER_BACKEND, n_input * n_ff);
+                    count_n_flops (n_flops,  cur->type,     PROFILER_LAYER_BACKEND, n_ff);
                     count_n_params(n_params, cur->type,     PROFILER_LAYER_BACKEND, ggml_nelements(cur));
                     break; 
                 }
                 // optional: expert tensors
                 case 21: { // "blk.0.ffn_gate_inp.weight"
-                    count_n_flops (n_flops,  cur->type,     PROFILER_LAYER_BACKEND, 2 * n_input * n_embd * n_expert);
+                    count_n_flops (n_flops,  cur->type,     PROFILER_LAYER_BACKEND, 2 * n_embd * n_expert);
                     count_n_params(n_params, cur->type,     PROFILER_LAYER_BACKEND, ggml_nelements(cur));
                     break;
                 }
@@ -21138,7 +21178,7 @@ void llama_model_n_flops(
                 case 23: // "blk.0.ffn_down_exps.weight"
                 case 24: // "blk.0.ffn_up_exps.weight"
                 { 
-                    count_n_flops (n_flops,  cur->type,     PROFILER_LAYER_BACKEND, 2 * n_input * n_embd * n_ff * n_expert);
+                    count_n_flops (n_flops,  cur->type,     PROFILER_LAYER_BACKEND, 2 * n_embd * n_ff * n_expert);
                     count_n_params(n_params, cur->type,     PROFILER_LAYER_BACKEND, ggml_nelements(cur));
                     break;
                 }

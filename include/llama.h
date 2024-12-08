@@ -325,6 +325,7 @@ extern "C" {
         char *      master_ip;         // ip address of the master node
         char *      next_node_ip;      // ip address of the next node
         uint32_t    n_ctx;             // text context, 0 = from model
+        uint32_t    n_predict;         // number of tokens to predict
         uint32_t    n_batch;           // logical maximum batch size that can be submitted to llama_decode
         uint32_t    n_ubatch;          // physical maximum batch size
         uint32_t    n_seq_max;         // max number of sequences (i.e. distinct states for recurrent models)
@@ -412,11 +413,13 @@ extern "C" {
     LLAMA_API void llama_backend_init(void);
 
     LLAMA_API void llama_profile_device(
-                struct device_info        * dev_info, 
-                struct llama_model        * model, 
+                       struct device_info * dev_info, 
+                       struct llama_model * model, 
                 struct llama_model_loader * ml,
-                int                         n_predict,
-                int                         n_threads);
+                                      int   n_predict,
+                                      int   n_ctx,
+                                      int   n_threads,
+                                     bool   flash_attn);
 
     LLAMA_API ggml_backend_buffer_type_t llama_dev_buffer_type(struct llama_model * model, int device);
 
@@ -534,12 +537,19 @@ extern "C" {
                                       bool   use_gpu);
 
     // Return the size of KV cache in the model
-    LLAMA_API void llama_model_kvcache_size(
+    LLAMA_API void llama_total_kv_size(
                                   uint64_t * cpu_cache, 
                                   uint64_t * gpu_cache, 
                   const struct llama_model * model, 
          const struct llama_context_params   cparams,
                                       bool   use_gpu);
+    
+    LLAMA_API void llama_kv_size(
+                            uint64_t * cpu_cache, 
+                            uint64_t * gpu_cache, 
+            const struct llama_model * model, 
+   const struct llama_context_params   cparams,
+                                bool   use_gpu);
 
     // Return the total number of float operations in the model
     LLAMA_API void llama_model_n_flops(
@@ -547,9 +557,10 @@ extern "C" {
                  struct llama_model_loader * ml, 
                         struct model_flops * n_flops,
                        struct model_params * n_params,
-                             const int64_t   n_input,
                              const int64_t   n_history,
-                            enum ggml_type * inp_embd_dtype);
+                             const int64_t   n_ctx,
+                            enum ggml_type * inp_embd_dtype,
+                                      bool   flash_attn);
 
     // Get a llama model tensor
     LLAMA_API struct ggml_tensor * llama_get_model_tensor(struct llama_model * model, const char * name);

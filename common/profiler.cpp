@@ -97,8 +97,9 @@ uint32_t device_cpu_cores() {
 }
 
 static float device_flops(struct llama_model * model, enum ggml_type src0t, enum ggml_type src1t, enum profiler_backend_type btype, int n_threads) {
-    const int n_repeat = 1;
-    const int n_embd   = std::min(llama_n_embd(model), 4096);
+    int n_repeat = 1;
+    int n_embd = std::min(llama_n_embd(model), 4096);
+    if (btype == PROFILER_BACKEND_TYPE_CPU) n_embd /= 8; // simulate small tensor calculation on cpu
     std::vector<float> matrix_A(n_embd * n_embd, 1.0f); 
     std::vector<float> matrix_B(n_embd * n_embd, 1.0f / n_embd);
 
@@ -142,12 +143,9 @@ static float device_flops(struct llama_model * model, enum ggml_type src0t, enum
     struct ggml_cgraph  * gf         = NULL;
     struct ggml_context * ctx_cgraph = NULL;
     struct ggml_tensor  * cur        = NULL;
-    struct ggml_tensor  * cur1       = NULL;
-    struct ggml_tensor  * cur2       = NULL;
-    struct ggml_tensor  * cur3       = NULL;
     {
         struct ggml_init_params params0 = {
-            /*.mem_size   =*/ ggml_tensor_overhead() * (5 * n_repeat + 1) + ggml_graph_overhead(),
+            /*.mem_size   =*/ ggml_tensor_overhead() * (n_repeat + 2) + ggml_graph_overhead(),
             /*.mem_buffer =*/ NULL,
             /*.no_alloc   =*/ true, // the tensors will be allocated later by ggml_gallocr_alloc_graph()
         };
@@ -155,12 +153,8 @@ static float device_flops(struct llama_model * model, enum ggml_type src0t, enum
 
         gf = ggml_new_graph(ctx_cgraph);
         cur = ggml_mul_mat(ctx_cgraph, tensor_a, tensor_b);
-        for (int i = 0; i < n_repeat; i++) {
-            cur1 = ggml_mul_mat(ctx_cgraph, tensor_a, cur);
-            cur2 = ggml_mul_mat(ctx_cgraph, tensor_a, cur);
-            cur  = ggml_add(ctx_cgraph, cur1, cur2);
-            cur3 = ggml_mul_mat(ctx_cgraph, tensor_a, cur);
-            cur  = ggml_add(ctx_cgraph, cur, cur3);
+        for (int i = 0; i < n_repeat - 1; i++) {
+            cur = ggml_mul_mat(ctx_cgraph, tensor_a, cur);
         }
         ggml_build_forward_expand(gf, cur);
     }
@@ -204,15 +198,14 @@ static float device_flops(struct llama_model * model, enum ggml_type src0t, enum
     ggml_backend_sched_alloc_graph(sched, gf);
 
     // warm-up
-    // ggml_backend_graph_compute(backend, gf);
+    ggml_backend_graph_compute(backend, gf);
 
     const int64_t t_start = ggml_time_us();
     ggml_backend_graph_compute(backend, gf);
     const int64_t t_end = ggml_time_us();
 
     double elapsed_seconds = ((double)t_end - (double)t_start) / 1e6; // convert to seconds
-    double flops = (2.0 * (double)n_embd * (double)n_embd * (double)n_embd + 
-                   n_repeat * 4 * 2.0 * (double)n_embd * (double)n_embd * (double)n_embd) / elapsed_seconds / 1e9; // convert to GFLOPS
+    double flops = (2.0 * (double)n_embd * (double)n_embd * (double)n_embd * n_repeat) / elapsed_seconds / 1e9; // convert to GFLOPS
 
     ggml_free(ctx_cgraph);
     ggml_gallocr_free(allocr);
@@ -933,8 +926,8 @@ float device_memory_bw(int n_thread) {
     return static_cast<float>(bandwidth);
 }
 
-static float device_read_vram_bw(struct llama_model * model, enum profiler_backend_type btype) {
-    const int n_embd = std::min(llama_n_embd(model) * 2, 4096 * 2);
+static float device_read_vram_bw(enum profiler_backend_type btype) {
+    const int n_embd = 8192;
     std::vector<float> matrix_A(n_embd * n_embd, 1.0f);
 
     ggml_backend_t backend = NULL;
@@ -1006,21 +999,19 @@ static float device_read_vram_bw(struct llama_model * model, enum profiler_backe
     return bandwidth;
 }
 
-float device_metal_read_vram_bw(struct llama_model * model) {
+float device_metal_read_vram_bw() {
 #ifdef GGML_USE_METAL
-    return device_read_vram_bw(model, PROFILER_BACKEND_TYPE_METAL);
+    return device_read_vram_bw(PROFILER_BACKEND_TYPE_METAL);
 #endif
 
-    (void)model;
     return 0.0f;
 }
 
-float device_cuda_read_vram_bw(struct llama_model * model) {
+float device_cuda_read_vram_bw() {
 #ifdef GGML_USE_CUDA
-    return device_read_vram_bw(model, PROFILER_BACKEND_TYPE_CUDA);
+    return device_read_vram_bw(PROFILER_BACKEND_TYPE_CUDA);
 #endif
 
-    (void)model;
     return 0.0f;
 }
 
@@ -1124,7 +1115,7 @@ static float device_compute_delay(struct device_info & dev_info, int n_layers, c
 }
 
 // estimate the memory access delay, except for the input embedding because it has been considered in n_flops.inp_embd_ms
-static float device_memory_access_delay(struct device_info & dev_info, const struct llama_context_params cparams, int n_layers) {
+static float device_memory_access_delay(struct device_info & dev_info, struct llama_model * model, const struct llama_context_params cparams, int n_layers) {
     struct model_params n_params = dev_info.model_params;
     int n_gpu_layers = std::min(static_cast<int>(cparams.n_gpu_layers), n_layers);
 
@@ -1143,10 +1134,15 @@ static float device_memory_access_delay(struct device_info & dev_info, const str
                    n_params.output_q5k * 5 / 8 +
                    n_params.output_q6k * 6 / 8 +
                    n_params.output_q80;
+    
+    uint64_t cpu_kv_size;
+    uint64_t gpu_kv_size;
 
-#if defined(GGML_USE_CUDA) || defined(GGML_USE_METAL)
-    int64_t vram_bytes = layer_bytes * n_gpu_layers;
-    int64_t ram_bytes  = layer_bytes * (n_layers - n_gpu_layers) + output_bytes;
+#if defined(GGML_USE_METAL) || defined(GGML_USE_CUDA)
+    llama_kv_size(&cpu_kv_size, &gpu_kv_size, model, cparams, true);
+
+    int64_t vram_bytes = layer_bytes * n_gpu_layers + gpu_kv_size;
+    int64_t ram_bytes  = layer_bytes * (n_layers - n_gpu_layers) + output_bytes + cpu_kv_size;
 
 #ifdef GGML_USE_CUDA
     double vram_access_delay = (double)(vram_bytes) / 1e6 / dev_info.gpu_props.cuda_read_vram_bw;
@@ -1158,8 +1154,11 @@ static float device_memory_access_delay(struct device_info & dev_info, const str
     return static_cast<float>(vram_access_delay + ram_access_delay); // ms
 
 #else
+    llama_kv_size(&cpu_kv_size, &gpu_kv_size, model, cparams, false);
+
     (void)n_gpu_layers;
-    int64_t ram_bytes = layer_bytes * n_layers + output_bytes;
+    (void)gpu_kv_size;
+    int64_t ram_bytes = layer_bytes * n_layers + output_bytes + cpu_kv_size;
     double ram_access_delay = (double)(ram_bytes) / 1e6 / dev_info.memory.cpu_read_ram_bw;
     return static_cast<float>(ram_access_delay); // ms
 #endif
@@ -1191,7 +1190,9 @@ static float device_disk_access_delay(struct device_info & dev_info, struct llam
 
 #if defined(GGML_USE_METAL) || defined(GGML_USE_CUDA)
     cpu_total_bytes += layer_bytes * (n_layers - n_gpu_layers);
+#if defined(GGML_USE_METAL)
     int64_t gpu_total_bytes = layer_bytes * n_gpu_layers;
+#endif
 #else
     (void)n_gpu_layers;
     cpu_total_bytes += layer_bytes * n_layers;
@@ -1211,10 +1212,10 @@ static float device_disk_access_delay(struct device_info & dev_info, struct llam
     uint64_t gpu_compute_buf;
 
 #if defined(GGML_USE_METAL) || defined(GGML_USE_CUDA)
-    llama_model_kvcache_size(&cpu_kv_size, &gpu_kv_size, model, cparams, true);
+    llama_total_kv_size(&cpu_kv_size, &gpu_kv_size, model, cparams, true);
     llama_model_compute_buf_size(&cpu_compute_buf, &gpu_compute_buf, model, cparams, true);
 #else
-    llama_model_kvcache_size(&cpu_kv_size, &gpu_kv_size, model, cparams, false);
+    llama_total_kv_size(&cpu_kv_size, &gpu_kv_size, model, cparams, false);
     llama_model_compute_buf_size(&cpu_compute_buf, &gpu_compute_buf, model, cparams, false);
 #endif
 
@@ -1651,9 +1652,9 @@ void device_print_props(struct device_info * dev_info_set, int n, struct llama_m
     // todo: calculate for each device, not only master
     float latency = 0.0f;
     int n_layers  = llama_model_n_layers (model);
-    latency += device_compute_delay      (dev_info_set[0], n_layers, cparams);
-    latency += device_memory_access_delay(dev_info_set[0], cparams,  n_layers);
-    latency += device_disk_access_delay  (dev_info_set[0], model,    cparams); // if physical memory is not enough, some mapped data will be released and reloaded later
+    latency += device_compute_delay      (dev_info_set[0], n_layers,cparams);
+    latency += device_memory_access_delay(dev_info_set[0], model, cparams, n_layers);
+    latency += device_disk_access_delay  (dev_info_set[0], model, cparams); // if physical memory is not enough, some mapped data will be released and reloaded later
 
     LOG_INF("| Token latency (ms)           ");
     LOG_INF("| %-10.2f   ", latency);

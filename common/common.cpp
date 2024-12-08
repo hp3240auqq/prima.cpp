@@ -896,7 +896,7 @@ struct llama_init_result llama_init_from_gpt_params(gpt_params & params) {
 
     device_info dev_info;
     dev_info.rank = params.rank;
-    llama_profile_device(&dev_info, model, ml, params.n_predict, params.cpuparams.n_threads);
+    llama_profile_device(&dev_info, model, ml, params.n_predict, params.n_ctx, params.cpuparams.n_threads, params.flash_attn);
 
     // create llama context
     struct llama_context_params cparams = llama_context_params_from_gpt_params(params);
@@ -1133,6 +1133,7 @@ struct llama_context_params llama_context_params_from_gpt_params(const gpt_param
     std::strcpy(cparams.next_node_ip, params.next_node_ip.c_str());
 
     cparams.n_ctx             = params.n_ctx;
+    cparams.n_predict         = params.n_predict;
     cparams.n_seq_max         = params.n_parallel;
     cparams.n_batch           = params.n_batch;
     cparams.n_ubatch          = params.n_ubatch;
