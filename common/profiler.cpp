@@ -291,7 +291,7 @@ float device_inp_embd_delay(struct llama_model * model, enum ggml_type src0t, in
             matrix_B = malloc(embd_size * sizeof(float));
             float * matrix_B_f32 = static_cast<float *>(matrix_B);
             for (size_t i = 0; i < embd_size; ++i) {
-                matrix_B_f32[i] = static_cast<float>(rand()) / RAND_MAX;
+                matrix_B_f32[i] = static_cast<float>(rand() / RAND_MAX);
             }
             break;
         }
@@ -299,7 +299,7 @@ float device_inp_embd_delay(struct llama_model * model, enum ggml_type src0t, in
             matrix_B = malloc(embd_size * sizeof(ggml_fp16_t));
             std::vector<float> temp_f32(embd_size);
             for (size_t i = 0; i < embd_size; ++i) {
-                temp_f32[i] = static_cast<float>(rand()) / RAND_MAX;
+                temp_f32[i] = static_cast<float>(rand() / RAND_MAX);
             }
             ggml_fp32_to_fp16_row(temp_f32.data(), static_cast<ggml_fp16_t *>(matrix_B), embd_size);
             break;
@@ -1229,13 +1229,14 @@ static float device_disk_access_delay(struct device_info & dev_info, struct llam
         double total_bytes_gib       = static_cast<double>(cpu_total_bytes + gpu_total_bytes) / 1024.0 / 1024.0 / 1024.0;
         double total_kv_size_gib     = cpu_kv_size_gib + gpu_kv_size_gib;
         double total_compute_buf_gib = cpu_compute_buf_gib + gpu_compute_buf_gib;
+        float  disk_read_bw          = dev_info.disk.read_rnd_bw;
         if (total_bytes_gib + total_kv_size_gib + total_compute_buf_gib < dev_info.memory.total_physical) {
-            float disk_read_bw = dev_info.disk.read_rnd_bw;
             // each time one new row of lookup table will be loaded
             return static_cast<double>(input_bytes) / 1e9 / disk_read_bw * 1000; // convert to ms
         } else {
-            LOG_INF("swap occurs, not allowed\n");
-            return 1e9;
+            // warn: OOM error may occur if -ngl is set large
+            float weight_reload_delay = total_bytes_gib * 1024.0 * 1024.0 * 1024.0 / 1e6 / disk_read_bw; // ms
+            return weight_reload_delay;
         }
     }
 #endif
