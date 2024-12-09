@@ -44,6 +44,7 @@
 #include <thread>
 #include <random>
 #include <regex>
+#include <unordered_map>
 
 
 const char * device_name() {
@@ -477,49 +478,97 @@ static uint64_t device_host_physical_memory(bool available) {
     return memory;
 }
 
-static uint64_t device_cgroup_physical_memory(bool available) {
-    uint64_t memory_info   = 0;
-    const char * file_path = nullptr;
-    
-    std::ifstream cgroup_file("/proc/cgroups");
-    bool is_cgroup_v2 = false;
-    if (cgroup_file.is_open()) {
-        std::string line;
-        while (std::getline(cgroup_file, line)) {
-            if (line.find("0") != std::string::npos) {
-                is_cgroup_v2 = true;
-                break;
-            }
-        }
-        cgroup_file.close();
+static uint64_t read_value_from_file(const char * path) {
+    std::ifstream file(path);
+    if (!file.is_open()) {
+        return 0;
     }
-
-    if (is_cgroup_v2) {
-        file_path = available
-                        ? "/sys/fs/cgroup/memory.current" 
-                        : "/sys/fs/cgroup/memory.max";    
-    } else {
-        file_path = available
-                        ? "/sys/fs/cgroup/memory/memory.usage_in_bytes" 
-                        : "/sys/fs/cgroup/memory/memory.limit_in_bytes"; 
+    std::string line;
+    if (!std::getline(file, line)) {
+        return 0;
     }
+    try {
+        return std::stoull(line);
+    } catch (...) {
+        return 0;
+    }
+}
 
-    std::ifstream file(file_path);
-    if (file.is_open()) {
-        std::string line;
-        if (std::getline(file, line)) {
+static std::unordered_map<std::string, uint64_t> read_memory_stat() {
+    std::unordered_map<std::string, uint64_t> stats;
+    std::ifstream file("/sys/fs/cgroup/memory.stat");
+    if (!file.is_open()) {
+        return stats;
+    }
+    std::string line;
+    while (std::getline(file, line)) {
+        size_t space_pos = line.find(' ');
+        if (space_pos != std::string::npos) {
+            std::string key = line.substr(0, space_pos);
+            std::string val_str = line.substr(space_pos + 1);
             try {
-                memory_info = std::stoull(line);
-            } catch (const std::exception &e) {
-                memory_info = 0;
+                uint64_t val = std::stoull(val_str);
+                stats[key] = val;
+            } catch (...) {
+                return stats;
             }
         }
-        file.close();
-    } else {
-        memory_info = 0;
+    }
+    return stats;
+}
+
+static uint64_t device_cgroup_physical_memory(bool available) {
+    const char * file_path = nullptr;
+
+    bool is_cgroup_v2 = false;
+    {
+        std::ifstream cgroup_file("/proc/cgroups");
+        if (cgroup_file.is_open()) {
+            std::string line;
+            while (std::getline(cgroup_file, line)) {
+                if (line.find("0") != std::string::npos) {
+                    is_cgroup_v2 = true;
+                    break;
+                }
+            }
+        }
     }
 
-    return memory_info;
+    if (!available) {
+        if (is_cgroup_v2) {
+            file_path = "/sys/fs/cgroup/memory.max";
+        } else {
+            file_path = "/sys/fs/cgroup/memory/memory.limit_in_bytes";
+        }
+        return read_value_from_file(file_path);
+    } else {
+        if (is_cgroup_v2) {
+            uint64_t mem_max     = read_value_from_file("/sys/fs/cgroup/memory.max");
+            uint64_t mem_current = read_value_from_file("/sys/fs/cgroup/memory.current");
+
+            auto stats = read_memory_stat();
+
+            uint64_t slab_reclaimable = 0;
+            uint64_t inactive_file    = 0;
+
+            if (stats.find("slab_reclaimable") != stats.end()) {
+                slab_reclaimable = stats["slab_reclaimable"];
+            }
+            if (stats.find("inactive_file") != stats.end()) {
+                inactive_file = stats["inactive_file"];
+            }
+
+            uint64_t available_memory = std::max(mem_max - mem_current, 0);
+            available_memory += slab_reclaimable;
+            available_memory += inactive_file;
+            return available_memory;
+        } else {
+            LOG_WRN("Using cgroup v1, the available memory could be error, will be addressed later\n");
+            uint64_t mem_limit = read_value_from_file("/sys/fs/cgroup/memory/memory.limit_in_bytes");
+            uint64_t mem_usage = read_value_from_file("/sys/fs/cgroup/memory/memory.usage_in_bytes");
+            return std::max(mem_limit - mem_usage, 0);
+        }
+    }
 }
 
 uint64_t device_physical_memory(bool available) {
@@ -1408,6 +1457,7 @@ static float device_mem_copy_delay(struct llama_model * model, const struct llam
     float layer_delay_cuda  = device_cuda_mem_copy(model);
     return layer_delay_cuda * n_gpu_layers + layer_delay_cpu * (n_layers - n_gpu_layers);
 #else
+    (void)n_gpu_layers;
     return layer_delay_cpu * n_layers;
 #endif
 }
