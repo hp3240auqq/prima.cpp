@@ -558,7 +558,7 @@ static uint64_t device_cgroup_physical_memory(bool available) {
                 inactive_file = stats["inactive_file"];
             }
 
-            uint64_t available_memory = std::max(mem_max - mem_current, 0);
+            uint64_t available_memory = mem_max - mem_current > 0 ? mem_max - mem_current : 0;
             available_memory += slab_reclaimable;
             available_memory += inactive_file;
             return available_memory;
@@ -566,7 +566,7 @@ static uint64_t device_cgroup_physical_memory(bool available) {
             LOG_WRN("Using cgroup v1, the available memory could be error, will be addressed later\n");
             uint64_t mem_limit = read_value_from_file("/sys/fs/cgroup/memory/memory.limit_in_bytes");
             uint64_t mem_usage = read_value_from_file("/sys/fs/cgroup/memory/memory.usage_in_bytes");
-            return std::max(mem_limit - mem_usage, 0);
+            return mem_limit - mem_usage > 0 ? mem_limit - mem_usage : 0;
         }
     }
 }
