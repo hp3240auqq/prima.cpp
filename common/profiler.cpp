@@ -573,12 +573,7 @@ static uint64_t device_cgroup_physical_memory(bool available) {
 
 uint64_t device_physical_memory(bool available) {
     if (device_is_docker_container()) {
-        uint64_t memory_total = device_cgroup_physical_memory(false);
-        if (available) {
-            uint64_t memory_usage = device_cgroup_physical_memory(true);
-            return memory_total - memory_usage;
-        }
-        return memory_total;
+        return device_cgroup_physical_memory(available);
     } else {
         return device_host_physical_memory(available);
     }
