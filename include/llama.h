@@ -528,6 +528,12 @@ extern "C" {
     // Returns the total number of parameters in the model
     LLAMA_API uint64_t llama_model_n_params(const struct llama_model * model);
 
+    // Returns the embedding size of K in grouped query attention
+    LLAMA_API uint32_t llama_model_n_embd_k_gqa(struct llama_model * model);
+
+    // Returns the embedding size of V in grouped query attention
+    LLAMA_API uint32_t llama_model_n_embd_v_gqa(struct llama_model * model);
+
     // Return the size of compute buffer size, including input tensors and activations
     LLAMA_API void llama_model_compute_buf_size(
                                   uint64_t * cpu_buf,

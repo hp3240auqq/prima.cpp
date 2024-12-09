@@ -221,25 +221,29 @@ float device_cpu_flops(struct llama_model * model, enum ggml_type src0t, enum gg
 }
 
 float device_metal_flops(struct llama_model * model, enum ggml_type src0t, enum ggml_type src1t) {
+    float flops = 0.0f;
+
 #ifdef GGML_USE_METAL
-    return device_flops(model, src0t, src1t, PROFILER_BACKEND_TYPE_METAL, 4);
+    flops = device_flops(model, src0t, src1t, PROFILER_BACKEND_TYPE_METAL, 4);
 #endif
 
     (void)model;
     (void)src0t;
     (void)src1t;
-    return 0.0f;
+    return flops;
 }
 
 float device_cuda_flops(struct llama_model * model, enum ggml_type src0t, enum ggml_type src1t) {
+    float flops = 0.0f;
+
 #ifdef GGML_USE_CUDA
-    return device_flops(model, src0t, src1t, PROFILER_BACKEND_TYPE_CUDA, 4);
+    flops = device_flops(model, src0t, src1t, PROFILER_BACKEND_TYPE_CUDA, 4);
 #endif
 
     (void)model;
     (void)src0t;
     (void)src1t;
-    return 0.0f;
+    return flops;
 }
 
 float device_inp_embd_delay(struct llama_model * model, enum ggml_type src0t, int n_tokens, int n_threads) {
@@ -1000,19 +1004,140 @@ static float device_read_vram_bw(enum profiler_backend_type btype) {
 }
 
 float device_metal_read_vram_bw() {
+    float bw = 0.0f;
+
 #ifdef GGML_USE_METAL
-    return device_read_vram_bw(PROFILER_BACKEND_TYPE_METAL);
+    bw = device_read_vram_bw(PROFILER_BACKEND_TYPE_METAL);
 #endif
 
-    return 0.0f;
+    return bw;
 }
 
 float device_cuda_read_vram_bw() {
+    float bw = 0.0f;
+
 #ifdef GGML_USE_CUDA
-    return device_read_vram_bw(PROFILER_BACKEND_TYPE_CUDA);
+    bw = device_read_vram_bw(PROFILER_BACKEND_TYPE_CUDA);
 #endif
 
-    return 0.0f;
+    return bw;
+}
+
+// return ggml_cpy delay in kvcache in ms
+static float device_mem_copy(struct llama_model * model, enum profiler_backend_type btype, int n_threads) {
+    const int64_t n_embd_k_gqa  = llama_model_n_embd_k_gqa(model);
+    const int64_t n_embd_v_gqa  = llama_model_n_embd_v_gqa(model);
+
+    std::vector<float> src_mat_k(n_embd_k_gqa, 1.0f); 
+    std::vector<float> src_mat_v(n_embd_v_gqa, 1.0f); 
+    std::vector<float> dst_mat_k(n_embd_k_gqa, 0.0f);
+    std::vector<float> dst_mat_v(n_embd_v_gqa, 0.0f);
+
+    ggml_backend_t backend = NULL;
+    switch (btype) {
+        case PROFILER_BACKEND_TYPE_CPU:
+            backend = ggml_backend_cpu_init();
+            break;
+        case PROFILER_BACKEND_TYPE_METAL:
+#ifdef GGML_USE_METAL
+            backend = ggml_backend_metal_init();
+#endif
+            break;
+        case PROFILER_BACKEND_TYPE_CUDA:
+#ifdef GGML_USE_CUDA
+            backend = ggml_backend_cuda_init(0);
+#endif
+            break;
+    }
+
+    if (!backend) {
+        LOG_INF("%s: ggml backend init failed\n", __func__);
+        return 0.0f;
+    }
+
+    size_t ctx_size = 0;
+    ctx_size += 4 * ggml_tensor_overhead(); // tensors
+
+    struct ggml_init_params params = {
+        /*.mem_size   =*/ ctx_size,
+        /*.mem_buffer =*/ NULL,
+        /*.no_alloc   =*/ true, // the tensors will be allocated later by ggml_backend_alloc_ctx_tensors()
+    };
+    struct ggml_context * ctx = ggml_init(params);
+
+    struct ggml_tensor * src_tensor_k = ggml_new_tensor_1d(ctx, GGML_TYPE_F16, n_embd_k_gqa);
+    struct ggml_tensor * src_tensor_v = ggml_new_tensor_1d(ctx, GGML_TYPE_F16, n_embd_v_gqa);
+    struct ggml_tensor * dst_tensor_k = ggml_new_tensor_1d(ctx, GGML_TYPE_F16, n_embd_k_gqa);
+    struct ggml_tensor * dst_tensor_v = ggml_new_tensor_1d(ctx, GGML_TYPE_F16, n_embd_v_gqa);
+
+    ggml_backend_buffer_t buffer = ggml_backend_alloc_ctx_tensors(ctx, backend);
+    
+    ggml_backend_tensor_set(src_tensor_k, src_mat_k.data(), 0, ggml_nbytes(src_tensor_k));
+    ggml_backend_tensor_set(src_tensor_v, src_mat_v.data(), 0, ggml_nbytes(src_tensor_v));
+    ggml_backend_tensor_set(dst_tensor_k, dst_mat_k.data(), 0, ggml_nbytes(dst_tensor_k));
+    ggml_backend_tensor_set(dst_tensor_v, dst_mat_v.data(), 0, ggml_nbytes(dst_tensor_v));
+
+    struct ggml_cgraph  * gf         = NULL;
+    struct ggml_context * ctx_cgraph = NULL;
+    {
+        struct ggml_init_params params0 = {
+            /*.mem_size   =*/ ggml_tensor_overhead() * 4 + ggml_graph_overhead(),
+            /*.mem_buffer =*/ NULL,
+            /*.no_alloc   =*/ true, // the tensors will be allocated later by ggml_gallocr_alloc_graph()
+        };
+        ctx_cgraph = ggml_init(params0);
+
+        gf = ggml_new_graph(ctx_cgraph);
+        ggml_build_forward_expand(gf, ggml_cpy(ctx_cgraph, src_tensor_k, dst_tensor_k));
+        ggml_build_forward_expand(gf, ggml_cpy(ctx_cgraph, src_tensor_v, dst_tensor_v));
+    }
+
+    ggml_gallocr_t allocr = ggml_gallocr_new(ggml_backend_get_default_buffer_type(backend));
+    ggml_gallocr_alloc_graph(allocr, gf);
+
+    if (ggml_backend_is_cpu(backend)) {
+        ggml_backend_cpu_set_n_threads(backend, n_threads);
+    }
+
+    const int64_t t_start = ggml_time_us();
+    ggml_backend_graph_compute(backend, gf);
+    const int64_t t_end = ggml_time_us();
+
+    double elapsed_ms = ((double)t_end - (double)t_start) / 1e3; // ms
+
+    ggml_free(ctx_cgraph);
+    ggml_gallocr_free(allocr);
+    ggml_free(ctx);
+    ggml_backend_buffer_free(buffer);
+    ggml_backend_free(backend);
+
+    return (float)elapsed_ms;
+}
+
+float device_cpu_mem_copy(struct llama_model * model, int n_threads) {
+    return device_mem_copy(model, PROFILER_BACKEND_TYPE_CPU, n_threads);
+}
+
+float device_metal_mem_copy(struct llama_model * model) {
+    float delay = 0.0f;
+
+#ifdef GGML_USE_METAL
+    delay = device_mem_copy(model, PROFILER_BACKEND_TYPE_METAL, 4);
+#endif
+
+    (void)model;
+    return delay;
+}
+
+float device_cuda_mem_copy(struct llama_model * model) {
+    float delay = 0.0f;
+
+#ifdef GGML_USE_CUDA
+    delay = device_mem_copy(model, PROFILER_BACKEND_TYPE_CUDA, 4);
+#endif
+
+    (void)model;
+    return delay;
 }
 
 int device_has_metal(void) {
@@ -1229,14 +1354,18 @@ static float device_disk_access_delay(struct device_info & dev_info, struct llam
         double total_bytes_gib       = static_cast<double>(cpu_total_bytes + gpu_total_bytes) / 1024.0 / 1024.0 / 1024.0;
         double total_kv_size_gib     = cpu_kv_size_gib + gpu_kv_size_gib;
         double total_compute_buf_gib = cpu_compute_buf_gib + gpu_compute_buf_gib;
+        double total_mem_needed      = total_bytes_gib + total_kv_size_gib + total_compute_buf_gib;
         float  disk_read_bw          = dev_info.disk.read_rnd_bw;
-        if (total_bytes_gib + total_kv_size_gib + total_compute_buf_gib < dev_info.memory.total_physical) {
+
+        if (total_mem_needed < dev_info.memory.total_physical - 1) { // -1 is an empirical value reserved by system processes
             // each time one new row of lookup table will be loaded
             return static_cast<double>(input_bytes) / 1e9 / disk_read_bw * 1000; // convert to ms
         } else {
             // warn: OOM error may occur if -ngl is set large
-            float weight_reload_delay = total_bytes_gib * 1024.0 * 1024.0 * 1024.0 / 1e6 / disk_read_bw; // ms
-            return weight_reload_delay;
+            if (total_mem_needed > dev_info.memory.total_physical + 10) { // 10 is an empirical value that may cause system down
+                throw std::runtime_error("[WARN] Model is too large for Metal shared memory and may cause system down, stopped\n");
+            }
+            return total_bytes_gib * 1024.0 * 1024.0 * 1024.0 / 1e6 / disk_read_bw; // ms
         }
     }
 #endif
@@ -1247,6 +1376,7 @@ static float device_disk_access_delay(struct device_info & dev_info, struct llam
     float cpu_total_bytes_gib = (double)cpu_total_bytes / 1024.0 / 1024.0 / 1024.0; // convert to GiB
     float cpu_mem_avail       = dev_info.memory.available_physical; // GiB
     float disk_read_bw        = dev_info.disk.read_rnd_bw * 1e9 / 1024.0 / 1024.0 / 1024.0; // convert GB/s to GiB/s
+    
     
     if (cpu_total_bytes_gib + cpu_kv_size_gib + cpu_compute_buf_gib > cpu_mem_avail) {
 
@@ -1263,6 +1393,23 @@ static float device_disk_access_delay(struct device_info & dev_info, struct llam
         // if physical memory is enough, all mapped tensors can be stored in memory and will not be released
         return 0.0f;
     }
+}
+
+static float device_mem_copy_delay(struct llama_model * model, const struct llama_context_params cparams) {
+    int n_layers     = llama_model_n_layers(model);
+    int n_gpu_layers = std::min(static_cast<int>(cparams.n_gpu_layers), n_layers);
+
+    float layer_delay_cpu   = device_cpu_mem_copy(model, cparams.n_threads);
+
+#ifdef GGML_USE_METAL
+    float layer_delay_metal = device_metal_mem_copy(model);
+    return layer_delay_metal * n_gpu_layers + layer_delay_cpu * (n_layers - n_gpu_layers);
+#elif GGML_USE_CUDA
+    float layer_delay_cuda  = device_cuda_mem_copy(model);
+    return layer_delay_cuda * n_gpu_layers + layer_delay_cpu * (n_layers - n_gpu_layers);
+#else
+    return layer_delay_cpu * n_layers;
+#endif
 }
 
 void device_print_props(struct device_info * dev_info_set, int n, struct llama_model * model, const struct llama_context_params cparams) {
@@ -1661,9 +1808,10 @@ void device_print_props(struct device_info * dev_info_set, int n, struct llama_m
     // todo: calculate for each device, not only master
     float latency = 0.0f;
     int n_layers  = llama_model_n_layers (model);
-    latency += device_compute_delay      (dev_info_set[0], n_layers,cparams);
+    latency += device_compute_delay      (dev_info_set[0], n_layers, cparams);
     latency += device_memory_access_delay(dev_info_set[0], model, cparams, n_layers);
     latency += device_disk_access_delay  (dev_info_set[0], model, cparams); // if physical memory is not enough, some mapped data will be released and reloaded later
+    latency += device_mem_copy_delay     (model, cparams); // memory copy delay in kvcache
 
     LOG_INF("| Token latency (ms)           ");
     LOG_INF("| %-10.2f   ", latency);

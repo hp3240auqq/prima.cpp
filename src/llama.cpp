@@ -7386,8 +7386,8 @@ static bool llm_load_tensors_impl(
     if (my_rank == 0) {
         model.buft_input  = llama_default_buffer_type_cpu(model, true);
         model.buft_output = llama_default_buffer_type_cpu(model, true);
-        LLAMA_LOG_INFO("Layer input assigned to cpu\n");
-        LLAMA_LOG_INFO("Layer output assigned to cpu\n");
+        // LLAMA_LOG_INFO("Layer input assigned to cpu\n");
+        // LLAMA_LOG_INFO("Layer output assigned to cpu\n");
     }
 
     // count used buffer types
@@ -20696,6 +20696,14 @@ uint64_t llama_model_n_params(const struct llama_model * model) {
         nparams += ggml_nelements(it.second);
     }
     return nparams;
+}
+
+uint32_t llama_model_n_embd_k_gqa(struct llama_model * model) {
+    return model->hparams.n_embd_k_gqa();
+}
+
+uint32_t llama_model_n_embd_v_gqa(struct llama_model * model) {
+    return model->hparams.n_embd_v_gqa();
 }
 
 static void llama_model_reset_tensors(struct llama_model * model) {
