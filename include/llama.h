@@ -563,6 +563,7 @@ extern "C" {
                  struct llama_model_loader * ml, 
                         struct model_flops * n_flops,
                        struct model_params * n_params,
+                        struct model_bytes * n_bytes,
                              const int64_t   n_history,
                              const int64_t   n_ctx,
                             enum ggml_type * inp_embd_dtype,

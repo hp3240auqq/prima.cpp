@@ -181,6 +181,17 @@ struct model_params {
         layer_q80 (0) {}
 };
 
+struct model_bytes {
+    int64_t nb_input;
+    int64_t nb_layer;
+    int64_t nb_output;
+
+    model_bytes() :
+        nb_input (0),
+        nb_layer (0),
+        nb_output(0) {}
+};
+
 struct disk_props {
     float read_seq_bw;  // in GB/s
     float read_rnd_bw;  // in GB/s
@@ -204,6 +215,7 @@ struct device_info {
     struct gpu_props    gpu_props;
     struct model_flops  model_flops;
     struct model_params model_params;
+    struct model_bytes  model_bytes;
 
     device_info() : 
         rank(0), 
@@ -214,7 +226,8 @@ struct device_info {
         gpu_support(), 
         gpu_props(), 
         model_flops(),
-        model_params() {}
+        model_params(),
+        model_bytes() {}
 };
 
 enum profiler_backend_type {

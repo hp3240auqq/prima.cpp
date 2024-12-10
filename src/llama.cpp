@@ -3589,9 +3589,10 @@ void llama_profile_device(
 
     struct model_flops  * n_flops  = &dev_info->model_flops;
     struct model_params * n_params = &dev_info->model_params;
+    struct model_bytes  * n_bytes  = &dev_info->model_bytes;
     if (dev_info->rank == 0) {    
         enum ggml_type inp_embd_dtype  = GGML_TYPE_F32;
-        llama_model_n_flops(model, ml, n_flops, n_params, n_predict, n_ctx, &inp_embd_dtype, flash_attn);
+        llama_model_n_flops(model, ml, n_flops, n_params, n_bytes, n_predict, n_ctx, &inp_embd_dtype, flash_attn);
         n_flops->inp_embd_ms = device_inp_embd_delay(model, inp_embd_dtype, 1, n_threads);
     }
 
@@ -20881,6 +20882,26 @@ static void count_n_params(struct model_params * n_params, enum ggml_type dtype,
     }
 }
 
+static void count_n_bytes(struct model_bytes * n_bytes, enum profiler_layer_type ltype, size_t n) {
+    int64_t n_i64t = static_cast<int64_t>(n);
+    switch (ltype) {
+        case PROFILER_LAYER_INPUT:
+            n_bytes->nb_input  += n_i64t;
+            break;
+
+        case PROFILER_LAYER_OUTPUT:
+            n_bytes->nb_output += n_i64t;
+            break;
+
+        case PROFILER_LAYER_BACKEND:
+            n_bytes->nb_layer  += n_i64t;
+            break;
+
+        default:
+            throw std::runtime_error("Unrecognized profiler layer type\n");
+    }
+}
+
 void llama_model_compute_buf_size(
                             uint64_t * cpu_buf, 
                             uint64_t * gpu_buf, 
@@ -20977,6 +20998,7 @@ void llama_model_n_flops(
      struct llama_model_loader * ml, 
             struct model_flops * n_flops, 
            struct model_params * n_params, 
+            struct model_bytes * n_bytes,
                  const int64_t   n_history,
                  const int64_t   n_ctx, 
                 enum ggml_type * inp_embd_dtype,
@@ -21052,150 +21074,100 @@ void llama_model_n_flops(
                 throw std::runtime_error("unsupported architecture\n");
     }
 
-    std::unordered_map<std::string, int> tensor_name_map = {
-        {"token_embd.weight",          1},
-        {"output_norm.weight",         2},
-        {"output.weight",              3},
-        {"blk.0.attn_norm.weight",     4},
-        {"blk.0.attn_q.weight",        5},
-        {"blk.0.attn_k.weight",        6},
-        {"blk.0.attn_v.weight",        7},
-        {"blk.0.attn_output.weight",   8},
-        {"blk.0.ffn_gate.weight",      9},
-        {"blk.0.ffn_down.weight",      10},
-        {"blk.0.ffn_up.weight",        11},
-        {"blk.0.ffn_norm.weight",      12},
-        {"rope_freqs.weight",          13},
-        // optional: bias tensors
-        {"blk.0.attn_q.bias",          14},
-        {"blk.0.attn_k.bias",          15},
-        {"blk.0.attn_v.bias",          16},
-        {"blk.0.attn_output.bias",     17},
-        {"blk.0.ffn_gate.bias",        18},
-        {"blk.0.ffn_down.bias",        19},
-        {"blk.0.ffn_up.bias",          20},
-        // optional: expert tensors
-        {"blk.0.ffn_gate_inp.weight",  21},
-        {"blk.0.ffn_gate_exps.weight", 22},
-        {"blk.0.ffn_down_exps.weight", 23},
-        {"blk.0.ffn_up_exps.weight",   24},
-    };
+    bool rope_used = false;
 
     for (auto * cur = ggml_get_first_tensor(ctx); cur != NULL; cur = ggml_get_next_tensor(ctx, cur)) {
-        auto it = tensor_name_map.find(ggml_get_name(cur));
-        if (it != tensor_name_map.end()) {
-            switch (it->second) {
-                case 1: { // "token_embd.weight"
-                    count_n_params(n_params, cur->type,     PROFILER_LAYER_INPUT, ggml_nelements(cur));
-                    *inp_embd_dtype = cur->type;
-                    break;
-                }
-                case 2: { // "output_norm.weight"
-                    count_n_flops (n_flops,  GGML_TYPE_F32, PROFILER_LAYER_OUTPUT, 4 * n_embd + 1); // rms_norm
-                    count_n_flops (n_flops,  cur->type,     PROFILER_LAYER_OUTPUT, n_embd); // norm weights
-                    count_n_params(n_params, cur->type,     PROFILER_LAYER_OUTPUT, ggml_nelements(cur));
-                    break;
-                }
-                case 3: { // "output.weight"
-                    count_n_flops (n_flops,  cur->type,     PROFILER_LAYER_OUTPUT, 2 * n_embd * n_vocab);
-                    count_n_flops (n_flops,  GGML_TYPE_F32, PROFILER_LAYER_OUTPUT, 5 * n_vocab); // softmax
-                    count_n_params(n_params, cur->type,     PROFILER_LAYER_OUTPUT, ggml_nelements(cur));
-                    break;
-                }
-                case 4:  // "blk.0.attn_norm.weight"
-                case 12: // "blk.0.ffn_norm.weight"
-                { 
-                    count_n_flops (n_flops,  GGML_TYPE_F32, PROFILER_LAYER_BACKEND, 4 * n_embd + 1); // rms norm
-                    count_n_flops (n_flops,  cur->type,     PROFILER_LAYER_BACKEND, n_embd); // norm weights
+        std::string tensor_name(ggml_get_name(cur));
+        std::regex blk_regex("blk\\.\\d+\\.(.+)");
+        std::smatch match;
+
+        if (std::regex_match(tensor_name, match, blk_regex) && match.size() > 1) {
+            std::string blk_suffix = match[1].str();
+
+            if (blk_suffix == "attn_norm.weight" || blk_suffix == "ffn_norm.weight") {
+                count_n_flops (n_flops,  GGML_TYPE_F32, PROFILER_LAYER_BACKEND, 4 * n_embd + 1); // rms norm
+                count_n_flops (n_flops,  cur->type,     PROFILER_LAYER_BACKEND, n_embd); // norm weights
+            } else if (blk_suffix == "attn_q.weight") {
+                count_n_flops (n_flops,  cur->type,     PROFILER_LAYER_BACKEND, 2 * n_embd * n_embd);
+                count_n_flops (n_flops,  GGML_TYPE_F32, PROFILER_LAYER_BACKEND, 2.5 * n_embd);  // rope
+            } else if (blk_suffix == "attn_k.weight") {
+                count_n_flops (n_flops,  cur->type,     PROFILER_LAYER_BACKEND, 2 * n_embd * n_head_kv * n_embd_head_k);
+                count_n_flops (n_flops,  GGML_TYPE_F32, PROFILER_LAYER_BACKEND, 2.5 * n_embd_head_k * n_head_kv); // rope
+                count_n_flops (n_flops,  GGML_TYPE_F16, PROFILER_LAYER_BACKEND, 2 * n_embd_head_k * n_head * n_kv * n_head_kv); // compute kq with kvcache
+                count_n_flops (n_flops,  GGML_TYPE_F32, PROFILER_LAYER_BACKEND, 7 * n_head * n_kv); // scale, mask, and softmax
+            } else if (blk_suffix == "attn_v.weight") {
+                count_n_flops (n_flops,  cur->type,     PROFILER_LAYER_BACKEND, 2 * n_embd * n_head_kv * n_embd_head_v);
+                count_n_flops (n_flops,  GGML_TYPE_F16, PROFILER_LAYER_BACKEND, 2 * n_embd_head_v * n_head * n_kv * n_head_kv); // compute kqv with kvcache
+            } else if (blk_suffix == "attn_output.weight") {
+                count_n_flops (n_flops,  cur->type,     PROFILER_LAYER_BACKEND, 2 * n_embd * n_embd);
+                count_n_flops (n_flops,  GGML_TYPE_F32, PROFILER_LAYER_BACKEND, n_embd); // shortcut
+            } else if (blk_suffix == "ffn_gate.weight") {
+                count_n_flops (n_flops,  cur->type,     PROFILER_LAYER_BACKEND, 2 * n_embd * n_ff);
+                count_n_flops (n_flops,  GGML_TYPE_F32, PROFILER_LAYER_BACKEND, 8 * n_ff); // SiLU
+            } else if (blk_suffix == "ffn_down.weight") {
+                count_n_flops (n_flops,  cur->type,     PROFILER_LAYER_BACKEND, 2 * n_embd * n_ff);
+                count_n_flops (n_flops,  GGML_TYPE_F32, PROFILER_LAYER_BACKEND, n_embd); // shortcut
+            } else if (blk_suffix == "ffn_up.weight") {
+                count_n_flops (n_flops,  cur->type,     PROFILER_LAYER_BACKEND, 2 * n_embd * n_ff);
+                count_n_flops (n_flops,  GGML_TYPE_F32, PROFILER_LAYER_BACKEND, n_ff); // silu(gate(x)) * up(x)
+            } else if (blk_suffix == "attn_q.bias" || blk_suffix == "attn_k.bias" || blk_suffix == "attn_v.bias" || blk_suffix == "blk.0.attn_output.bias" || blk_suffix == "ffn_down.bias") {
+                count_n_flops (n_flops,  cur->type,     PROFILER_LAYER_BACKEND, n_embd);
+            } else if (blk_suffix == "ffn_gate.bias" || blk_suffix == "ffn_up.bias") {
+                count_n_flops (n_flops,  cur->type,     PROFILER_LAYER_BACKEND, n_ff);
+            } else if (blk_suffix == "ffn_gate_inp.weight") { // optional: expert tensors
+                count_n_flops (n_flops,  cur->type,     PROFILER_LAYER_BACKEND, 2 * n_embd * n_expert);
+            } else if (blk_suffix == "ffn_gate_exps.weight" || blk_suffix == "ffn_down_exps.weight" || blk_suffix == "ffn_up_exps.weight") {
+                count_n_flops (n_flops,  cur->type,     PROFILER_LAYER_BACKEND, 2 * n_embd * n_ff * n_expert);
+            } else {
+                LLAMA_LOG_INFO("Uncaught tensor\n");
+                return;
+            }
+            count_n_params(n_params, cur->type,         PROFILER_LAYER_BACKEND, ggml_nelements(cur));
+            count_n_bytes (n_bytes,                     PROFILER_LAYER_BACKEND, ggml_nbytes(cur));
+        } else {
+            if (tensor_name == "token_embd.weight") {
+                count_n_params(n_params, cur->type,     PROFILER_LAYER_INPUT, ggml_nelements(cur));
+                count_n_bytes (n_bytes,                 PROFILER_LAYER_INPUT, ggml_nbytes(cur));
+                *inp_embd_dtype = cur->type;
+            } else if (tensor_name == "output_norm.weight") {
+                count_n_flops (n_flops,  GGML_TYPE_F32, PROFILER_LAYER_OUTPUT, 4 * n_embd + 1);
+                count_n_flops (n_flops,  cur->type,     PROFILER_LAYER_OUTPUT, n_embd);
+                count_n_params(n_params, cur->type,     PROFILER_LAYER_OUTPUT, ggml_nelements(cur));
+                count_n_bytes (n_bytes,                 PROFILER_LAYER_OUTPUT, ggml_nbytes(cur));
+            } else if (tensor_name == "output.weight") {
+                count_n_flops (n_flops,  cur->type,     PROFILER_LAYER_OUTPUT, 2 * n_embd * n_vocab);
+                count_n_flops (n_flops,  GGML_TYPE_F32, PROFILER_LAYER_OUTPUT, 5 * n_vocab); // softmax
+                count_n_params(n_params, cur->type,     PROFILER_LAYER_OUTPUT, ggml_nelements(cur));
+                count_n_bytes (n_bytes,                 PROFILER_LAYER_OUTPUT, ggml_nbytes(cur));
+            } else if (tensor_name == "rope_freqs.weight") {
+                if (!rope_used) {
                     count_n_params(n_params, cur->type,     PROFILER_LAYER_BACKEND, ggml_nelements(cur));
-                    break;
+                    count_n_bytes (n_bytes,                 PROFILER_LAYER_BACKEND, ggml_nbytes(cur));
+                    rope_used = true;
                 }
-                case 5: { // "blk.0.attn_q.weight"
-                    count_n_flops (n_flops,  cur->type,     PROFILER_LAYER_BACKEND, 2 * n_embd * n_embd);
-                    count_n_flops (n_flops,  GGML_TYPE_F32, PROFILER_LAYER_BACKEND, 2.5 * n_embd); // rope
-                    count_n_params(n_params, cur->type,     PROFILER_LAYER_BACKEND, ggml_nelements(cur));
-                    break;
-                }
-                case 6: { // "blk.0.attn_k.weight"
-                    count_n_flops (n_flops,  cur->type,     PROFILER_LAYER_BACKEND, 2 * n_embd * n_head_kv * n_embd_head_k);
-                    count_n_flops (n_flops,  GGML_TYPE_F32, PROFILER_LAYER_BACKEND, 2.5 * n_embd_head_k * n_head_kv); // rope
-                    count_n_flops (n_flops,  GGML_TYPE_F16, PROFILER_LAYER_BACKEND, 2 * n_embd_head_k * n_head * n_kv * n_head_kv); // compute kq with kvcache
-                    count_n_flops (n_flops,  GGML_TYPE_F32, PROFILER_LAYER_BACKEND, 7 * n_head * n_kv); // scale, mask, and softmax
-                    count_n_params(n_params, cur->type,     PROFILER_LAYER_BACKEND, ggml_nelements(cur));
-                    break;
-                }
-                case 7: { // "blk.0.attn_v.weight"
-                    count_n_flops (n_flops,  cur->type,     PROFILER_LAYER_BACKEND, 2 * n_embd * n_head_kv * n_embd_head_v);
-                    count_n_flops (n_flops,  GGML_TYPE_F16, PROFILER_LAYER_BACKEND, 2 * n_embd_head_v * n_head * n_kv * n_head_kv); // compute kqv with kvcache
-                    count_n_params(n_params, cur->type,     PROFILER_LAYER_BACKEND, ggml_nelements(cur));
-                    break;
-                }
-                case 8: { // "blk.0.attn_output.weight"
-                    count_n_flops (n_flops,  cur->type,     PROFILER_LAYER_BACKEND, 2 * n_embd * n_embd);
-                    count_n_flops (n_flops,  GGML_TYPE_F32, PROFILER_LAYER_BACKEND, n_embd); // shortcut
-                    count_n_params(n_params, cur->type,     PROFILER_LAYER_BACKEND, ggml_nelements(cur));
-                    break;
-                }
-                case 9: { // "blk.0.ffn_gate.weight"
-                    count_n_flops (n_flops,  cur->type,     PROFILER_LAYER_BACKEND, 2 * n_embd * n_ff);
-                    count_n_flops (n_flops,  GGML_TYPE_F32, PROFILER_LAYER_BACKEND, 8 * n_ff); // SiLU
-                    count_n_params(n_params, cur->type,     PROFILER_LAYER_BACKEND, ggml_nelements(cur));
-                    break;
-                }
-                case 10: { // "blk.0.ffn_down.weight"
-                    count_n_flops (n_flops,  cur->type,     PROFILER_LAYER_BACKEND, 2 * n_embd * n_ff);
-                    count_n_flops (n_flops,  GGML_TYPE_F32, PROFILER_LAYER_BACKEND, n_embd); // shortcut
-                    count_n_params(n_params, cur->type,     PROFILER_LAYER_BACKEND, ggml_nelements(cur));
-                    break;
-                }
-                case 11: { // "blk.0.ffn_up.weight"
-                    count_n_flops (n_flops,  cur->type,     PROFILER_LAYER_BACKEND, 2 * n_embd * n_ff);
-                    count_n_flops (n_flops,  GGML_TYPE_F32, PROFILER_LAYER_BACKEND, n_ff); // silu(gate(x)) * up(x)
-                    count_n_params(n_params, cur->type,     PROFILER_LAYER_BACKEND, ggml_nelements(cur));
-                    break;
-                }
-                case 13: { // rope_freqs.weight, has been counted in q and k
-                    count_n_params(n_params, cur->type,     PROFILER_LAYER_BACKEND, ggml_nelements(cur));
-                    break;
-                }
-                // optional: bias tensors
-                case 14: // "blk.0.attn_q.bias"
-                case 15: // "blk.0.attn_k.bias"
-                case 16: // "blk.0.attn_v.bias"
-                case 17: // "blk.0.attn_output.bias"
-                case 19: // "blk.0.ffn_down.bias"
-                {
-                    count_n_flops (n_flops,  cur->type,     PROFILER_LAYER_BACKEND, n_embd);
-                    count_n_params(n_params, cur->type,     PROFILER_LAYER_BACKEND, ggml_nelements(cur));
-                    break;
-                }
-                case 18: // "blk.0.ffn_gate.bias"
-                case 20: // "blk.0.ffn_up.bias"
-                {
-                    count_n_flops (n_flops,  cur->type,     PROFILER_LAYER_BACKEND, n_ff);
-                    count_n_params(n_params, cur->type,     PROFILER_LAYER_BACKEND, ggml_nelements(cur));
-                    break; 
-                }
-                // optional: expert tensors
-                case 21: { // "blk.0.ffn_gate_inp.weight"
-                    count_n_flops (n_flops,  cur->type,     PROFILER_LAYER_BACKEND, 2 * n_embd * n_expert);
-                    count_n_params(n_params, cur->type,     PROFILER_LAYER_BACKEND, ggml_nelements(cur));
-                    break;
-                }
-                case 22: // "blk.0.ffn_gate_exps.weight"
-                case 23: // "blk.0.ffn_down_exps.weight"
-                case 24: // "blk.0.ffn_up_exps.weight"
-                { 
-                    count_n_flops (n_flops,  cur->type,     PROFILER_LAYER_BACKEND, 2 * n_embd * n_ff * n_expert);
-                    count_n_params(n_params, cur->type,     PROFILER_LAYER_BACKEND, ggml_nelements(cur));
-                    break;
-                }
-                default:
-                    LLAMA_LOG_INFO("Uncaught tensor\n");
-                    return;
+            } else {
+                LLAMA_LOG_INFO("Uncaught tensor\n");
+                return;
             }
         }
     }
+
+    // use average values instead of total values
+    n_flops->layer_f32_f32 = static_cast<int64_t>((double)n_flops->layer_f32_f32 / (double)n_layer);
+    n_flops->layer_f16_f32 = static_cast<int64_t>((double)n_flops->layer_f16_f32 / (double)n_layer);
+    n_flops->layer_q4k_f32 = static_cast<int64_t>((double)n_flops->layer_q4k_f32 / (double)n_layer);
+    n_flops->layer_q5k_f32 = static_cast<int64_t>((double)n_flops->layer_q5k_f32 / (double)n_layer);
+    n_flops->layer_q6k_f32 = static_cast<int64_t>((double)n_flops->layer_q6k_f32 / (double)n_layer);
+    n_flops->layer_q80_f32 = static_cast<int64_t>((double)n_flops->layer_q80_f32 / (double)n_layer);
+
+    n_params->layer_f32    = static_cast<int64_t>((double)n_params->layer_f32    / (double)n_layer);
+    n_params->layer_f16    = static_cast<int64_t>((double)n_params->layer_f16    / (double)n_layer);
+    n_params->layer_q4k    = static_cast<int64_t>((double)n_params->layer_q4k    / (double)n_layer);
+    n_params->layer_q5k    = static_cast<int64_t>((double)n_params->layer_q5k    / (double)n_layer);
+    n_params->layer_q6k    = static_cast<int64_t>((double)n_params->layer_q6k    / (double)n_layer);
+    n_params->layer_q80    = static_cast<int64_t>((double)n_params->layer_q80    / (double)n_layer);
+
+    n_bytes->nb_layer      = static_cast<int64_t>((double)n_bytes->nb_layer      / (double)n_layer);
 
     // reset ml, model, and clear contexts
     ml->n_created = 0;

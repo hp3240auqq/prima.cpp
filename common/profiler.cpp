@@ -1285,24 +1285,8 @@ static float device_compute_delay(struct device_info & dev_info, int n_layers, c
 
 // estimate the memory access delay, except for the input embedding because it has been considered in n_flops.inp_embd_ms
 static float device_memory_access_delay(struct device_info & dev_info, struct llama_model * model, const struct llama_context_params cparams, int n_layers) {
-    struct model_params n_params = dev_info.model_params;
+    auto n_bytes     = dev_info.model_bytes;
     int n_gpu_layers = std::min(static_cast<int>(cparams.n_gpu_layers), n_layers);
-
-    int64_t layer_bytes = 
-                   n_params.layer_f32 * 4 +
-                   n_params.layer_f16 * 2 +
-                   n_params.layer_q4k * 4 / 8 +
-                   n_params.layer_q5k * 5 / 8 +
-                   n_params.layer_q6k * 6 / 8 +
-                   n_params.layer_q80;
-
-    int64_t output_bytes = 
-                   n_params.output_f32 * 4 +
-                   n_params.output_f16 * 2 +
-                   n_params.output_q4k * 4 / 8 +
-                   n_params.output_q5k * 5 / 8 +
-                   n_params.output_q6k * 6 / 8 +
-                   n_params.output_q80;
     
     uint64_t cpu_kv_size;
     uint64_t gpu_kv_size;
@@ -1310,8 +1294,8 @@ static float device_memory_access_delay(struct device_info & dev_info, struct ll
 #if defined(GGML_USE_METAL) || defined(GGML_USE_CUDA)
     llama_kv_size(&cpu_kv_size, &gpu_kv_size, model, cparams, true);
 
-    int64_t vram_bytes = layer_bytes * n_gpu_layers + gpu_kv_size;
-    int64_t ram_bytes  = layer_bytes * (n_layers - n_gpu_layers) + output_bytes + cpu_kv_size;
+    int64_t vram_bytes = n_bytes.nb_layer * n_gpu_layers + gpu_kv_size;
+    int64_t ram_bytes  = n_bytes.nb_layer * (n_layers - n_gpu_layers) + n_bytes.nb_output + cpu_kv_size;
 
 #ifdef GGML_USE_CUDA
     double vram_access_delay = (double)(vram_bytes) / 1e6 / dev_info.gpu_props.cuda_read_vram_bw;
@@ -1327,53 +1311,33 @@ static float device_memory_access_delay(struct device_info & dev_info, struct ll
 
     (void)n_gpu_layers;
     (void)gpu_kv_size;
-    int64_t ram_bytes = layer_bytes * n_layers + output_bytes + cpu_kv_size;
+    int64_t ram_bytes = n_bytes.nb_layer * n_layers + n_bytes.nb_output + cpu_kv_size;
     double ram_access_delay = (double)(ram_bytes) / 1e6 / dev_info.memory.cpu_read_ram_bw;
     return static_cast<float>(ram_access_delay); // ms
 #endif
 }
 
 static float device_disk_access_delay(struct device_info & dev_info, struct llama_model * model, const struct llama_context_params cparams) {
-    auto n_params         = dev_info.model_params;
-    int n_layers          = llama_model_n_layers(model);
-    int n_gpu_layers      = std::min(static_cast<int>(cparams.n_gpu_layers), n_layers);
-    int n_vocab           = llama_n_vocab(model);
+    auto n_bytes     = dev_info.model_bytes;
+    int n_layers     = llama_model_n_layers(model);
+    int n_gpu_layers = std::min(static_cast<int>(cparams.n_gpu_layers), n_layers);
+    int n_vocab      = llama_n_vocab(model);
 
-    int64_t input_bytes = (
-                n_params.input_f32 * 4 +
-                n_params.input_f16 * 2 +
-                n_params.input_q4k * 4 / 8 +
-                n_params.input_q5k * 5 / 8 +
-                n_params.input_q6k * 6 / 8 +
-                n_params.input_q80) / n_vocab; // lookup table, retrieve only n_embd elements
-    
-    int64_t cpu_total_bytes = input_bytes;
-
-    int64_t layer_bytes =
-                n_params.layer_f32 * 4 +
-                n_params.layer_f16 * 2 +
-                n_params.layer_q4k * 4 / 8 +
-                n_params.layer_q5k * 5 / 8 +
-                n_params.layer_q6k * 6 / 8 +
-                n_params.layer_q80;
+    int64_t cpu_total_bytes = 0;
+    int64_t input_bytes = n_bytes.nb_input / n_vocab; // lookup table, retrieve only n_embd elements
+    cpu_total_bytes += input_bytes;
 
 #if defined(GGML_USE_METAL) || defined(GGML_USE_CUDA)
-    cpu_total_bytes += layer_bytes * (n_layers - n_gpu_layers);
+    cpu_total_bytes += n_bytes.nb_layer * (n_layers - n_gpu_layers);
 #if defined(GGML_USE_METAL)
-    int64_t gpu_total_bytes = layer_bytes * n_gpu_layers;
+    int64_t gpu_total_bytes = n_bytes.nb_layer * n_gpu_layers;
 #endif
 #else
     (void)n_gpu_layers;
-    cpu_total_bytes += layer_bytes * n_layers;
+    cpu_total_bytes += n_bytes.nb_layer * n_layers;
 #endif
 
-    cpu_total_bytes += (
-                n_params.output_f32 * 4 +
-                n_params.output_f16 * 2 +
-                n_params.output_q4k * 4 / 8 +
-                n_params.output_q5k * 5 / 8 +
-                n_params.output_q6k * 6 / 8 +
-                n_params.output_q80);
+    cpu_total_bytes += n_bytes.nb_output;
 
     uint64_t cpu_kv_size;
     uint64_t gpu_kv_size;
@@ -1848,6 +1812,18 @@ void device_print_props(struct device_info * dev_info_set, int n, struct llama_m
 
     LOG_INF("| Model params (output Q80)    ");
     LOG_INF("| %-10" PRId64 "   ", dev_info_set[0].model_params.output_q80);
+    LOG_INF("\n");
+
+    LOG_INF("| Model bytes  (input)         ");
+    LOG_INF("| %-10" PRId64 "   ", dev_info_set[0].model_bytes.nb_input);
+    LOG_INF("\n");
+
+    LOG_INF("| Model bytes  (layer)         ");
+    LOG_INF("| %-10" PRId64 "   ", dev_info_set[0].model_bytes.nb_layer);
+    LOG_INF("\n");
+
+    LOG_INF("| Model bytes  (output)        ");
+    LOG_INF("| %-10" PRId64 "   ", dev_info_set[0].model_bytes.nb_output);
     LOG_INF("\n");
 
     // todo: calculate for each device, not only master
