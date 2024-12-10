@@ -848,11 +848,12 @@ numjobs=%d
     const char * block_size = op_rand ? page_size_str : readahead_str;
 
     const char * ioengine    = "posixaio";
-    bool retry_with_sync     = false;
     const char * output_file = "fio_output.log";
     const char * conf_file   = "config.fio";
 
-    do {
+    int num_try = 0;
+    int ret;
+    while (num_try < 2) {
         char fio_conf[1024];
         snprintf(fio_conf, sizeof(fio_conf), fio_conf_template, ioengine,
                  read_type,  block_size, test_file, n_threads,
@@ -867,16 +868,21 @@ numjobs=%d
         conf.close();
 
         std::string command = "fio " + std::string(conf_file) + " > " + std::string(output_file) + " 2>&1";
-        int ret = std::system(command.c_str());
+        ret = std::system(command.c_str());
 
-        if (ret == 0) {
-            retry_with_sync = false; // Execution succeeded
-        } else {
-            LOG_INF("Engine posixaio not loadable, retrying with sync engine\n");
+        num_try += 1;
+
+        if (ret != 0) {
+            LOG_WRN("Engine posixaio not loadable, retrying with sync engine\n");
             ioengine = "sync";
-            retry_with_sync = true;
+        } else {
+            num_try = 2;
         }
-    } while (retry_with_sync);
+    }
+
+    if (ret != 0) {
+        throw std::runtime_error("Engine posixaio and sync not loadable, fio test failed\n");
+    }
 
     // parse fio output
     std::ifstream result(output_file);
