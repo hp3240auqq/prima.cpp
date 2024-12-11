@@ -549,19 +549,17 @@ static uint64_t device_cgroup_physical_memory(bool available) {
             auto stats = read_memory_stat();
 
             uint64_t slab_reclaimable = 0;
-            uint64_t inactive_file    = 0;
+            uint64_t mmap_file        = 0;
 
             if (stats.find("slab_reclaimable") != stats.end()) {
                 slab_reclaimable = stats["slab_reclaimable"];
             }
-            if (stats.find("inactive_file") != stats.end()) {
-                inactive_file = stats["inactive_file"];
+            if (stats.find("file") != stats.end()) {
+                mmap_file = stats["file"];
             }
 
-            uint64_t available_memory = mem_max - mem_current > 0 ? mem_max - mem_current : 0;
-            available_memory += slab_reclaimable;
-            available_memory += inactive_file;
-            return available_memory;
+            uint64_t available_memory = mem_max - mem_current + mmap_file + slab_reclaimable;
+            return available_memory < mem_max ? available_memory : mem_max;
         } else {
             LOG_WRN("Using cgroup v1, the available memory could be error, will be addressed later\n");
             uint64_t mem_limit = read_value_from_file("/sys/fs/cgroup/memory/memory.limit_in_bytes");
@@ -1389,15 +1387,22 @@ static float device_disk_access_delay(struct device_info & dev_info, struct llam
 
     float cpu_total_bytes_gib = (double)cpu_total_bytes / 1024.0 / 1024.0 / 1024.0; // convert to GiB
     float cpu_mem_avail       = dev_info.memory.available_physical; // GiB
-    float disk_read_bw        = dev_info.disk.read_rnd_bw * 1e9 / 1024.0 / 1024.0 / 1024.0; // convert GB/s to GiB/s
-    
     
     if (cpu_total_bytes_gib + cpu_kv_size_gib + cpu_compute_buf_gib > cpu_mem_avail) {
 
 #if defined(__APPLE__) && defined(__MACH__)
         // if physical memory reaches busy, all mapped tensors should be re-loaded
+        float disk_read_bw = dev_info.disk.read_rnd_bw * 1e9 / 1024.0 / 1024.0 / 1024.0; // convert GB/s to GiB/s
         return cpu_total_bytes_gib / disk_read_bw * 1000;  // convert to ms
 #else
+
+#if defined(__linux__)
+        // POSIX_FADV_SEQUENTIAL is set on linux
+        float disk_read_bw = dev_info.disk.read_seq_bw * 1e9 / 1024.0 / 1024.0 / 1024.0; 
+#else
+        float disk_read_bw = dev_info.disk.read_rnd_bw * 1e9 / 1024.0 / 1024.0 / 1024.0;
+#endif
+
         // only part of the mapped tensors needs to be re-loaded
         float gbytes_to_load = cpu_total_bytes_gib - (cpu_mem_avail - cpu_kv_size_gib - cpu_compute_buf_gib);
         return gbytes_to_load / disk_read_bw * 1000;  // convert to ms
