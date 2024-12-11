@@ -1397,11 +1397,15 @@ static float device_disk_access_delay(struct device_info & dev_info, struct llam
 #else
 
 #if defined(__linux__)
-        // POSIX_FADV_SEQUENTIAL is set on linux
-        float disk_read_bw = dev_info.disk.read_seq_bw * 1e9 / 1024.0 / 1024.0 / 1024.0; 
-#else
-        float disk_read_bw = dev_info.disk.read_rnd_bw * 1e9 / 1024.0 / 1024.0 / 1024.0;
+        if (getenv("TERMUX_VERSION") == NULL) {
+            // if this linux not in termux env, use sequantial read bandwidth
+            // POSIX_FADV_SEQUENTIAL is set on linux
+            float disk_read_bw = dev_info.disk.read_seq_bw * 1e9 / 1024.0 / 1024.0 / 1024.0; 
+        }
 #endif
+        
+        // non-linux and linux in termux
+        float disk_read_bw = dev_info.disk.read_rnd_bw * 1e9 / 1024.0 / 1024.0 / 1024.0;
 
         // only part of the mapped tensors needs to be re-loaded
         float gbytes_to_load = cpu_total_bytes_gib - (cpu_mem_avail - cpu_kv_size_gib - cpu_compute_buf_gib);
