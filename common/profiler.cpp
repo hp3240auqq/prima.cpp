@@ -45,6 +45,7 @@
 #include <random>
 #include <regex>
 #include <unordered_map>
+#include <dirent.h>
 
 
 const char * device_name() {
@@ -1321,6 +1322,65 @@ static float device_memory_access_delay(struct device_info & dev_info, struct ll
 #endif
 }
 
+static uint64_t device_termux_swappable_memory() {
+    if (access("/data/data/com.termux/files/usr/bin", F_OK) != 0) {
+        LOG_ERR("Not in a Termux environment\n");
+        return 0;
+    }
+
+    uint64_t total_swappable = 0;
+    uint64_t active_anon     = 0; 
+    uint64_t inactive_anon   = 0;
+
+    std::ifstream meminfo("/proc/meminfo");
+    std::string line;
+    
+    if (meminfo.is_open()) {
+        while (std::getline(meminfo, line)) {
+            if (line.find("Active(anon):") == 0) {
+                sscanf(line.c_str(), "Active(anon): %" SCNu64 " kB", &active_anon);
+            } else if (line.find("Inactive(anon):") == 0) {
+                sscanf(line.c_str(), "Inactive(anon): %" SCNu64 " kB", &inactive_anon);
+            }
+        }
+        meminfo.close();
+    }
+
+    total_swappable += (active_anon + inactive_anon) * 1024;
+
+    DIR * proc_dir = opendir("/proc");
+    if (proc_dir) {
+        struct dirent * entry;
+        while ((entry = readdir(proc_dir)) != nullptr) {
+            if (!isdigit(entry->d_name[0])) continue;
+
+            std::string smaps_path = "/proc/" + std::string(entry->d_name) + "/smaps";
+            std::ifstream smaps_file(smaps_path);
+            if (!smaps_file.is_open()) continue;
+
+            uint64_t anon_pages = 0, locked_pages = 0;
+            while (std::getline(smaps_file, line)) {
+                if (line.find("AnonPages:") == 0) {
+                    uint64_t kb;
+                    sscanf(line.c_str(), "AnonPages: %" SCNu64 " kB", &kb);
+                    anon_pages += kb * 1024;
+                } else if (line.find("Locked:") == 0) {
+                    uint64_t kb;
+                    sscanf(line.c_str(), "Locked: %" SCNu64 " kB", &kb);
+                    locked_pages += kb * 1024;
+                }
+            }
+            smaps_file.close();
+
+            // Subtract locked pages from swappable memory
+            total_swappable += anon_pages - locked_pages;
+        }
+        closedir(proc_dir);
+    }
+
+    return total_swappable;
+}
+
 static float device_disk_access_delay(struct device_info & dev_info, struct llama_model * model, const struct llama_context_params cparams) {
     auto n_bytes     = dev_info.model_bytes;
     int n_layers     = llama_model_n_layers(model);
@@ -1396,15 +1456,24 @@ static float device_disk_access_delay(struct device_info & dev_info, struct llam
         return cpu_total_bytes_gib / disk_read_bw * 1000;  // convert to ms
 #else
 
+
+
 #if defined(__linux__)
-        if (getenv("TERMUX_VERSION") == NULL) {
+        if (getenv("TERMUX_VERSION") != NULL) {
+            float disk_read_bw      = dev_info.disk.read_rnd_bw * 1e9 / 1024.0 / 1024.0 / 1024.0; 
+            // termux on android: swap has higher priority than releasing mmap
+            float physical_mem_used = dev_info.memory.total_physical - dev_info.memory.available_physical;
+            // non-app memory that can be swapped to disk
+            float used_mem_can_swap = (float)(static_cast<double>(device_termux_swappable_memory()) / 1024.0 / 1024.0 / 1024.0);
+            cpu_mem_avail += std::min(dev_info.memory.available_swap, used_mem_can_swap);
+        } else {
             // if this linux not in termux env, use sequantial read bandwidth
             // POSIX_FADV_SEQUENTIAL is set on linux
             float disk_read_bw = dev_info.disk.read_seq_bw * 1e9 / 1024.0 / 1024.0 / 1024.0; 
         }
 #endif
         
-        // non-linux and linux in termux
+        // non-linux os uses random read bandwidth
         float disk_read_bw = dev_info.disk.read_rnd_bw * 1e9 / 1024.0 / 1024.0 / 1024.0;
 
         // only part of the mapped tensors needs to be re-loaded
