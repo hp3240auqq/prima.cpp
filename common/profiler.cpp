@@ -1346,7 +1346,7 @@ static uint64_t device_termux_swappable_memory() {
         meminfo.close();
     }
 
-    total_swappable += (active_anon + inactive_anon) * 1024;
+    total_swappable = (active_anon + inactive_anon) * 1024;
 
     DIR * proc_dir = opendir("/proc");
     if (proc_dir) {
@@ -1356,15 +1356,14 @@ static uint64_t device_termux_swappable_memory() {
 
             std::string smaps_path = "/proc/" + std::string(entry->d_name) + "/smaps";
             std::ifstream smaps_file(smaps_path);
-            if (!smaps_file.is_open()) continue;
+            if (!smaps_file.is_open()) {
+                LOG_WARN("Failed to open smaps file: %s\n", smaps_path.c_str());
+                continue;
+            }
 
-            uint64_t anon_pages = 0, locked_pages = 0;
+            uint64_t locked_pages = 0;
             while (std::getline(smaps_file, line)) {
-                if (line.find("AnonPages:") == 0) {
-                    uint64_t kb;
-                    sscanf(line.c_str(), "AnonPages: %" SCNu64 " kB", &kb);
-                    anon_pages += kb * 1024;
-                } else if (line.find("Locked:") == 0) {
+                if (line.find("Locked:") == 0) {
                     uint64_t kb;
                     sscanf(line.c_str(), "Locked: %" SCNu64 " kB", &kb);
                     locked_pages += kb * 1024;
@@ -1373,7 +1372,7 @@ static uint64_t device_termux_swappable_memory() {
             smaps_file.close();
 
             // Subtract locked pages from swappable memory
-            total_swappable += anon_pages - locked_pages;
+            total_swappable -= locked_pages;
         }
         closedir(proc_dir);
     }
