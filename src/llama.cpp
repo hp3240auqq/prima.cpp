@@ -3583,6 +3583,7 @@ void llama_profile_device(
 
     dev_info->memory.total_physical     = round(device_physical_memory(false) / (double)(1 << 30) * 100) / 100;
     dev_info->memory.available_physical = round(device_physical_memory(true)  / (double)(1 << 30) * 100) / 100;
+    dev_info->memory.used_can_swap      = round(device_swappable_memory()     / (double)(1 << 30) * 100) / 100;
     dev_info->memory.total_swap         = round(device_swap_memory(false)     / (double)(1 << 30) * 100) / 100;
     dev_info->memory.available_swap     = round(device_swap_memory(true)      / (double)(1 << 30) * 100) / 100;
     dev_info->memory.cpu_read_ram_bw    = device_memory_bw(n_threads);

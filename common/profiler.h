@@ -37,13 +37,15 @@ struct cpu_props {
 struct memory_info {
     float        total_physical;     // in GiB
     float        available_physical; // in GiB
+    float        used_can_swap;      // in GiB
     float        total_swap;         // in GiB
     float        available_swap;     // in GiB
-    float        cpu_read_ram_bw;     // in GB/s
+    float        cpu_read_ram_bw;    // in GB/s
 
     memory_info() : 
         total_physical    (0.0f), 
         available_physical(0.0f), 
+        used_can_swap     (0.0f),
         total_swap        (0.0f), 
         available_swap    (0.0f), 
         cpu_read_ram_bw   (0.0f) {}
@@ -251,6 +253,7 @@ float    device_cuda_flops        (struct llama_model * model, enum ggml_type sr
 float    device_inp_embd_delay    (struct llama_model * model, enum ggml_type src0t, int n_tokens, int n_threads);
 uint64_t device_physical_memory   (bool available);
 uint64_t device_swap_memory       (bool available);
+uint64_t device_swappable_memory  ();
 void     device_disk_seq_bw       (float * read_seq_bw, float * write_seq_bw, int n_threads);
 void     device_disk_rnd_bw       (float * read_rnd_bw, float * write_rnd_bw, int n_threads);
 float    device_memory_bw         (int n_thread);

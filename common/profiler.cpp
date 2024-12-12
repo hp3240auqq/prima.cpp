@@ -101,7 +101,7 @@ uint32_t device_cpu_cores() {
 static float device_flops(struct llama_model * model, enum ggml_type src0t, enum ggml_type src1t, enum profiler_backend_type btype, int n_threads) {
     int n_repeat = 1;
     int n_embd = std::min(llama_n_embd(model), 4096);
-    if (btype == PROFILER_BACKEND_TYPE_CPU) n_embd /= 8; // simulate small tensor calculation on cpu
+    // if (btype == PROFILER_BACKEND_TYPE_CPU) n_embd /= 8; // simulate small tensor calculation on cpu
     std::vector<float> matrix_A(n_embd * n_embd, 1.0f); 
     std::vector<float> matrix_B(n_embd * n_embd, 1.0f / n_embd);
 
@@ -1381,6 +1381,13 @@ static uint64_t device_termux_swappable_memory() {
     return total_swappable;
 }
 
+uint64_t device_swappable_memory() {
+    if (access("/data/data/com.termux/files/usr/bin", F_OK) == 0) {
+        return device_termux_swappable_memory();
+    }
+    return 0;
+}
+
 static float device_disk_access_delay(struct device_info & dev_info, struct llama_model * model, const struct llama_context_params cparams) {
     auto n_bytes     = dev_info.model_bytes;
     int n_layers     = llama_model_n_layers(model);
@@ -1463,18 +1470,12 @@ static float device_disk_access_delay(struct device_info & dev_info, struct llam
         if (getenv("TERMUX_VERSION") != NULL) {
             // termux on android: swap has higher priority than releasing mmap
             // non-app memory that can be swapped to disk
-            float used_mem_can_swap = (float)(static_cast<double>(device_termux_swappable_memory()) / 1024.0 / 1024.0 / 1024.0);
-            float swapout_gib       = std::min(
-                std::min(0.0f, total_mem_needed - dev_info.memory.available_physical),
-                std::min(used_mem_can_swap, dev_info.memory.available_swap)
+            float swapout_gib = std::min(
+                std::max(0.0f, total_mem_needed - dev_info.memory.available_physical),
+                std::min(dev_info.memory.used_can_swap, dev_info.memory.available_swap)
             );
-            float disk_write_bw     = dev_info.disk.write_seq_bw * 1e9 / 1024.0 / 1024.0 / 1024.0;
-            float swapout_delay     = swapout_gib / disk_write_bw * 1000; // ms
-
-            float mmapin_gib        = total_mem_needed - (dev_info.memory.available_physical + swapout_gib);
-            float mmapin_delay      = mmapin_gib / disk_read_bw * 1000; // ms
-            
-            return swapout_delay + mmapin_delay;
+            float mmapin_gib = total_mem_needed - (dev_info.memory.available_physical + swapout_gib);
+            return mmapin_gib / disk_read_bw * 1000; // ms
         } else {
             // if this linux not in termux env, use sequantial read bandwidth
             // POSIX_FADV_SEQUENTIAL is set on linux
@@ -1589,6 +1590,12 @@ void device_print_props(struct device_info * dev_info_set, int n, struct llama_m
     LOG_INF("| Physical Mem Available (GiB) ");
     for (int i = 0; i < n; ++i) {
         LOG_INF("| %-10.2f   ", dev_info_set[i].memory.available_physical);
+    }
+    LOG_INF("\n");
+
+    LOG_INF("| Used Mem Swappable (GiB)     ");
+    for (int i = 0; i < n; ++i) {
+        LOG_INF("| %-10.2f   ", dev_info_set[i].memory.used_can_swap);
     }
     LOG_INF("\n");
 
