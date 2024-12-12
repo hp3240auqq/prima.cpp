@@ -1467,6 +1467,8 @@ static float device_disk_access_delay(struct device_info & dev_info, struct llam
 
 #if defined(__linux__)
         if (getenv("TERMUX_VERSION") != NULL) {
+            // Android will forcibly reserve some physical memory, usually 128 MiB
+            dev_info.memory.available_physical -= 0.128;
             // termux on android: swap has higher priority than releasing mmap
             // non-app memory that can be swapped to disk
             float swapout_gib = std::min(
