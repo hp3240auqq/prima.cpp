@@ -1447,34 +1447,40 @@ static float device_disk_access_delay(struct device_info & dev_info, struct llam
 
     float cpu_total_bytes_gib = (double)cpu_total_bytes / 1024.0 / 1024.0 / 1024.0; // convert to GiB
     float cpu_mem_avail       = dev_info.memory.available_physical; // GiB
+    float total_mem_needed    = cpu_total_bytes_gib + cpu_kv_size_gib + cpu_compute_buf_gib;
     
-    if (cpu_total_bytes_gib + cpu_kv_size_gib + cpu_compute_buf_gib > cpu_mem_avail) {
+    // non-linux os uses random read bandwidth
+    float disk_read_bw = dev_info.disk.read_rnd_bw * 1e9 / 1024.0 / 1024.0 / 1024.0; // convert GB/s to GiB/s
+
+    if (total_mem_needed > cpu_mem_avail) {
 
 #if defined(__APPLE__) && defined(__MACH__)
         // if physical memory reaches busy, all mapped tensors should be re-loaded
-        float disk_read_bw = dev_info.disk.read_rnd_bw * 1e9 / 1024.0 / 1024.0 / 1024.0; // convert GB/s to GiB/s
         return cpu_total_bytes_gib / disk_read_bw * 1000;  // convert to ms
 #else
 
-
-
 #if defined(__linux__)
         if (getenv("TERMUX_VERSION") != NULL) {
-            float disk_read_bw      = dev_info.disk.read_rnd_bw * 1e9 / 1024.0 / 1024.0 / 1024.0; 
             // termux on android: swap has higher priority than releasing mmap
-            float physical_mem_used = dev_info.memory.total_physical - dev_info.memory.available_physical;
             // non-app memory that can be swapped to disk
             float used_mem_can_swap = (float)(static_cast<double>(device_termux_swappable_memory()) / 1024.0 / 1024.0 / 1024.0);
-            cpu_mem_avail += std::min(dev_info.memory.available_swap, used_mem_can_swap);
+            float swapout_gib       = std::min(
+                std::min(0.0f, total_mem_needed - dev_info.memory.available_physical),
+                std::min(used_mem_can_swap, dev_info.memory.available_swap)
+            );
+            float disk_write_bw     = dev_info.disk.write_seq_bw * 1e9 / 1024.0 / 1024.0 / 1024.0;
+            float swapout_delay     = swapout_gib / disk_write_bw * 1000; // ms
+
+            float mmapin_gib        = total_mem_needed - (dev_info.memory.available_physical + swapout_gib);
+            float mmapin_delay      = mmapin_gib / disk_read_bw * 1000; // ms
+            
+            return swapout_delay + mmapin_delay;
         } else {
             // if this linux not in termux env, use sequantial read bandwidth
             // POSIX_FADV_SEQUENTIAL is set on linux
-            float disk_read_bw = dev_info.disk.read_seq_bw * 1e9 / 1024.0 / 1024.0 / 1024.0; 
+            disk_read_bw = dev_info.disk.read_seq_bw * 1e9 / 1024.0 / 1024.0 / 1024.0; 
         }
 #endif
-        
-        // non-linux os uses random read bandwidth
-        float disk_read_bw = dev_info.disk.read_rnd_bw * 1e9 / 1024.0 / 1024.0 / 1024.0;
 
         // only part of the mapped tensors needs to be re-loaded
         float gbytes_to_load = cpu_total_bytes_gib - (cpu_mem_avail - cpu_kv_size_gib - cpu_compute_buf_gib);
