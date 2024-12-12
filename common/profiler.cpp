@@ -101,7 +101,7 @@ uint32_t device_cpu_cores() {
 static float device_flops(struct llama_model * model, enum ggml_type src0t, enum ggml_type src1t, enum profiler_backend_type btype, int n_threads) {
     int n_repeat = 1;
     int n_embd = std::min(llama_n_embd(model), 4096);
-    // if (btype == PROFILER_BACKEND_TYPE_CPU) n_embd /= 8; // simulate small tensor calculation on cpu
+    if (btype == PROFILER_BACKEND_TYPE_CPU) n_embd /= 8; // simulate small tensor calculation on cpu
     std::vector<float> matrix_A(n_embd * n_embd, 1.0f); 
     std::vector<float> matrix_B(n_embd * n_embd, 1.0f / n_embd);
 
