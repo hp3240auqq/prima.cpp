@@ -1357,7 +1357,7 @@ static uint64_t device_termux_swappable_memory() {
             std::string smaps_path = "/proc/" + std::string(entry->d_name) + "/smaps";
             std::ifstream smaps_file(smaps_path);
             if (!smaps_file.is_open()) {
-                LOG_WARN("Failed to open smaps file: %s\n", smaps_path.c_str());
+                LOG_WRN("Failed to open smaps file: %s\n", smaps_path.c_str());
                 continue;
             }
 
