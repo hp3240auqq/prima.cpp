@@ -1440,9 +1440,8 @@ static float device_disk_access_delay(struct device_info & dev_info, struct llam
             return static_cast<double>(input_bytes) / 1e9 / disk_read_bw * 1000; // convert to ms
         } else {
             // warn: OOM error may occur if -ngl is set large
-            if (total_mem_needed > dev_info.memory.total_physical + 10) { // 10 is an empirical value that may cause system down
-                throw std::runtime_error("[WARN] Model is too large for Metal shared memory and may cause system down, stopped\n");
-            }
+            // inactive pages are swapped out or compressed to free memory for Metal
+            // mmap pages are not locked so they will be released when memory is busy
             return total_bytes_gib * 1024.0 * 1024.0 * 1024.0 / 1e6 / disk_read_bw; // ms
         }
     }
