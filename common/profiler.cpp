@@ -1581,7 +1581,7 @@ void device_print_props(struct device_info * dev_info_set, int n, struct llama_m
     }
     LOG_INF("\n");
 
-    LOG_INF("| Physical Mem Total (GB)      ");
+    LOG_INF("| Physical Mem Total (GiB)      ");
     for (int i = 0; i < n; ++i) {
         LOG_INF("| %-10.2f   ", dev_info_set[i].memory.total_physical);
     }
