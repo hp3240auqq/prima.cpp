@@ -1437,7 +1437,7 @@ static float device_disk_access_delay(struct device_info & dev_info, struct llam
 
         if (total_mem_needed < dev_info.memory.total_physical - 1) { // -1 is an empirical value reserved by system processes
             // each time one new row of lookup table will be loaded
-            return static_cast<double>(input_bytes) / 1e9 / disk_read_bw * 1000; // convert to ms
+            return static_cast<double>(input_bytes) / 1e6 / disk_read_bw; // convert to ms
         } else {
             // warn: OOM error may occur if -ngl is set large
             // inactive pages are swapped out or compressed to free memory for Metal
