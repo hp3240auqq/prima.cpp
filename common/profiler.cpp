@@ -1239,29 +1239,29 @@ static float device_compute_delay(struct device_info & dev_info, int n_layers, c
 #ifdef GGML_USE_CUDA
     struct gpu_props gpu = dev_info.gpu_props;
 
-    gpu_latency_per_layer += (double)n_flops.layer_f32_f32  / (double)gpu.cuda_flops_f32_f32 / 1e9;
-    gpu_latency_per_layer += (double)n_flops.layer_f16_f32  / (double)gpu.cuda_flops_f16_f32 / 1e9;
-    gpu_latency_per_layer += (double)n_flops.layer_q4k_f32  / (double)gpu.cuda_flops_q4k_f32 / 1e9;
-    gpu_latency_per_layer += (double)n_flops.layer_q5k_f32  / (double)gpu.cuda_flops_q5k_f32 / 1e9;
-    gpu_latency_per_layer += (double)n_flops.layer_q6k_f32  / (double)gpu.cuda_flops_q6k_f32 / 1e9;
-    gpu_latency_per_layer += (double)n_flops.layer_q80_f32  / (double)gpu.cuda_flops_q80_f32 / 1e9;
+    gpu_latency_per_layer += (double)n_flops.layer_f32_f32  / ((double)gpu.cuda_flops_f32_f32 + EPS) / 1e9;
+    gpu_latency_per_layer += (double)n_flops.layer_f16_f32  / ((double)gpu.cuda_flops_f16_f32 + EPS) / 1e9;
+    gpu_latency_per_layer += (double)n_flops.layer_q4k_f32  / ((double)gpu.cuda_flops_q4k_f32 + EPS) / 1e9;
+    gpu_latency_per_layer += (double)n_flops.layer_q5k_f32  / ((double)gpu.cuda_flops_q5k_f32 + EPS) / 1e9;
+    gpu_latency_per_layer += (double)n_flops.layer_q6k_f32  / ((double)gpu.cuda_flops_q6k_f32 + EPS) / 1e9;
+    gpu_latency_per_layer += (double)n_flops.layer_q80_f32  / ((double)gpu.cuda_flops_q80_f32 + EPS) / 1e9;
 #elif GGML_USE_METAL
     struct gpu_props gpu = dev_info.gpu_props;
 
-    gpu_latency_per_layer += (double)n_flops.layer_f32_f32  / (double)gpu.metal_flops_f32_f32 / 1e9;
-    gpu_latency_per_layer += (double)n_flops.layer_f16_f32  / (double)gpu.metal_flops_f16_f32 / 1e9;
-    gpu_latency_per_layer += (double)n_flops.layer_q4k_f32  / (double)gpu.metal_flops_q4k_f32 / 1e9;
-    gpu_latency_per_layer += (double)n_flops.layer_q5k_f32  / (double)gpu.metal_flops_q5k_f32 / 1e9;
-    gpu_latency_per_layer += (double)n_flops.layer_q6k_f32  / (double)gpu.metal_flops_q6k_f32 / 1e9;
-    gpu_latency_per_layer += (double)n_flops.layer_q80_f32  / (double)gpu.metal_flops_q80_f32 / 1e9;
+    gpu_latency_per_layer += (double)n_flops.layer_f32_f32  / ((double)gpu.metal_flops_f32_f32 + EPS) / 1e9;
+    gpu_latency_per_layer += (double)n_flops.layer_f16_f32  / ((double)gpu.metal_flops_f16_f32 + EPS) / 1e9;
+    gpu_latency_per_layer += (double)n_flops.layer_q4k_f32  / ((double)gpu.metal_flops_q4k_f32 + EPS) / 1e9;
+    gpu_latency_per_layer += (double)n_flops.layer_q5k_f32  / ((double)gpu.metal_flops_q5k_f32 + EPS) / 1e9;
+    gpu_latency_per_layer += (double)n_flops.layer_q6k_f32  / ((double)gpu.metal_flops_q6k_f32 + EPS) / 1e9;
+    gpu_latency_per_layer += (double)n_flops.layer_q80_f32  / ((double)gpu.metal_flops_q80_f32 + EPS) / 1e9;
 #endif
 
-    cpu_latency_per_layer += (double)n_flops.layer_f32_f32  / (double)cpu.flops_f32_f32 / 1e9;
-    cpu_latency_per_layer += (double)n_flops.layer_f16_f32  / (double)cpu.flops_f16_f32 / 1e9;
-    cpu_latency_per_layer += (double)n_flops.layer_q4k_f32  / (double)cpu.flops_q4k_f32 / 1e9;
-    cpu_latency_per_layer += (double)n_flops.layer_q5k_f32  / (double)cpu.flops_q5k_f32 / 1e9;
-    cpu_latency_per_layer += (double)n_flops.layer_q6k_f32  / (double)cpu.flops_q6k_f32 / 1e9;
-    cpu_latency_per_layer += (double)n_flops.layer_q80_f32  / (double)cpu.flops_q80_f32 / 1e9;
+    cpu_latency_per_layer += (double)n_flops.layer_f32_f32  / ((double)cpu.flops_f32_f32 + EPS) / 1e9;
+    cpu_latency_per_layer += (double)n_flops.layer_f16_f32  / ((double)cpu.flops_f16_f32 + EPS) / 1e9;
+    cpu_latency_per_layer += (double)n_flops.layer_q4k_f32  / ((double)cpu.flops_q4k_f32 + EPS) / 1e9;
+    cpu_latency_per_layer += (double)n_flops.layer_q5k_f32  / ((double)cpu.flops_q5k_f32 + EPS) / 1e9;
+    cpu_latency_per_layer += (double)n_flops.layer_q6k_f32  / ((double)cpu.flops_q6k_f32 + EPS) / 1e9;
+    cpu_latency_per_layer += (double)n_flops.layer_q80_f32  / ((double)cpu.flops_q80_f32 + EPS) / 1e9;
 
     double total_latency = 0.0f;
     
@@ -1274,12 +1274,12 @@ static float device_compute_delay(struct device_info & dev_info, int n_layers, c
     total_latency += cpu_latency_per_layer * n_layers;
 #endif
 
-    total_latency += (double)n_flops.output_f32_f32 / (double)cpu.flops_f32_f32 / 1e9;
-    total_latency += (double)n_flops.output_f16_f32 / (double)cpu.flops_f16_f32 / 1e9;
-    total_latency += (double)n_flops.output_q4k_f32 / (double)cpu.flops_q4k_f32 / 1e9;
-    total_latency += (double)n_flops.output_q5k_f32 / (double)cpu.flops_q5k_f32 / 1e9;
-    total_latency += (double)n_flops.output_q6k_f32 / (double)cpu.flops_q6k_f32 / 1e9;
-    total_latency += (double)n_flops.output_q80_f32 / (double)cpu.flops_q80_f32 / 1e9;
+    total_latency += (double)n_flops.output_f32_f32 / ((double)cpu.flops_f32_f32 + EPS) / 1e9;
+    total_latency += (double)n_flops.output_f16_f32 / ((double)cpu.flops_f16_f32 + EPS) / 1e9;
+    total_latency += (double)n_flops.output_q4k_f32 / ((double)cpu.flops_q4k_f32 + EPS) / 1e9;
+    total_latency += (double)n_flops.output_q5k_f32 / ((double)cpu.flops_q5k_f32 + EPS) / 1e9;
+    total_latency += (double)n_flops.output_q6k_f32 / ((double)cpu.flops_q6k_f32 + EPS) / 1e9;
+    total_latency += (double)n_flops.output_q80_f32 / ((double)cpu.flops_q80_f32 + EPS) / 1e9;
 
     total_latency *= 1000; // convert to ms
 

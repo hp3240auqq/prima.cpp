@@ -26,12 +26,12 @@ struct cpu_props {
         name(""), 
         description(""), 
         cores(0), 
-        flops_f32_f32(EPS), 
-        flops_f16_f32(EPS), 
-        flops_q4k_f32(EPS),
-        flops_q5k_f32(EPS),
-        flops_q6k_f32(EPS),
-        flops_q80_f32(EPS) {}
+        flops_f32_f32(0.0f), 
+        flops_f16_f32(0.0f), 
+        flops_q4k_f32(0.0f),
+        flops_q5k_f32(0.0f),
+        flops_q6k_f32(0.0f),
+        flops_q80_f32(0.0f) {}
 };
 
 struct memory_info {
@@ -84,7 +84,7 @@ struct gpu_props {
     float        metal_flops_q5k_f32; // in GFLOPS
     float        metal_flops_q6k_f32; // in GFLOPS
     float        metal_flops_q80_f32; // in GFLOPS
-    float        metal_mem_cpy_delay;  // in ms
+    float        metal_mem_cpy_delay; // in ms
     float        cuda_read_vram_bw;   // in GB/s
     float        cuda_flops_f32_f32;  // in GFLOPS
     float        cuda_flops_f16_f32;  // in GFLOPS
@@ -92,7 +92,7 @@ struct gpu_props {
     float        cuda_flops_q5k_f32;  // in GFLOPS
     float        cuda_flops_q6k_f32;  // in GFLOPS
     float        cuda_flops_q80_f32;  // in GFLOPS
-    float        cuda_mem_cpy_delay;   // in ms
+    float        cuda_mem_cpy_delay;  // in ms
 
     gpu_props() : 
         name(""), 
@@ -100,20 +100,20 @@ struct gpu_props {
         memory_free        (0.0f), 
         memory_total       (0.0f), 
         metal_read_vram_bw (0.0f),
-        metal_flops_f32_f32(EPS), 
-        metal_flops_f16_f32(EPS),
-        metal_flops_q4k_f32(EPS),
-        metal_flops_q5k_f32(EPS),
-        metal_flops_q6k_f32(EPS),
-        metal_flops_q80_f32(EPS),
+        metal_flops_f32_f32(0.0f), 
+        metal_flops_f16_f32(0.0f),
+        metal_flops_q4k_f32(0.0f),
+        metal_flops_q5k_f32(0.0f),
+        metal_flops_q6k_f32(0.0f),
+        metal_flops_q80_f32(0.0f),
         metal_mem_cpy_delay(0.0f),
         cuda_read_vram_bw  (0.0f),
-        cuda_flops_f32_f32 (EPS), 
-        cuda_flops_f16_f32 (EPS), 
-        cuda_flops_q4k_f32 (EPS),
-        cuda_flops_q5k_f32 (EPS),
-        cuda_flops_q6k_f32 (EPS),
-        cuda_flops_q80_f32 (EPS),
+        cuda_flops_f32_f32 (0.0f), 
+        cuda_flops_f16_f32 (0.0f), 
+        cuda_flops_q4k_f32 (0.0f),
+        cuda_flops_q5k_f32 (0.0f),
+        cuda_flops_q6k_f32 (0.0f),
+        cuda_flops_q80_f32 (0.0f),
         cuda_mem_cpy_delay (0.0f) {}
 };
 
