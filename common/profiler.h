@@ -41,6 +41,7 @@ struct memory_info {
     float        total_swap;         // in GiB
     float        available_swap;     // in GiB
     float        cpu_read_ram_bw;    // in GB/s
+    float        mem_cpy_delay;      // in ms
 
     memory_info() : 
         total_physical    (0.0f), 
@@ -48,7 +49,8 @@ struct memory_info {
         used_can_swap     (0.0f),
         total_swap        (0.0f), 
         available_swap    (0.0f), 
-        cpu_read_ram_bw   (0.0f) {}
+        cpu_read_ram_bw   (0.0f),
+        mem_cpy_delay     (0.0f) {}
 };
 
 struct gpu_support {
@@ -82,6 +84,7 @@ struct gpu_props {
     float        metal_flops_q5k_f32; // in GFLOPS
     float        metal_flops_q6k_f32; // in GFLOPS
     float        metal_flops_q80_f32; // in GFLOPS
+    float        metal_mem_cpy_delay;  // in ms
     float        cuda_read_vram_bw;   // in GB/s
     float        cuda_flops_f32_f32;  // in GFLOPS
     float        cuda_flops_f16_f32;  // in GFLOPS
@@ -89,6 +92,7 @@ struct gpu_props {
     float        cuda_flops_q5k_f32;  // in GFLOPS
     float        cuda_flops_q6k_f32;  // in GFLOPS
     float        cuda_flops_q80_f32;  // in GFLOPS
+    float        cuda_mem_cpy_delay;   // in ms
 
     gpu_props() : 
         name(""), 
@@ -102,13 +106,15 @@ struct gpu_props {
         metal_flops_q5k_f32(EPS),
         metal_flops_q6k_f32(EPS),
         metal_flops_q80_f32(EPS),
+        metal_mem_cpy_delay(0.0f),
         cuda_read_vram_bw  (0.0f),
         cuda_flops_f32_f32 (EPS), 
         cuda_flops_f16_f32 (EPS), 
         cuda_flops_q4k_f32 (EPS),
         cuda_flops_q5k_f32 (EPS),
         cuda_flops_q6k_f32 (EPS),
-        cuda_flops_q80_f32 (EPS) {}
+        cuda_flops_q80_f32 (EPS),
+        cuda_mem_cpy_delay (0.0f) {}
 };
 
 struct model_flops {

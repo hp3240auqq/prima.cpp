@@ -3587,6 +3587,7 @@ void llama_profile_device(
     dev_info->memory.total_swap         = round(device_swap_memory(false)     / (double)(1 << 30) * 100) / 100;
     dev_info->memory.available_swap     = round(device_swap_memory(true)      / (double)(1 << 30) * 100) / 100;
     dev_info->memory.cpu_read_ram_bw    = device_memory_bw(n_threads);
+    dev_info->memory.mem_cpy_delay      = device_cpu_mem_copy(model, n_threads);
 
     struct model_flops  * n_flops  = &dev_info->model_flops;
     struct model_params * n_params = &dev_info->model_params;
@@ -3622,6 +3623,8 @@ void llama_profile_device(
     dev_info->gpu_props.memory_total        = round(gpu_props.memory_total / (double)(1 << 30) * 100) / 100;
     dev_info->gpu_props.metal_read_vram_bw  = device_metal_read_vram_bw();
     dev_info->gpu_props.cuda_read_vram_bw   = device_cuda_read_vram_bw();
+    dev_info->gpu_props.metal_mem_cpy_delay = device_metal_mem_copy(model);
+    dev_info->gpu_props.cuda_mem_cpy_delay  = device_cuda_mem_copy(model);
 
     if (is_dtype_exist(n_params, GGML_TYPE_F32)) {
         dev_info->cpu_props.flops_f32_f32       = device_cpu_flops  (model, GGML_TYPE_F32,  GGML_TYPE_F32, n_threads);

@@ -1581,7 +1581,7 @@ void device_print_props(struct device_info * dev_info_set, int n, struct llama_m
     }
     LOG_INF("\n");
 
-    LOG_INF("| Physical Mem Total (GiB)      ");
+    LOG_INF("| Physical Mem Total (GiB)     ");
     for (int i = 0; i < n; ++i) {
         LOG_INF("| %-10.2f   ", dev_info_set[i].memory.total_physical);
     }
@@ -1614,6 +1614,12 @@ void device_print_props(struct device_info * dev_info_set, int n, struct llama_m
     LOG_INF("| CPU RAM Read BW (GB/s)       ");
     for (int i = 0; i < n; ++i) {
         LOG_INF("| %-10.2f   ", dev_info_set[i].memory.cpu_read_ram_bw);
+    }
+    LOG_INF("\n");
+
+    LOG_INF("| CPU KVCache Copy Time (ms/l) ");
+    for (int i = 0; i < n; ++i) {
+        LOG_INF("| %-10.2f   ", dev_info_set[i].memory.mem_cpy_delay);
     }
     LOG_INF("\n");
 
@@ -1713,6 +1719,12 @@ void device_print_props(struct device_info * dev_info_set, int n, struct llama_m
     }
     LOG_INF("\n");
 
+    LOG_INF("| Metal KVCache Copy Time(ms/l)");
+    for (int i = 0; i < n; ++i) {
+        LOG_INF("| %-10.2f   ", dev_info_set[i].gpu_props.metal_mem_cpy_delay);
+    }
+    LOG_INF("\n");
+
     LOG_INF("| Metal flops (F32xF32, GFLOPS)");
     for (int i = 0; i < n; ++i) {
         LOG_INF("| %-10.1f   ", dev_info_set[i].gpu_props.metal_flops_f32_f32);
@@ -1752,6 +1764,12 @@ void device_print_props(struct device_info * dev_info_set, int n, struct llama_m
     LOG_INF("| CUDA VRAM Read BW (GB/s)     ");
     for (int i = 0; i < n; ++i) {
         LOG_INF("| %-10.2f   ", dev_info_set[i].gpu_props.cuda_read_vram_bw);
+    }
+    LOG_INF("\n");
+
+    LOG_INF("| CUDA KVCache Copy Time (ms/l)");
+    for (int i = 0; i < n; ++i) {
+        LOG_INF("| %-10.2f   ", dev_info_set[i].gpu_props.cuda_mem_cpy_delay);
     }
     LOG_INF("\n");
 
@@ -1956,12 +1974,13 @@ size_t serialize(const struct device_info * dev_info, char ** buffer) {
                       + gpu_description_len
                       + sizeof(struct disk_props)
                       + sizeof(uint32_t)    // cpu_props.cores
-                      + sizeof(float) * 6    // cpu_props.flops_f32_f32, cpu_props.flops_f16_f32, cpu_props.flops_q4k_f32, cpu_props.flops_q5k_f32, cpu_props.flops_q6k_f32, cpu_props.flops_q80_f32
+                      + sizeof(float) * 6   // cpu_props.flops_f32_f32, cpu_props.flops_f16_f32, cpu_props.flops_q4k_f32, cpu_props.flops_q5k_f32, cpu_props.flops_q6k_f32, cpu_props.flops_q80_f32
                       + sizeof(struct memory_info)
                       + sizeof(struct gpu_support)
-                      + sizeof(float) * 16; // gpu_props.memory_free, gpu_props.memory_total, gpu_props.metal_read_vram_bw, gpu_props.cuda_read_vram_bw,
+                      + sizeof(float) * 18; // gpu_props.memory_free, gpu_props.memory_total, gpu_props.metal_read_vram_bw, gpu_props.cuda_read_vram_bw,
                                             // gpu_props.metal_flops_f32_f32, gpu_props.metal_flops_f16_f32, gpu_props.metal_flops_q4k_f32, gpu_props.metal_flops_q5k_f32, gpu_props.metal_flops_q6k_f32, gpu_props.metal_flops_q80_f32, 
-                                            // gpu_props.cuda_flops_f32_f32, gpu_props.cuda_flops_f16_f32, gpu_props.cuda_flops_q4k_f32, gpu_props.cuda_flops_q5k_f32, gpu_props.cuda_flops_q6k_f32, gpu_props.cuda_flops_q80_f32
+                                            // gpu_props.cuda_flops_f32_f32, gpu_props.cuda_flops_f16_f32, gpu_props.cuda_flops_q4k_f32, gpu_props.cuda_flops_q5k_f32, gpu_props.cuda_flops_q6k_f32, gpu_props.cuda_flops_q80_f32,
+                                            // gpu_props.metal_mem_cpy_delay, gpu_props.cuda_mem_cpy_delay
 
     *buffer = (char *)malloc(total_size);
     char * ptr = *buffer;
@@ -2054,6 +2073,9 @@ size_t serialize(const struct device_info * dev_info, char ** buffer) {
     memcpy(ptr, &dev_info->gpu_props.metal_flops_q80_f32, sizeof(float));
     ptr += sizeof(float);
 
+    memcpy(ptr, &dev_info->gpu_props.metal_mem_cpy_delay, sizeof(float));
+    ptr += sizeof(float);
+
     memcpy(ptr, &dev_info->gpu_props.cuda_read_vram_bw, sizeof(float));
     ptr += sizeof(float);
 
@@ -2073,6 +2095,9 @@ size_t serialize(const struct device_info * dev_info, char ** buffer) {
     ptr += sizeof(float);
 
     memcpy(ptr, &dev_info->gpu_props.cuda_flops_q80_f32, sizeof(float));
+    ptr += sizeof(float);
+
+    memcpy(ptr, &dev_info->gpu_props.cuda_mem_cpy_delay, sizeof(float));
 
     // no need to synchronize model flops and model params
     return total_size;
@@ -2183,6 +2208,9 @@ void deserialize(const char * buffer, struct device_info * dev_info) {
     memcpy(&dev_info->gpu_props.metal_flops_q80_f32, ptr, sizeof(float));
     ptr += sizeof(float);
 
+    memcpy(&dev_info->gpu_props.metal_mem_cpy_delay, ptr, sizeof(float));
+    ptr += sizeof(float);
+
     memcpy(&dev_info->gpu_props.cuda_read_vram_bw, ptr, sizeof(float));
     ptr += sizeof(float);
 
@@ -2202,6 +2230,9 @@ void deserialize(const char * buffer, struct device_info * dev_info) {
     ptr += sizeof(float);
 
     memcpy(&dev_info->gpu_props.cuda_flops_q80_f32, ptr, sizeof(float));
+    ptr += sizeof(float);
+
+    memcpy(&dev_info->gpu_props.cuda_mem_cpy_delay, ptr, sizeof(float));
 
     // no need to synchronize model flops and model params
 }
