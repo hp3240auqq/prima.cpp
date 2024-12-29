@@ -1494,17 +1494,17 @@ static float device_disk_access_delay(struct device_info & dev_info, struct llam
     }
 }
 
-static float device_mem_copy_delay(struct llama_model * model, const struct llama_context_params cparams) {
+static float device_mem_copy_delay(struct device_info & dev_info, struct llama_model * model, const struct llama_context_params cparams) {
     int n_layers     = llama_model_n_layers(model);
     int n_gpu_layers = std::min(static_cast<int>(cparams.n_gpu_layers), n_layers);
 
-    float layer_delay_cpu   = device_cpu_mem_copy(model, cparams.n_threads);
+    float layer_delay_cpu   = dev_info.memory.mem_cpy_delay;
 
 #ifdef GGML_USE_METAL
-    float layer_delay_metal = device_metal_mem_copy(model);
+    float layer_delay_metal = dev_info.gpu_props.metal_mem_cpy_delay;
     return layer_delay_metal * n_gpu_layers + layer_delay_cpu * (n_layers - n_gpu_layers);
 #elif GGML_USE_CUDA
-    float layer_delay_cuda  = device_cuda_mem_copy(model);
+    float layer_delay_cuda  = dev_info.gpu_props.cuda_mem_cpy_delay;
     return layer_delay_cuda * n_gpu_layers + layer_delay_cpu * (n_layers - n_gpu_layers);
 #else
     (void)n_gpu_layers;
@@ -1947,7 +1947,7 @@ void device_print_props(struct device_info * dev_info_set, int n, struct llama_m
     latency += device_compute_delay      (dev_info_set[0], n_layers, cparams);
     latency += device_memory_access_delay(dev_info_set[0], model, cparams, n_layers);
     latency += device_disk_access_delay  (dev_info_set[0], model, cparams); // if physical memory is not enough, some mapped data will be released and reloaded later
-    latency += device_mem_copy_delay     (model, cparams); // memory copy delay in kvcache
+    latency += device_mem_copy_delay     (dev_info_set[0], model, cparams); // memory copy delay in kvcache
 
     LOG_INF("| Token latency (ms)           ");
     LOG_INF("| %-10.2f   ", latency);
