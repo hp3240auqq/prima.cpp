@@ -3579,6 +3579,7 @@ void llama_profile_device(
                         int   n_threads,
                        bool   flash_attn) {
     dev_info->device_name               = device_name();
+    dev_info->device_os                 = device_os();
     dev_info->cpu_props.cores           = device_cpu_cores();
 
     dev_info->memory.total_physical     = round(device_physical_memory(false) / (double)(1 << 30) * 100) / 100;

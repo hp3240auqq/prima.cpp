@@ -71,6 +71,27 @@ const char * device_name() {
     return device_name;
 }
 
+const char * device_os() {
+#ifdef _WIN32
+    return "Windows";
+#elif __linux__
+    std::ifstream versionFile("/proc/version");
+    if (versionFile.is_open()) {
+        std::string line;
+        std::getline(versionFile, line);
+        versionFile.close();
+        if (line.find("Android") != std::string::npos) {
+            return "Android";
+        } else {
+            return "";
+        }
+    }
+    return "Linux";
+#elif __APPLE__ || __MACH__
+    return "macOS";
+#endif
+}
+
 uint32_t device_cpu_cores() {
     unsigned int core_count = 1; // default to 1 in case of failure
 
@@ -1527,6 +1548,12 @@ void device_print_props(struct device_info * dev_info_set, int n, struct llama_m
     }
     LOG_INF("\n");
 
+    LOG_INF("| Device OS                    ");
+    for (int i = 0; i < n; ++i) {
+        LOG_INF("| %-10.10s   ", dev_info_set[i].device_os);
+    }
+    LOG_INF("\n");
+
     LOG_INF("| CPU Name                     ");
     for (int i = 0; i < n; ++i) {
         LOG_INF("| %-10.10s   ", dev_info_set[i].cpu_props.name);
@@ -1960,6 +1987,7 @@ void device_print_props(struct device_info * dev_info_set, int n, struct llama_m
 size_t serialize(const struct device_info * dev_info, char ** buffer) {
     // calculate total size for serialized buffer
     size_t device_name_len     = strlen(dev_info->device_name) + 1;
+    size_t device_os_len       = strlen(dev_info->device_os) + 1;
     size_t cpu_name_len        = strlen(dev_info->cpu_props.name) + 1;
     size_t cpu_description_len = strlen(dev_info->cpu_props.description) + 1;
     size_t gpu_name_len        = strlen(dev_info->gpu_props.name) + 1;
@@ -1968,6 +1996,7 @@ size_t serialize(const struct device_info * dev_info, char ** buffer) {
     size_t total_size = sizeof(uint32_t)
                       + sizeof(size_t) * 5  // for lengths of strings
                       + device_name_len
+                      + device_os_len
                       + cpu_name_len
                       + cpu_description_len
                       + gpu_name_len
@@ -1994,6 +2023,11 @@ size_t serialize(const struct device_info * dev_info, char ** buffer) {
     ptr += sizeof(size_t);
     memcpy(ptr, dev_info->device_name, device_name_len);
     ptr += device_name_len;
+
+    memcpy(ptr, &device_os_len, sizeof(size_t));
+    ptr += sizeof(size_t);
+    memcpy(ptr, dev_info->device_os, device_os_len);
+    ptr += device_os_len;
 
     memcpy(ptr, &cpu_name_len, sizeof(size_t));
     ptr += sizeof(size_t);
@@ -2117,6 +2151,14 @@ void deserialize(const char * buffer, struct device_info * dev_info) {
     dev_info->device_name = (char *)malloc(device_name_len);
     memcpy(const_cast<void*>(static_cast<const void*>(dev_info->device_name)), ptr, device_name_len);
     ptr += device_name_len;
+
+    // device_os
+    size_t device_os_len;
+    memcpy(&device_os_len, ptr, sizeof(size_t));
+    ptr += sizeof(size_t);
+    dev_info->device_os = (char *)malloc(device_os_len);
+    memcpy(const_cast<void*>(static_cast<const void*>(dev_info->device_os)), ptr, device_os_len);
+    ptr += device_os_len;
 
     // cpu_props.name
     size_t cpu_name_len;

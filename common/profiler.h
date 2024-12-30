@@ -216,6 +216,7 @@ struct disk_props {
 struct device_info {
     uint32_t            rank;
     const char *        device_name;
+    const char *        device_os;
     struct disk_props   disk;
     struct cpu_props    cpu_props;
     struct memory_info  memory;
@@ -228,6 +229,7 @@ struct device_info {
     device_info() : 
         rank(0), 
         device_name(""), 
+        device_os(""),
         disk(),
         cpu_props(), 
         memory(), 
@@ -251,6 +253,7 @@ enum profiler_layer_type {
 };
 
 const char * device_name(void); 
+const char * device_os(void);
 
 uint32_t device_cpu_cores         (void);
 float    device_cpu_flops         (struct llama_model * model, enum ggml_type src0t, enum ggml_type src1t, int n_threads);
