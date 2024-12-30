@@ -82,8 +82,6 @@ const char * device_os() {
         versionFile.close();
         if (line.find("Android") != std::string::npos) {
             return "Android";
-        } else {
-            return "";
         }
     }
     return "Linux";
