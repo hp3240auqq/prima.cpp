@@ -1992,7 +1992,7 @@ size_t serialize(const struct device_info * dev_info, char ** buffer) {
     size_t gpu_description_len = strlen(dev_info->gpu_props.description) + 1;
 
     size_t total_size = sizeof(uint32_t)
-                      + sizeof(size_t) * 5  // for lengths of strings
+                      + sizeof(size_t) * 6  // for lengths of strings
                       + device_name_len
                       + device_os_len
                       + cpu_name_len
