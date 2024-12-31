@@ -3592,12 +3592,11 @@ void llama_profile_device(
 
     struct model_flops  * n_flops  = &dev_info->model_flops;
     struct model_params * n_params = &dev_info->model_params;
-    struct model_bytes  * n_bytes  = &dev_info->model_bytes;
-    if (dev_info->rank == 0) {    
-        enum ggml_type inp_embd_dtype  = GGML_TYPE_F32;
-        llama_model_n_flops(model, ml, n_flops, n_params, n_bytes, n_predict, n_ctx, &inp_embd_dtype, flash_attn);
-        n_flops->inp_embd_ms = device_inp_embd_delay(model, inp_embd_dtype, 1, n_threads);
-    }
+    struct model_bytes  * n_bytes  = &dev_info->model_bytes;   
+
+    enum ggml_type inp_embd_dtype  = GGML_TYPE_F32;
+    llama_model_n_flops(model, ml, n_flops, n_params, n_bytes, n_predict, n_ctx, &inp_embd_dtype, flash_attn);
+    n_flops->inp_embd_ms = device_inp_embd_delay(model, inp_embd_dtype, 1, n_threads);
 
     device_disk_seq_bw(&dev_info->disk.read_seq_bw, &dev_info->disk.write_seq_bw, n_threads);
     device_disk_rnd_bw(&dev_info->disk.read_rnd_bw, &dev_info->disk.write_rnd_bw, n_threads);
