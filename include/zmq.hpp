@@ -2330,13 +2330,12 @@ class monitor_t
 #endif
 
 
-    void
-    monitor(socket_t &socket, std::string const &addr, int events = ZMQ_EVENT_ALL)
+    [[noreturn]] void monitor(socket_t &socket, std::string const &addr, int events = ZMQ_EVENT_ALL)
     {
         monitor(socket, addr.c_str(), events);
     }
 
-    void monitor(socket_t &socket, const char *addr_, int events = ZMQ_EVENT_ALL)
+    [[noreturn]] void monitor(socket_t &socket, const char *addr_, int events = ZMQ_EVENT_ALL)
     {
         init(socket, addr_, events);
         while (true) {
