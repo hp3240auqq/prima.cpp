@@ -264,11 +264,11 @@ MK_CXXFLAGS  = -std=c++11 -fPIC
 MK_NVCCFLAGS = -std=c++11
 
 ifeq ($(UNAME_S),Darwin)
-    MK_CPPFLAGS += -I/opt/homebrew/include
-    MK_LDFLAGS  += -L/opt/homebrew/lib -lzmq
+    MK_CPPFLAGS += -isystem /opt/homebrew/include -isystem /opt/homebrew/include/highs
+    MK_LDFLAGS  += -L/opt/homebrew/lib -lzmq -lhighs
 else ifeq ($(UNAME_S),Linux)
-    MK_CPPFLAGS += -I/usr/local/include
-    MK_LDFLAGS  += -L/usr/local/lib -lzmq
+    MK_CPPFLAGS += -isystem /usr/local/include -isystem /usr/local/include/highs
+    MK_LDFLAGS  += -L/usr/local/lib -lzmq -lhighs
 endif
 
 ifdef LLAMA_NO_CCACHE

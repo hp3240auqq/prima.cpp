@@ -442,12 +442,12 @@ extern "C" {
 
     LLAMA_API void llama_free_model(struct llama_model * model);
 
-    LLAMA_API void llama_init_sockets       (struct llama_context * ctx, uint32_t n_world, uint32_t my_rank);
-    LLAMA_API void llama_free_sockets       (struct llama_context * ctx, char ** msg);
-    LLAMA_API int  llama_gather_device_info (struct llama_context * ctx, struct device_info * dev_info_set);
-    LLAMA_API int  llama_send_device_info   (struct llama_context * ctx, struct device_info * dev_info);
-    LLAMA_API int  llama_broadcast_n_layer_window(struct llama_context * ctx, uint32_t * n_layer_window);
-    LLAMA_API int  llama_recv_n_layer_window(struct llama_context * ctx, uint32_t * n_layer_window);
+    LLAMA_API void llama_init_sockets      (struct llama_context * ctx, uint32_t n_world, uint32_t my_rank);
+    LLAMA_API void llama_free_sockets      (struct llama_context * ctx, char ** msg);
+    LLAMA_API int  llama_gather_device_info(struct llama_context * ctx, struct device_info * dev_info_set);
+    LLAMA_API int  llama_send_device_info  (struct llama_context * ctx, struct device_info * dev_info);
+    LLAMA_API int  llama_bcast_layer_setup (struct llama_context * ctx, uint32_t * n_layer_window, uint32_t * n_gpu_layers);
+    LLAMA_API int  llama_recv_layer_setup  (struct llama_context * ctx, uint32_t * n_layer_window, uint32_t * n_gpu_layers);
 
     LLAMA_API int llm_load_tensors(
               struct llama_model_loader * ml,
@@ -464,6 +464,8 @@ extern "C" {
                    struct llama_context * ctx);
     
     LLAMA_API uint32_t * llama_context_n_layer_window(struct llama_context * ctx);
+
+    LLAMA_API uint32_t * llama_context_n_gpu_layers(struct llama_context * ctx);
 
     // Frees all allocated memory
     LLAMA_API void llama_free(struct llama_context * ctx);
@@ -536,11 +538,14 @@ extern "C" {
 
     // Return the size of compute buffer size, including input tensors and activations
     LLAMA_API void llama_model_compute_buf_size(
-                                  uint64_t * cpu_buf,
-                                  uint64_t * gpu_buf,
+                                   int64_t * cpu_buf,
+                                   int64_t * gpu_buf,
                   const struct llama_model * model, 
          const struct llama_context_params   cparams, 
-                                      bool   use_gpu);
+                                      bool   use_gpu,
+                                      bool   is_master,
+                                       int   n_layers,
+                                       int   n_gpu_layers);
 
     // Return the size of KV cache in the model
     LLAMA_API void llama_total_kv_size(
@@ -551,8 +556,8 @@ extern "C" {
                                       bool   use_gpu);
     
     LLAMA_API void llama_kv_size(
-                            uint64_t * cpu_cache, 
-                            uint64_t * gpu_cache, 
+                             int64_t * cpu_cache, 
+                             int64_t * gpu_cache, 
             const struct llama_model * model, 
    const struct llama_context_params   cparams,
                                 bool   use_gpu);

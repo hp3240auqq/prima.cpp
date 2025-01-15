@@ -1312,8 +1312,8 @@ static float device_memory_access_delay(struct device_info & dev_info, struct ll
     auto n_bytes     = dev_info.model_bytes;
     int n_gpu_layers = std::min(static_cast<int>(cparams.n_gpu_layers), n_layers);
     
-    uint64_t cpu_kv_size;
-    uint64_t gpu_kv_size;
+    int64_t cpu_kv_size;
+    int64_t gpu_kv_size;
 
 #if defined(GGML_USE_METAL) || defined(GGML_USE_CUDA)
     llama_kv_size(&cpu_kv_size, &gpu_kv_size, model, cparams, true);
@@ -1428,17 +1428,17 @@ static float device_disk_access_delay(struct device_info & dev_info, struct llam
 
     cpu_total_bytes += n_bytes.nb_output;
 
-    uint64_t cpu_kv_size;
-    uint64_t gpu_kv_size;
-    uint64_t cpu_compute_buf;
-    uint64_t gpu_compute_buf;
+    int64_t cpu_kv_size;
+    int64_t gpu_kv_size;
+    int64_t cpu_compute_buf;
+    int64_t gpu_compute_buf;
 
 #if defined(GGML_USE_METAL) || defined(GGML_USE_CUDA)
     llama_kv_size(&cpu_kv_size, &gpu_kv_size, model, cparams, true);
-    llama_model_compute_buf_size(&cpu_compute_buf, &gpu_compute_buf, model, cparams, true);
+    llama_model_compute_buf_size(&cpu_compute_buf, &gpu_compute_buf, model, cparams, true,  true, n_layers, n_gpu_layers);
 #else
     llama_kv_size(&cpu_kv_size, &gpu_kv_size, model, cparams, false);
-    llama_model_compute_buf_size(&cpu_compute_buf, &gpu_compute_buf, model, cparams, false);
+    llama_model_compute_buf_size(&cpu_compute_buf, &gpu_compute_buf, model, cparams, false, true, n_layers, n_gpu_layers);
 #endif
 
     double cpu_kv_size_gib     = static_cast<double>(cpu_kv_size) / 1024.0 / 1024.0 / 1024.0;     // convert to GiB

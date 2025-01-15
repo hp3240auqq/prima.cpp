@@ -19960,7 +19960,7 @@ int llama_send_device_info(struct llama_context * ctx, struct device_info * dev_
     return 0;
 }
 
-int llama_broadcast_n_layer_window(struct llama_context * ctx, uint32_t * n_layer_window) {
+int llama_bcast_layer_setup(struct llama_context * ctx, uint32_t * n_layer_window, uint32_t * n_gpu_layers) {
     uint32_t n_world = ctx->cparams.n_world;
     if (n_world == 1) {
         return 0;
@@ -19973,6 +19973,9 @@ int llama_broadcast_n_layer_window(struct llama_context * ctx, uint32_t * n_laye
         send_msgs.emplace_back("n_layer_window", strlen("n_layer_window"));
         send_msgs.emplace_back(n_layer_window, sizeof(uint32_t) * 32);
 
+        send_msgs.emplace_back("n_gpu_layers", strlen("n_gpu_layers"));
+        send_msgs.emplace_back(n_gpu_layers, sizeof(uint32_t) * 32);
+
         zmq::send_multipart(*ctx->send_socket, send_msgs);
     } catch (const zmq::error_t& e) {
         LLAMA_LOG_INFO("Failed to send data: %s\n", e.what());
@@ -19982,7 +19985,7 @@ int llama_broadcast_n_layer_window(struct llama_context * ctx, uint32_t * n_laye
     return 0;
 }
 
-int llama_recv_n_layer_window(struct llama_context * ctx, uint32_t * n_layer_window) {
+int llama_recv_layer_setup(struct llama_context * ctx, uint32_t * n_layer_window, uint32_t * n_gpu_layers) {
     uint32_t n_world = ctx->cparams.n_world;
     uint32_t my_rank = ctx->cparams.rank;
 
@@ -19991,15 +19994,20 @@ int llama_recv_n_layer_window(struct llama_context * ctx, uint32_t * n_layer_win
         return -1;
     }
 
-    std::string key = recv_msgs[0].to_string();
-    if (key != "n_layer_window") {
-        LLAMA_LOG_INFO("Unexpected message received: %s\n", key.c_str());
+    if (recv_msgs.size() != 4) { // expecting n_layer_windows and n_gpu_layers
+        LLAMA_LOG_INFO("Unexpected number of messages received: %zu\n", recv_msgs.size());
         return -1;
     }
 
-    zmq::message_t & data_msg = recv_msgs[1];
-    GGML_ASSERT(data_msg.size() == sizeof(uint32_t) * 32);
-    memcpy(n_layer_window, data_msg.data(), sizeof(uint32_t) * 32);
+    if (recv_msgs[0].to_string() != "n_layer_window" || recv_msgs[2].to_string() != "n_gpu_layers") {
+        LLAMA_LOG_INFO("Unexpected message received\n");
+        return -1;
+    }
+
+    GGML_ASSERT(recv_msgs[1].size() == sizeof(uint32_t) * 32);
+    GGML_ASSERT(recv_msgs[3].size() == sizeof(uint32_t) * 32);
+    memcpy(n_layer_window, recv_msgs[1].data(), sizeof(uint32_t) * 32);
+    memcpy(n_gpu_layers,   recv_msgs[3].data(), sizeof(uint32_t) * 32);
 
     if (my_rank != n_world - 1) {
         try {
@@ -20511,6 +20519,10 @@ uint32_t * llama_context_n_layer_window(struct llama_context * ctx) {
     return ctx->cparams.n_layer_window;
 }
 
+uint32_t * llama_context_n_gpu_layers(struct llama_context * ctx) {
+    return ctx->cparams.n_gpu_layers;
+}
+
 void llama_free(struct llama_context * ctx) {
     delete ctx;
 }
@@ -20909,47 +20921,51 @@ static void count_n_bytes(struct model_bytes * n_bytes, enum profiler_layer_type
 }
 
 void llama_model_compute_buf_size(
-                            uint64_t * cpu_buf, 
-                            uint64_t * gpu_buf, 
+                             int64_t * cpu_buf, 
+                             int64_t * gpu_buf, 
             const struct llama_model * model, 
    const struct llama_context_params   cparams,
-                                bool   use_gpu) {
+                                bool   use_gpu,
+                                bool   is_master,
+                                 int   n_layers,
+                                 int   n_gpu_layers) {
     const llama_hparams hparams = model->hparams;
 
     // input tensors
-    const uint64_t n_inp_toks = cparams.n_ubatch;
-    const uint64_t n_inp_embd = hparams.n_embd  * cparams.n_ubatch;
+    const int64_t n_inp_toks = cparams.n_ubatch;
+    const int64_t n_inp_embd = hparams.n_embd  * cparams.n_ubatch;
 
     // activations (see figures/memory-allocation-map-for-activations.png for detailed allocation)
-    const uint64_t n_bak_embd = hparams.n_embd  * cparams.n_ubatch;
-    const uint64_t n_inp_pos  = cparams.n_ubatch;
-    const uint64_t n_kq_mask  = cparams.n_ctx   * cparams.n_ubatch;
-    const uint64_t n_inp_out_ids = cparams.n_ubatch;
-    const uint64_t n_norm     = hparams.n_embd  * cparams.n_ubatch;
-    const uint64_t n_qcur     = hparams.n_embd  * cparams.n_ubatch * 2;
-    const uint64_t n_kq       = cparams.n_ctx   * cparams.n_ubatch * hparams.n_head();
+    const int64_t n_bak_embd = hparams.n_embd  * cparams.n_ubatch;
+    const int64_t n_inp_pos  = cparams.n_ubatch;
+    const int64_t n_kq_mask  = cparams.n_ctx   * cparams.n_ubatch;
+    const int64_t n_inp_out_ids = cparams.n_ubatch;
+    const int64_t n_norm     = hparams.n_embd  * cparams.n_ubatch;
+    const int64_t n_qcur     = hparams.n_embd  * cparams.n_ubatch * 2;
+    const int64_t n_kq       = cparams.n_ctx   * cparams.n_ubatch * hparams.n_head();
 
     // outputs
-    const uint64_t n_out_embd = hparams.n_embd  * cparams.n_ubatch;
-    const uint64_t n_output   = hparams.n_vocab * cparams.n_ubatch;
+    const int64_t n_out_embd = hparams.n_embd  * cparams.n_ubatch;
+    const int64_t n_output   = hparams.n_vocab * cparams.n_ubatch;
 
     // compute buffer size for input, each layer, and output
-    const uint64_t n_buf_inp  = (n_inp_toks + n_inp_embd) * ggml_type_size(GGML_TYPE_F32);
-    const uint64_t n_buf_act  = (n_bak_embd + n_inp_pos + n_kq_mask + 
+    const int64_t n_buf_inp  = (n_inp_toks + n_inp_embd) * ggml_type_size(GGML_TYPE_F32);
+    const int64_t n_buf_act  = (n_bak_embd + n_inp_pos + n_kq_mask + 
                                  n_inp_out_ids + n_norm + n_qcur + n_kq
                                 ) * ggml_type_size(GGML_TYPE_F32);
-    const uint64_t n_buf_out  = (n_out_embd + n_output) * ggml_type_size(GGML_TYPE_F32);
+    const int64_t n_buf_out  = (n_out_embd + n_output) * ggml_type_size(GGML_TYPE_F32);
+
+    *cpu_buf = 0;
+    *gpu_buf = 0;
+    if (is_master) *cpu_buf = n_buf_inp + n_buf_out;
 
     if (use_gpu) {
-        *gpu_buf = n_buf_act;
-        if (llama_model_n_layers(model) > cparams.n_gpu_layers) {
-            *cpu_buf = n_buf_inp + n_buf_act + n_buf_out;
-        } else {
-            *cpu_buf = n_buf_inp + n_buf_out;
+        *gpu_buf += n_buf_act;
+        if (n_layers > n_gpu_layers) {
+            *cpu_buf += n_buf_act;
         }
     } else {
-        *gpu_buf = 0;
-        *cpu_buf = n_buf_inp + n_buf_act + n_buf_out;
+        *cpu_buf += n_buf_act;
     }
 }
 
@@ -20973,8 +20989,8 @@ void llama_total_kv_size(
 }
 
 void llama_kv_size(
-                            uint64_t * cpu_cache, 
-                            uint64_t * gpu_cache, 
+                             int64_t * cpu_cache, 
+                             int64_t * gpu_cache, 
             const struct llama_model * model, 
    const struct llama_context_params   cparams, 
                                 bool   use_gpu) {

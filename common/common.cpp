@@ -9,6 +9,7 @@
 #include "json.hpp"
 #include "json-schema-to-grammar.h"
 #include "llama.h"
+#include "Highs.h"
 
 #include <algorithm>
 #include <cinttypes>
@@ -27,8 +28,6 @@
 #include <unordered_set>
 #include <vector>
 #include <thread>
-
-#define DEFAULT_N_LAYER_WINDOW 4
 
 #if defined(__APPLE__) && defined(__MACH__)
 #include <sys/types.h>
@@ -71,6 +70,8 @@
 #endif // LLAMA_USE_CURL
 
 using json = nlohmann::ordered_json;
+
+constexpr int GIGABYTE = 1024 * 1024 * 1024;
 
 //
 // CPU utils
@@ -362,11 +363,6 @@ bool parse_cpu_mask(const std::string & mask, bool (&boolmask)[GGML_MAX_N_THREAD
     }
 
     return true;
-}
-
-template <size_t N>
-void copy_n_layer_window(const uint32_t (&source)[N], uint32_t * destination) {
-    std::copy(std::begin(source), std::end(source), destination);
 }
 
 void gpt_init() {
@@ -822,29 +818,530 @@ std::string fs_get_cache_file(const std::string & filename) {
     return cache_directory + filename;
 }
 
-
-//
-// Model utils
-//
-static void llama_assign_n_layer_window(
+static void assign_device(
                                 uint32_t   n_world, 
                                 uint32_t   my_rank, 
                        const device_info * dev_info_set, 
                                 uint32_t * n_layer_window, 
-                      struct llama_model * model) {
+                                uint32_t * n_gpu_layers,
+                      struct llama_model * model,
+       const struct llama_context_params   cparams,
+                                   float   min_disk_read_speed = 0.1f) { // minimum disk I/O speed: 100 MB/s
     GGML_ASSERT(dev_info_set != nullptr);
     GGML_ASSERT(n_layer_window != nullptr);
+    GGML_ASSERT(my_rank == 0);
 
-    uint32_t n_layer = llama_model_n_layers(model);
+    // if only 1 device, it is assigned all layers
+    const uint32_t n_layer = llama_model_n_layers(model);
     if (n_world == 1) {
         n_layer_window[0] = n_layer;
         return;
     }
 
-    (void)my_rank;
+    const device_info &master = dev_info_set[0];
 
-    std::fill_n(n_layer_window, n_world, DEFAULT_N_LAYER_WINDOW);
+    // model-specific constants
+    const int n_embd_k_gqa = llama_model_n_embd_k_gqa(model);
+    const int n_embd_v_gqa = llama_model_n_embd_v_gqa(model);
+    const int n_kv         = 16;
+
+    const int64_t b        = dev_info_set[0].model_bytes.nb_layer;
+    const int64_t bi       = dev_info_set[0].model_bytes.nb_input;
+    const int64_t bo       = dev_info_set[0].model_bytes.nb_output;
+    const int64_t b_prime  = b + 2 * (n_embd_k_gqa + n_embd_v_gqa) * n_kv;
+
+    // device-specific constants
+    std::vector<float> alpha(n_world, 0.0f);
+    std::vector<float> beta(n_world, 0.0f);
+    std::vector<float> xi(n_world, 0.0f);
+    float kappa = 0.0f;
+    std::vector<int>   w(n_world, 0);
+    std::vector<int>   n(n_world, 0);
+    std::vector<float> mem_budget(n_world, 0.0f);
+
+    // -------- Compute alpha[m], beta[m], xi[m] --------
+    for (uint32_t m = 0; m < n_world; ++m) {
+        // alpha[m]
+        const device_info &dev = dev_info_set[m];
+        float t_calc_cpu = (
+            master.model_flops.layer_f32_f32 / (dev.cpu_props.flops_f32_f32 * 1e9 + EPS) +
+            master.model_flops.layer_f16_f32 / (dev.cpu_props.flops_f16_f32 * 1e9 + EPS) +
+            master.model_flops.layer_q4k_f32 / (dev.cpu_props.flops_q4k_f32 * 1e9 + EPS) +
+            master.model_flops.layer_q5k_f32 / (dev.cpu_props.flops_q5k_f32 * 1e9 + EPS) +
+            master.model_flops.layer_q6k_f32 / (dev.cpu_props.flops_q6k_f32 * 1e9 + EPS) +
+            master.model_flops.layer_q80_f32 / (dev.cpu_props.flops_q80_f32 * 1e9 + EPS)) * 1000; // in ms
+        float t_kv_cpy_cpu = dev.memory.mem_cpy_delay; // in ms
+        float t_read_ram_cpu = b_prime / (dev.memory.cpu_read_ram_bw * 1e9) * 1000; // in ms
+
+        alpha[m] = t_calc_cpu + t_kv_cpy_cpu + t_read_ram_cpu; // in ms
+
+        // beta[m]
+        float t_calc_gpu     = 0.0;
+        float t_kv_cpy_gpu   = 0.0;
+        float t_read_ram_gpu = 0.0;
+
+        if (dev.gpu_support.metal) {
+            t_calc_gpu = (
+                master.model_flops.layer_f32_f32 / (dev.gpu_props.metal_flops_f32_f32 * 1e9 + EPS) +
+                master.model_flops.layer_f16_f32 / (dev.gpu_props.metal_flops_f16_f32 * 1e9 + EPS) +
+                master.model_flops.layer_q4k_f32 / (dev.gpu_props.metal_flops_q4k_f32 * 1e9 + EPS) +
+                master.model_flops.layer_q5k_f32 / (dev.gpu_props.metal_flops_q5k_f32 * 1e9 + EPS) +
+                master.model_flops.layer_q6k_f32 / (dev.gpu_props.metal_flops_q6k_f32 * 1e9 + EPS) +
+                master.model_flops.layer_q80_f32 / (dev.gpu_props.metal_flops_q80_f32 * 1e9 + EPS)) * 1000; // in ms
+            t_kv_cpy_gpu = dev.gpu_props.metal_mem_cpy_delay; // in ms
+            t_read_ram_gpu = b_prime / (dev.gpu_props.metal_read_vram_bw * 1e9) * 1000; // in ms
+        } else if (dev.gpu_support.cuda) {
+            t_calc_gpu = (
+                master.model_flops.layer_f32_f32 / (dev.gpu_props.cuda_flops_f32_f32 * 1e9 + EPS) +
+                master.model_flops.layer_f16_f32 / (dev.gpu_props.cuda_flops_f16_f32 * 1e9 + EPS) +
+                master.model_flops.layer_q4k_f32 / (dev.gpu_props.cuda_flops_q4k_f32 * 1e9 + EPS) +
+                master.model_flops.layer_q5k_f32 / (dev.gpu_props.cuda_flops_q5k_f32 * 1e9 + EPS) +
+                master.model_flops.layer_q6k_f32 / (dev.gpu_props.cuda_flops_q6k_f32 * 1e9 + EPS) +
+                master.model_flops.layer_q80_f32 / (dev.gpu_props.cuda_flops_q80_f32 * 1e9 + EPS)) * 1000; // in ms
+            t_kv_cpy_gpu = dev.gpu_props.cuda_mem_cpy_delay; // in ms
+            t_read_ram_gpu = b_prime / (dev.gpu_props.cuda_read_vram_bw * 1e9) * 1000; // in ms
+        }
+
+        beta[m] = t_calc_gpu - t_calc_cpu + t_kv_cpy_gpu - t_kv_cpy_cpu + t_read_ram_gpu - t_read_ram_cpu; // in ms
+        
+        // xi[m]
+        // the ram-vram and vram-ram transfer time and the communication time are less than 1 ms
+        xi[m] = 0.0;
+    }
+
+    // we adopt an iterative optimization approach. Initially, $w_m$ is set proportionally 
+    // based on the available memory budget
+    // - $d_m^{\text{avail}}$ for macOS without Metal and Linux
+    // - $d_m^{\text{total}}$ for macOS with Metal
+    // - $d_m^{\text{avail}}+d_m^{\text{swapout}}$ for Android
+    // and $n_m$ is initialized to 0. 
+    for (uint32_t m = 0; m < n_world; ++m) {
+        const device_info &dev = dev_info_set[m];
+        GGML_ASSERT(dev.device_os != nullptr);
+
+        bool is_macos   = strcmp(dev.device_os, "macOS") == 0;
+        bool is_linux   = strcmp(dev.device_os, "Linux") == 0;
+        bool is_android = strcmp(dev.device_os, "Android") == 0;
+        bool is_windows = strcmp(dev.device_os, "Windows") == 0;
+        GGML_ASSERT(!is_windows && "Windows is not tested yet\n");
+        
+        if ((is_macos && !dev.gpu_support.metal) || is_linux) {
+            mem_budget[m] = dev.memory.available_physical;
+        } else if (is_macos && dev.gpu_support.metal) {
+            mem_budget[m] = dev.memory.total_physical;
+        } else if (is_android) {
+            mem_budget[m] = dev.memory.available_physical + dev.memory.used_can_swap;
+        } else {
+            // todo: add support for other OS such as Windows
+            GGML_ASSERT(false && "Unsupported OS\n");
+        }
+    }
+
+    // initialize w_m proportionally to memory budget and n_m to 0
+    float total_mem_budget = std::accumulate(mem_budget.begin(), mem_budget.end(), 0.0f);
+    for (uint32_t m = 0; m < n_world; ++m) {
+        w[m] = std::round(mem_budget[m] / total_mem_budget * n_layer);
+        n[m] = 0;
+    }
+
+    // stores the actual read bandwidth (GB/s) for each device
+    std::vector<float> disk_speed(n_world, 0.0f);
+    for (uint32_t m = 0; m < n_world; ++m) {
+        const device_info &dev = dev_info_set[m];
+        GGML_ASSERT(dev.device_os != nullptr);
+        bool is_linux = strcmp(dev.device_os, "Linux") == 0;
+
+        if (is_linux) {
+            disk_speed[m] = dev.disk.read_seq_bw;
+        } else {
+            disk_speed[m] = dev.disk.read_rnd_bw;
+        }
+    }
+
+    // helper function to find valid factors for a given n_layers
+    auto find_factors = [&](int n_layers) {
+        std::vector<int> factors;
+        for (int k = 1; k <= n_layers / 2; ++k) {
+            if (n_layers % k == 0) {
+                factors.push_back(k);
+            }
+        }
+        return factors;
+    };
+
+    // get valid factors
+    std::vector<int> valid_k = find_factors(n_layer);
+
+    // assign devices to sets M1, M2, M3, and M4
+    // M1: devices running on macOS without Metal, and with insufficient memory
+    // M2: devices running on macOS with Metal and insufficient memory
+    // M3: devices running on Linux or Android and with insufficient memory
+    // M4: devices with sufficient memory or very slow disk I/O (slower than min_disk_io_speed)
+    std::vector<uint32_t> M1, M2, M3, M4, M1_prev, M2_prev, M3_prev, M4_prev;
+    std::vector<int64_t> c_cpu(n_world, 0), c_gpu(n_world, 0);
+
+    // helper function to check if a device is in a specific set
+    auto in_set = [&](uint32_t m, const std::vector<uint32_t> & M) {
+        return (std::find(M.begin(), M.end(), m) != M.end());
+    };
+
+    auto assign_sets = [&](int k) -> bool {
+        M1.clear(), M2.clear(), M3.clear(), M4.clear();
+
+        for (uint32_t m = 0; m < n_world; ++m) {
+            const device_info &dev = dev_info_set[m];
+
+            GGML_ASSERT(dev.device_os != nullptr);
+            bool is_macos   = strcmp(dev.device_os, "macOS") == 0;
+            bool is_linux   = strcmp(dev.device_os, "Linux") == 0;
+            bool is_android = strcmp(dev.device_os, "Android") == 0;
+            bool is_windows = strcmp(dev.device_os, "Windows") == 0;
+            GGML_ASSERT(!is_windows && "Windows is not tested yet\n");
+
+            llama_model_compute_buf_size(&c_cpu[m], &c_gpu[m], model, cparams, dev.gpu_support.metal, m == 0, w[m] * k, n[m] * k);
+
+            int  l_m          = w[m] * k;  // total number of layers assigned to device m
+            int  l_m_gpu      = n[m] * k;  // number of layers assigned to device m that run on GPU
+            bool condition1   = l_m * b + (bi + bo) * int(m == 0) + 2 * (n_embd_k_gqa + n_embd_v_gqa) * n_kv * l_m + c_cpu[m] > mem_budget[m] * GIGABYTE;
+            bool condition2   = l_m * b + (bi + bo) * int(m == 0) + 2 * (n_embd_k_gqa + n_embd_v_gqa) * n_kv * l_m + c_cpu[m] + c_gpu[m] > mem_budget[m] * GIGABYTE;
+            bool condition3   = (l_m - l_m_gpu) * b_prime + (bi + bo) * int(m == 0) + c_cpu[m] > mem_budget[m] * GIGABYTE;
+            bool is_slow_disk = disk_speed[m] < min_disk_read_speed;
+
+            if (is_macos && !dev.gpu_support.metal && condition1 && !is_slow_disk) {
+                // case 1: macOS without Metal, and with insufficient memory
+                M1.push_back(m);
+            } else if (is_macos && dev.gpu_support.metal && condition2 && !is_slow_disk) {
+                // case 2: macOS with Metal, and with insufficient memory
+                M2.push_back(m);
+            } else if ((is_linux || is_android) && condition3 && !is_slow_disk) {
+                // case 3: Linux with insufficient memory
+                M3.push_back(m);
+            } else {
+                // case 4: otherwise, assigned to M4
+                M4.push_back(m);
+            }
+        }
+
+        // check whether the sets are changed
+        bool sets_changed = (M1 != M1_prev || M2 != M2_prev || M3 != M3_prev || M4 != M4_prev);
+
+        // update the previous sets
+        M1_prev = M1, M2_prev = M2, M3_prev = M3, M4_prev = M4;
+
+        return sets_changed;
+    };
+
+    // helper function to print a matrix
+    auto print_matrix = [](const std::vector<std::vector<double>>& matrix) {
+        for (const auto& row : matrix) {
+            for (const auto& elem : row) {
+                printf("%.3f ", elem);
+            }
+            printf("\n");
+        }
+    };
+
+    double final_objective = 1.0e30;
+    std::vector<double> final_solution;
+    int final_k = -1;
+
+    // iterative optimization to find a valid set assignment (M1, M2, M3, M4)
+    while (true) {
+        int W = std::accumulate(w.begin(), w.end(), 0);
+        int cur_k = (int)n_layer / W;
+        GGML_ASSERT(W > 1 && (int)n_layer % W == 0 && "Constraint: L = k * W must hold\n");
+
+        if (!assign_sets(cur_k)) break;
+
+        // update kappa
+        for (uint32_t m = 0; m < n_world; ++m) {
+            const device_info &dev = dev_info_set[m];
+            GGML_ASSERT(dev.device_os != nullptr);
+            bool is_android = strcmp(dev.device_os, "Android") == 0;
+
+            if (m == 0) {
+                kappa = (bi + bo) / (disk_speed[m] * 1e9) * 1000;  // in ms
+            }
+            if (in_set(m, M3)) {
+                kappa += (c_cpu[m] - dev.memory.available_physical * GIGABYTE - dev.memory.used_can_swap * GIGABYTE * int(is_android)) / (disk_speed[m] * 1e9) * 1000; // in ms
+            }
+        }
+
+        // -------------------------------------------------------------
+        // Construct vectors va, vb, vc
+        // -------------------------------------------------------------
+        // a[m], b[m], c[m] are computed based on divisions M1, M2, M3, and M4:
+        //   - M1: a[m] = alpha[m] + b / s_m^{disk},  b[m] = 0,                        c[m] = xi[m]
+        //   - M2: a[m] = alpha[m] + b / s_m^{disk},  b[m] = beta[m],                  c[m] = xi[m]
+        //   - M3: a[m] = alpha[m] + b' / s_m^{disk}, b[m] = beta[m] - b'/ s_m^{disk}, c[m] = xi[m]
+        //   - M4: a[m] = alpha[m],                   b[m] = beta[m],                  c[m] = xi[m]
+        std::vector<float> vec_a(n_world, 0.0f), vec_b(n_world, 0.0f), vec_c(n_world, 0.0f);
+
+        for (uint32_t m = 0; m < n_world; ++m) {
+            if (in_set(m, M1)) {
+                vec_a[m] = alpha[m] + b / (disk_speed[m] * 1e9) * 1000; // in ms
+                vec_b[m] = 0.0f;
+                vec_c[m] = xi[m];
+            } else if (in_set(m, M2)) {
+                vec_a[m] = alpha[m] + b / (disk_speed[m] * 1e9) * 1000; // in ms
+                vec_b[m] = beta[m];
+                vec_c[m] = xi[m];
+            } else if (in_set(m, M3)) {
+                vec_a[m] = alpha[m] + b_prime / (disk_speed[m] * 1e9) * 1000; // in ms
+                vec_b[m] = beta[m]  - b_prime / (disk_speed[m] * 1e9) * 1000; // in ms
+                vec_c[m] = xi[m];
+            } else {
+                vec_a[m] = alpha[m];
+                vec_b[m] = beta[m];
+                vec_c[m] = xi[m];
+            }
+        }
+
+        // -------------------------------------------------------------
+        // Construct vectors vz, vz_cuda
+        // -------------------------------------------------------------
+        // z and z_cuda are used to express memory constraints:
+        // for z:
+        //   - M1:  (d_m^{avail} - b_cio) / (L*b')
+        //   - M2:  (d_m^{total} - b_cio - c_gpu) / (L*b')
+        //   - M3:  (d_m^{avail}+d_m^{swapout} - b_cio) / (L*b')
+        //   - M4:  - (d_m^{avail} - b_cio) / (L*b') on macOS without Metal,
+        //       or - (d_m^{total} - b_cio - c_gpu) / (L*b') on macOS with Metal,
+        //       or - (d_m^{avail}+d_m^{swapout} - b_cio) / (L*b') on Linux or Android
+        //
+        // for z_cuda:
+        //   - M1:  (d_{m,cuda}^{avail} - c_gpu) / (L*b'),
+        // d_{m,cuda}^{avail} is non-zero only if the device supports CUDA
+        std::vector<float> vec_z(n_world, 0.0f), vec_z_cuda(n_world, 0.0f);
+        std::vector<int> dev_cuda(n_world, 0);
+
+        for (uint32_t m = 0; m < n_world; ++m) {
+            const device_info &dev = dev_info_set[m];
+
+            GGML_ASSERT(dev.device_os != nullptr);
+            bool is_macos   = strcmp(dev.device_os, "macOS") == 0;
+            bool is_android = strcmp(dev.device_os, "Android") == 0;
+            bool is_windows = strcmp(dev.device_os, "Windows") == 0;
+            GGML_ASSERT(!is_windows && "Windows is not tested yet\n");
+
+            int64_t b_cio = (bi + bo) * int(m == 0) + c_cpu[m];
+
+            if (in_set(m, M1)) {
+                vec_z[m] = (double)(dev.memory.available_physical * GIGABYTE - b_cio) / (double)(n_layer * b_prime);
+            } else if (in_set(m, M2)) {
+                vec_z[m] = (double)(dev.memory.total_physical * GIGABYTE - b_cio - c_gpu[m]) / (double)(n_layer * b_prime);
+            } else if (in_set(m, M3)) {
+                vec_z[m] = (double)(dev.memory.available_physical * GIGABYTE + dev.memory.used_can_swap * GIGABYTE * int(is_android) - b_cio) / (double)(n_layer * b_prime);
+            } else {
+                if (is_macos && !dev.gpu_support.metal) {
+                    vec_z[m] = - (double)(dev.memory.available_physical * GIGABYTE - b_cio) / (double)(n_layer * b_prime);
+                } else if (is_macos && dev.gpu_support.metal) {
+                    vec_z[m] = - (double)(dev.memory.total_physical * GIGABYTE - b_cio - c_gpu[m]) / (double)(n_layer * b_prime);
+                } else {
+                    vec_z[m] = - (double)(dev.memory.available_physical * GIGABYTE + dev.memory.used_can_swap * GIGABYTE * int(is_android) - b_cio) / (double)(n_layer * b_prime);
+                }
+            }
+
+            if (dev.gpu_support.cuda) {
+                vec_z_cuda[m] = (double)(dev.gpu_props.memory_free * GIGABYTE - c_gpu[m]) / (double)(n_layer * b_prime);
+                dev_cuda[m] = 1;
+            } else {
+                vec_z_cuda[m] = -(double)c_gpu[m] / (double)(n_layer * b_prime);
+            }
+        }
+
+        // count the number of cuda devices
+        int num_dev_cuda = std::accumulate(dev_cuda.begin(), dev_cuda.end(), 0);
+
+        // -------------------------------------------------------------
+        // Build and solve the optimization model
+        // -------------------------------------------------------------
+        double best_objective = 1.0e30;
+        std::vector<double> best_solution;
+        int best_k = -1;
+
+        // iterate over all possible values of k to find the best solution
+        for (int k : valid_k) {
+            GGML_ASSERT(n_layer % k == 0 && "Constraint: L = k * W must hold\n");
+            int W = n_layer / k;
+
+            HighsModel model;
+
+            // define the number of decision variables and constraints
+            model.lp_.num_col_ = n_world * 2; // number of decision variables
+            model.lp_.num_row_ = 1 + 2 * n_world + num_dev_cuda; // number of constraints
+
+            // define the objective: k * sum(a[m] * w[m] + b[m] * n[m]) + kappa + k * sum(c[m])
+            model.lp_.sense_  = ObjSense::kMinimize;
+            model.lp_.offset_ = k * std::accumulate(vec_c.begin(), vec_c.end(), 0.0f) + kappa;
+            model.lp_.col_cost_.clear();
+            std::copy(vec_a.begin(), vec_a.end(), std::back_inserter(model.lp_.col_cost_));
+            std::copy(vec_b.begin(), vec_b.end(), std::back_inserter(model.lp_.col_cost_));
+            std::transform(
+                model.lp_.col_cost_.begin(), 
+                model.lp_.col_cost_.end(), 
+                model.lp_.col_cost_.begin(), [k](double cost) {
+                    return cost * k;
+                }
+            );
+
+            // define the variable bounds
+            model.lp_.col_lower_ = std::vector<double>(n_world * 2, 0.0);
+            std::fill(model.lp_.col_lower_.begin(), model.lp_.col_lower_.begin() + n_world, 1.0);
+            model.lp_.col_upper_ = std::vector<double>(n_world * 2, n_layer);
+
+            // define the constraint bounds
+            int constraint_idx = 0;
+            model.lp_.row_lower_ = std::vector<double>(model.lp_.num_row_, -1.0e30); // initialize to a large negative value
+            model.lp_.row_upper_ = std::vector<double>(model.lp_.num_row_,  1.0e30); // initialize to a large positive value
+            
+            // constraint bound 1: sum(w[m]) = W
+            model.lp_.row_lower_[constraint_idx] = {(double)W}; 
+            model.lp_.row_upper_[constraint_idx] = {(double)W};
+            constraint_idx++;
+
+            // constraint bound 2: n[m] <= w[m], m = 1, 2, ..., n_world
+            std::fill_n(model.lp_.row_upper_.begin() + constraint_idx, n_world, 0.0); // constraint: -w[m] + n[m] <= 0.0
+            constraint_idx += n_world;
+
+            // constraint bound 3: RAM constraint for each device
+            for (uint32_t m = 0; m < n_world; ++m) {
+                model.lp_.row_upper_[constraint_idx + m] = -W * vec_z[m];
+            }
+            constraint_idx += n_world;
+
+            // constraint bound 4: CUDA memory constraint for CUDA devices
+            for (uint32_t m = 0; m < n_world; ++m) {
+                if (dev_cuda[m]) {
+                    model.lp_.row_upper_[constraint_idx] = W * vec_z_cuda[m];
+                    constraint_idx++;
+                }
+            }
+
+            // define the constraint matrix
+            const int n_rows = model.lp_.num_row_;
+            const int n_cols = model.lp_.num_col_;
+            std::vector<std::vector<double>> A(n_rows, std::vector<double>(n_cols, 0.0));
+            constraint_idx = 0;
+
+            // constraint coefficients 1: sum(w[m]) = W
+            std::fill_n(A[constraint_idx].begin(), n_world, 1.0);
+            constraint_idx++;
+
+            // constraint coefficients 2: n[m] <= w[m], m = 1, 2, ..., n_world
+            for (uint32_t m = 0; m < n_world; ++m) {
+                A[constraint_idx + m][m] = -1.0; // coefficient for w[m]
+                A[constraint_idx + m][m + n_world] = 1.0; // coefficient for n[m]
+            }
+            constraint_idx += n_world;
+            
+            // constraint coefficients 3: RAM constraint for each device
+            for (uint32_t m = 0; m < n_world; ++m) {
+                const device_info &dev = dev_info_set[m];
+                GGML_ASSERT(dev.device_os != nullptr);
+                bool is_macos = strcmp(dev.device_os, "macOS") == 0;
+                int cons_row = constraint_idx + m;
+
+                if (in_set(m, M1) || in_set(m, M2)) { // in sets M1 and M2
+                    A[cons_row][m] = -1.0; // coefficient for w[m]
+                    A[cons_row][m + n_world] = 0.0; // coefficient for n[m]
+                } else if (in_set(m, M3)) { // in set M3
+                    A[cons_row][m] = -1.0; // coefficient for w[m]
+                    A[cons_row][m + n_world] = 1.0; // coefficient for n[m]
+                } else { // in set M4
+                    A[cons_row][m] = 1.0; // coefficient for w[m]
+                    if (is_macos) {
+                        A[cons_row][m + n_world] = 0.0; // coefficient for n[m]
+                    } else {
+                        A[cons_row][m + n_world] = -1.0; // coefficient for n[m]
+                    }
+                }
+            }
+            constraint_idx += n_world;
+
+            // constraint coefficients 4: CUDA memory constraint for CUDA devices
+            for (uint32_t m = 0; m < n_world; ++m) {
+                if (dev_cuda[m]) {
+                    A[constraint_idx][m] = 0.0; // coefficient for w[m]
+                    A[constraint_idx][m + n_world] = 1.0; // coefficient for n[m]
+                    constraint_idx++;
+                }
+            }
+
+            // translate the constraint matrix A into the LP model
+            model.lp_.a_matrix_.format_ = MatrixFormat::kColwise;
+            model.lp_.a_matrix_.start_.resize(n_cols + 1);
+            model.lp_.a_matrix_.index_.clear();
+            model.lp_.a_matrix_.value_.clear();
+
+            int nnz_count = 0; // number of non-zero elements
+            for (int j = 0; j < n_cols; ++j) {
+                model.lp_.a_matrix_.start_[j] = nnz_count;
+                for (int i = 0; i < n_rows; ++i) {
+                    if (A[i][j] != 0.0) {
+                        model.lp_.a_matrix_.index_.push_back(i);
+                        model.lp_.a_matrix_.value_.push_back(A[i][j]);
+                        nnz_count++;
+                    }
+                }
+            }
+            model.lp_.a_matrix_.start_[n_cols] = nnz_count;
+
+            // integer constraints
+            model.lp_.integrality_ = std::vector<HighsVarType>(n_world * 2, HighsVarType::kInteger);
+
+            // solve the optimization problem
+            Highs highs;
+            highs.setOptionValue("log_to_console", false); // disable logging
+
+            HighsStatus return_status = highs.passModel(model);
+            GGML_ASSERT(return_status == HighsStatus::kOk && "Failed to pass model\n");
+            
+            // run the solver
+            return_status = highs.run();
+            GGML_ASSERT(return_status == HighsStatus::kOk && "Failed to run the solver\n");
+
+            // get the solution
+            const HighsModelStatus& model_status = highs.getModelStatus();
+            if (model_status != HighsModelStatus::kOptimal) continue;
+
+            // record the best solution
+            const HighsSolution& solution = highs.getSolution();
+            double objective_value = highs.getInfo().objective_function_value;
+            if (objective_value < best_objective) {
+                best_objective = objective_value;
+                best_k = k;
+                best_solution = solution.col_value;
+            }
+        }
+
+        // update w[m] and n[m]
+        GGML_ASSERT(best_solution.size() == n_world * 2 && "Invalid solution\n");
+        std::copy(best_solution.begin(), best_solution.begin() + n_world, w.begin());
+        std::copy(best_solution.begin() + n_world, best_solution.end(), n.begin());
+
+        // update the global best solution
+        final_k = best_k;
+        final_objective = best_objective;
+        final_solution = best_solution;
+    }
+
+    LOG_INF("Global best solution found for k = %d\n", final_k);
+    for (uint32_t m = 0; m < n_world; ++m) {
+        const char * device_name = dev_info_set[m].device_name;
+        GGML_ASSERT(final_solution[m] == w[m] && final_solution[m + n_world] == n[m]);
+        LOG_INF("Device %s (m = %d): w = %d, n = %d\n", device_name, m, w[m], n[m]);
+    }
+    LOG_INF("Objective value: %.3f\n", final_objective);
+
+    // copy value from w and n to n_layer_window and n_gpu_layers, respectively
+    std::copy(w.begin(), w.end(), n_layer_window);
+    std::copy(n.begin(), n.end(), n_gpu_layers);
 }
+
+//
+// Model utils
+//
 
 struct llama_init_result llama_init_from_gpt_params(gpt_params & params) {
     llama_init_result iparams;
@@ -914,30 +1411,40 @@ struct llama_init_result llama_init_from_gpt_params(gpt_params & params) {
         dev_info_set = (struct device_info *)malloc(n_world * sizeof(struct device_info));
         dev_info_set[0] = dev_info;
         llama_gather_device_info(lctx, dev_info_set);
-        device_print_props(dev_info_set, n_world, model, cparams);
     } else {
         llama_send_device_info(lctx, &dev_info);
     }
 
-    uint32_t n_layer_window[32] = {0};
+    uint32_t n_layer_window[32] = {0}, n_gpu_layers[32] = {0};
     if (my_rank == 0) {
         if (n_world == 1 || params.n_layer_window[0] == 0) {
-            llama_assign_n_layer_window(n_world, my_rank, dev_info_set, n_layer_window, model);
+            // automatically determine n_layer_window and n_gpu_layers
+            assign_device(n_world, my_rank, dev_info_set, n_layer_window, n_gpu_layers, model, cparams);
         } else {
-            copy_n_layer_window(params.n_layer_window, n_layer_window);
+            // use manually set n_layer_window
+            std::copy(std::begin(params.n_layer_window), std::end(params.n_layer_window), n_layer_window);
         }
 
-        // synchronize the new n_layer_window to other nodes
-        llama_broadcast_n_layer_window(lctx, n_layer_window);
+        // synchronize the new n_layer_window and n_gpu_layers to other nodes
+        llama_bcast_layer_setup(lctx, n_layer_window, n_gpu_layers);
     } else {
-        llama_recv_n_layer_window(lctx, n_layer_window);
+        llama_recv_layer_setup(lctx, n_layer_window, n_gpu_layers);
     }
 
-    // update n_layer_window
-    copy_n_layer_window(n_layer_window, params.n_layer_window);
-    copy_n_layer_window(n_layer_window, cparams.n_layer_window);
-    copy_n_layer_window(n_layer_window, mparams.n_layer_window);
-    copy_n_layer_window(n_layer_window, llama_context_n_layer_window(lctx));
+    // update n_layer_window and n_gpu_layers
+    std::copy(std::begin(n_layer_window), std::end(n_layer_window), params.n_layer_window);
+    std::copy(std::begin(n_layer_window), std::end(n_layer_window), cparams.n_layer_window);
+    std::copy(std::begin(n_layer_window), std::end(n_layer_window), mparams.n_layer_window);
+    std::copy(std::begin(n_layer_window), std::end(n_layer_window), llama_context_n_layer_window(lctx));
+
+    params.n_gpu_layers  = n_gpu_layers[my_rank];
+    cparams.n_gpu_layers = n_gpu_layers[my_rank];
+    mparams.n_gpu_layers = n_gpu_layers[my_rank];
+    llama_context_n_gpu_layers(lctx)[my_rank] = n_gpu_layers[my_rank];
+
+#ifdef LLAMA_DEBUG
+    device_print_props(dev_info_set, n_world, model, cparams);
+#endif
 
     if (!mparams.vocab_only && llm_load_tensors(ml, model, mparams) < 0) {
         LOG_ERR("%s: failed to load model '%s'\n", __func__, params.model.c_str());
