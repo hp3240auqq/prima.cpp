@@ -272,7 +272,7 @@ else ifeq ($(UNAME_S),Linux)
 	
 	ifneq ($(CONDA_PREFIX),)
 		MK_CPPFLAGS += -isystem $(CONDA_PREFIX)/include -isystem $(CONDA_PREFIX)/include/highs
-		MK_LDFLAGS  += -L$(CONDA_PREFIX)/lib
+		MK_LDFLAGS  += -L$(CONDA_PREFIX)/lib -Wl,-rpath,$(CONDA_PREFIX)/lib
 	endif
 endif
 
