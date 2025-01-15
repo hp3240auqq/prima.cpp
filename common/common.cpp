@@ -1326,7 +1326,7 @@ static void assign_device(
         final_solution = best_solution;
     }
 
-    LOG_INF("Global best solution found for k = %d\n", final_k);
+    LOG_INF("Global best solution found for k = %d, W = %d\n", final_k, n_layer / final_k);
     for (uint32_t m = 0; m < n_world; ++m) {
         const char * device_name = dev_info_set[m].device_name;
         GGML_ASSERT(final_solution[m] == w[m] && final_solution[m + n_world] == n[m]);
