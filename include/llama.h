@@ -465,8 +465,6 @@ extern "C" {
     
     LLAMA_API uint32_t * llama_context_n_layer_window(struct llama_context * ctx);
 
-    LLAMA_API uint32_t * llama_context_n_gpu_layers(struct llama_context * ctx);
-
     // Frees all allocated memory
     LLAMA_API void llama_free(struct llama_context * ctx);
 

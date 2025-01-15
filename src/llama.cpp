@@ -20519,10 +20519,6 @@ uint32_t * llama_context_n_layer_window(struct llama_context * ctx) {
     return ctx->cparams.n_layer_window;
 }
 
-uint32_t * llama_context_n_gpu_layers(struct llama_context * ctx) {
-    return ctx->cparams.n_gpu_layers;
-}
-
 void llama_free(struct llama_context * ctx) {
     delete ctx;
 }
