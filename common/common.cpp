@@ -9,7 +9,6 @@
 #include "json.hpp"
 #include "json-schema-to-grammar.h"
 #include "llama.h"
-#include "Highs.h"
 
 #include <algorithm>
 #include <cinttypes>
@@ -68,6 +67,10 @@
 #endif
 #define LLAMA_CURL_MAX_URL_LENGTH 2084 // Maximum URL Length in Chrome: 2083
 #endif // LLAMA_USE_CURL
+
+#if defined(USE_HIGHS)
+#include "Highs.h"
+#endif
 
 using json = nlohmann::ordered_json;
 
@@ -944,6 +947,8 @@ static void assign_device(
         n[m] = 0;
     }
 
+#if defined(USE_HIGHS)
+
     // stores the actual read bandwidth (GB/s) for each device
     std::vector<float> disk_speed(n_world, 0.0f);
     for (uint32_t m = 0; m < n_world; ++m) {
@@ -1326,13 +1331,15 @@ static void assign_device(
         final_solution = best_solution;
     }
 
-    LOG_INF("Global best solution found for k = %d, W = %d\n", final_k, n_layer / final_k);
+    LOG_INF("Solution found for k = %d, W = %d\n", final_k, n_layer / final_k);
     for (uint32_t m = 0; m < n_world; ++m) {
         const char * device_name = dev_info_set[m].device_name;
         GGML_ASSERT(final_solution[m] == w[m] && final_solution[m + n_world] == n[m]);
-        LOG_INF("Device %s (m = %d): w = %d, n = %d\n", device_name, m, w[m], n[m]);
+        LOG_INF("Device %s (m = %d): n_layer_window = %d, n_gpu_layers = %d\n", device_name, m, w[m], n[m]);
     }
-    LOG_INF("Objective value: %.3f\n", final_objective);
+    LOG_INF("Total latency: %.3f\n", final_objective);
+
+#endif
 
     // copy value from w and n to n_layer_window and n_gpu_layers, respectively
     std::copy(w.begin(), w.end(), n_layer_window);
