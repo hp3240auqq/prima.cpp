@@ -271,19 +271,20 @@ else ifeq ($(UNAME_S),Linux)
     MK_LDFLAGS  += -L/usr/local/lib -lzmq
 endif
 
-ifdef USE_HIGHS
+ifeq ($(USE_HIGHS),1)
 	ifeq ($(UNAME_S),Darwin)
-		MK_CPPFLAGS += -isystem /opt/homebrew/include/highs
-		MK_LDFLAGS  += -L/opt/homebrew/lib -lhighs
-	else ifeq ($(UNAME_S),Linux)
-		MK_CPPFLAGS += -isystem /usr/local/include/highs
-		MK_LDFLAGS  += -L/usr/local/lib -lhighs
-
+        HIGHS_CPPFLAGS = -isystem /opt/homebrew/include/highs
+        HIGHS_LDFLAGS  = -L/opt/homebrew/lib -lhighs
+    else ifeq ($(UNAME_S),Linux)
+		HIGHS_CPPFLAGS = -isystem /usr/local/include/highs
+    	HIGHS_LDFLAGS  = -L/usr/local/lib -lhighs
 		ifneq ($(CONDA_PREFIX),)
-			MK_CPPFLAGS += -isystem $(CONDA_PREFIX)/include -isystem $(CONDA_PREFIX)/include/highs
-			MK_LDFLAGS  += -L$(CONDA_PREFIX)/lib -Wl,-rpath,$(CONDA_PREFIX)/lib
+			HIGHS_CPPFLAGS += -isystem $(CONDA_PREFIX)/include -isystem $(CONDA_PREFIX)/include/highs
+			HIGHS_LDFLAGS  += -L$(CONDA_PREFIX)/lib -Wl,-rpath,$(CONDA_PREFIX)/lib
 		endif
 	endif
+	MK_CPPFLAGS += $(HIGHS_CPPFLAGS) -DUSE_HIGHS
+	MK_LDFLAGS  += $(HIGHS_LDFLAGS)
 endif
 
 ifdef LLAMA_NO_CCACHE
