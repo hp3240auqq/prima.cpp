@@ -525,6 +525,10 @@ extern "C" {
     // Returns the number of model layers in the model
     LLAMA_API uint32_t llama_model_n_layers(const struct llama_model * model);
 
+    // Retrieve or set the number of GPU layers
+    LLAMA_API uint32_t llama_model_n_gpu_layers(const struct llama_model * model);
+    LLAMA_API void     llama_model_set_n_gpu_layers(struct llama_model * model, uint32_t value);
+
     // Returns the total number of parameters in the model
     LLAMA_API uint64_t llama_model_n_params(const struct llama_model * model);
 
