@@ -1440,6 +1440,7 @@ struct llama_init_result llama_init_from_gpt_params(gpt_params & params) {
     params.n_gpu_layers  = n_gpu_layers[my_rank];
     cparams.n_gpu_layers = n_gpu_layers[my_rank];
     mparams.n_gpu_layers = n_gpu_layers[my_rank];
+    llama_model_set_n_gpu_layers(model, n_gpu_layers[my_rank]);
 
 #ifdef LLAMA_DEBUG
     device_print_props(dev_info_set, n_world, model, cparams);

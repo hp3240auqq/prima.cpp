@@ -20705,6 +20705,14 @@ uint32_t llama_model_n_layers(const struct llama_model * model) {
     return model->hparams.n_layer;
 }
 
+uint32_t llama_model_n_gpu_layers(const struct llama_model * model) {
+    return model->n_gpu_layers;
+}
+
+void llama_model_set_n_gpu_layers(struct llama_model * model, uint32_t value) {
+    model->n_gpu_layers = value;
+}
+
 uint64_t llama_model_n_params(const struct llama_model * model) {
     uint64_t nparams = 0;
     for (const auto & it : model->tensors_by_name) {
