@@ -269,11 +269,11 @@ ifeq ($(UNAME_S),Darwin)
 else ifeq ($(UNAME_S),Linux)
     MK_CPPFLAGS += -isystem /usr/local/include -isystem /usr/local/include/highs
     MK_LDFLAGS  += -L/usr/local/lib -lzmq -lhighs
-endif
-
-ifneq ($(CONDA_PREFIX),)
-	MK_CPPFLAGS += -isystem $(CONDA_PREFIX)/include -isystem $(CONDA_PREFIX)/include/highs
-	MK_LDFLAGS  += -L$(CONDA_PREFIX)/lib
+	
+	ifneq ($(CONDA_PREFIX),)
+		MK_CPPFLAGS += -isystem $(CONDA_PREFIX)/include -isystem $(CONDA_PREFIX)/include/highs
+		MK_LDFLAGS  += -L$(CONDA_PREFIX)/lib
+	endif
 endif
 
 ifdef LLAMA_NO_CCACHE
