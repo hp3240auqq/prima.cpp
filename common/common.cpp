@@ -1338,9 +1338,9 @@ static void assign_device(
         const char * device_name = dev_info_set[m].device_name;
         GGML_ASSERT(final_solution[m] == w[m] && final_solution[m + n_world] == n[m]);
         LOG_INF("\n%s:\n", device_name);
-        LOG_INF("  - Device Index  : %d\n", m);
-        LOG_INF("  - N Layer Window: %d\n", w[m]);
-        LOG_INF("  - N GPU Layers  : %d\n", n[m]);
+        LOG_INF("  - Device Index   : %d\n", m);
+        LOG_INF("  - N Layer Window : %d\n", w[m]);
+        LOG_INF("  - N GPU Layers   : %d\n", n[m]);
     }
     LOG_INF("\nTotal Latency: %.3f ms\n", final_objective);
     LOG_INF("------------------------------------------");
