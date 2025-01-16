@@ -1330,13 +1330,20 @@ static void assign_device(
         final_solution = best_solution;
     }
 
-    LOG_INF("Solution found for k = %d, W = %d\n", final_k, n_layer / final_k);
+    LOG_INF("\n----- Allocation Strategy (by HiGHS) -----\n");
+    LOG_INF("\nParameters:\n");
+    LOG_INF("  - k = %d\n", final_k);
+    LOG_INF("  - W = %d\n", n_layer / final_k);
     for (uint32_t m = 0; m < n_world; ++m) {
         const char * device_name = dev_info_set[m].device_name;
         GGML_ASSERT(final_solution[m] == w[m] && final_solution[m + n_world] == n[m]);
-        LOG_INF("Device %s (m = %d): n_layer_window = %d, n_gpu_layers = %d\n", device_name, m, w[m], n[m]);
+        LOG_INF("\n%s:\n", device_name);
+        LOG_INF("  - Device Index  : %d\n", m);
+        LOG_INF("  - N Layer Window: %d\n", w[m]);
+        LOG_INF("  - N GPU Layers  : %d\n", n[m]);
     }
-    LOG_INF("Total latency: %.3f\n", final_objective);
+    LOG_INF("\nTotal Latency: %.3f ms\n", final_objective);
+    LOG_INF("------------------------------------------");
 
 #else
     (void)bi;
