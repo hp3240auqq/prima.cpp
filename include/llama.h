@@ -416,6 +416,7 @@ extern "C" {
                        struct device_info * dev_info, 
                        struct llama_model * model, 
                 struct llama_model_loader * ml,
+                                      int   cuda_mem,
                                       int   n_predict,
                                       int   n_ctx,
                                       int   n_threads,

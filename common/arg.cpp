@@ -731,6 +731,13 @@ gpt_params_context gpt_params_parser_init(gpt_params & params, llama_example ex,
         }
     ).set_env("LLAMA_ARG_UNLOAD"));
     add_opt(llama_arg(
+        {"-cm", "--cuda-mem"}, "N", 
+        format("maximum cuda memory to use (default: %d)", params.cuda_mem),
+        [](gpt_params & params, int value) {
+            params.cuda_mem = value; // in GiB
+        }
+    ).set_env("LLAMA_ARG_CUDA_MEM"));
+    add_opt(llama_arg(
         {"-n", "--predict", "--n-predict"}, "N",
         format("number of tokens to predict (default: %d, -1 = infinity, -2 = until context filled)", params.n_predict),
         [](gpt_params & params, int value) {

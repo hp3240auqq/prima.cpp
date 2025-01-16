@@ -948,7 +948,6 @@ static void assign_device(
     }
 
 #if defined(USE_HIGHS)
-
     // stores the actual read bandwidth (GB/s) for each device
     std::vector<float> disk_speed(n_world, 0.0f);
     for (uint32_t m = 0; m < n_world; ++m) {
@@ -1339,6 +1338,13 @@ static void assign_device(
     }
     LOG_INF("Total latency: %.3f\n", final_objective);
 
+#else
+    (void)bi;
+    (void)bo;
+    (void)kappa;
+    (void)cparams;
+    (void)min_disk_read_speed;
+
 #endif
 
     // copy value from w and n to n_layer_window and n_gpu_layers, respectively
@@ -1400,7 +1406,7 @@ struct llama_init_result llama_init_from_gpt_params(gpt_params & params) {
 
     device_info dev_info;
     dev_info.rank = params.rank;
-    llama_profile_device(&dev_info, model, ml, params.n_predict, params.n_ctx, params.cpuparams.n_threads, params.flash_attn);
+    llama_profile_device(&dev_info, model, ml, params.cuda_mem, params.n_predict, params.n_ctx, params.cpuparams.n_threads, params.flash_attn);
 
     // create llama context
     struct llama_context_params cparams = llama_context_params_from_gpt_params(params);

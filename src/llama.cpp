@@ -3574,6 +3574,7 @@ void llama_profile_device(
                 device_info * dev_info, 
          struct llama_model * model, 
          llama_model_loader * ml, 
+                        int   cuda_mem,
                         int   n_predict,
                         int   n_ctx, 
                         int   n_threads,
@@ -3619,7 +3620,7 @@ void llama_profile_device(
 
     dev_info->gpu_props.name                = gpu_props.name;
     dev_info->gpu_props.description         = gpu_props.description;
-    dev_info->gpu_props.memory_free         = round(gpu_props.memory_free  / (double)(1 << 30) * 100) / 100;
+    dev_info->gpu_props.memory_free         = std::min((double)cuda_mem, round(gpu_props.memory_free  / (double)(1 << 30) * 100) / 100);
     dev_info->gpu_props.memory_total        = round(gpu_props.memory_total / (double)(1 << 30) * 100) / 100;
     dev_info->gpu_props.metal_read_vram_bw  = device_metal_read_vram_bw();
     dev_info->gpu_props.cuda_read_vram_bw   = device_cuda_read_vram_bw();
