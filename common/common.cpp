@@ -1063,7 +1063,7 @@ static void assign_device(
             GGML_ASSERT(dev.device_os != nullptr);
             bool is_android = strcmp(dev.device_os, "Android") == 0;
 
-            if (m == 0) {
+            if (m == 0 && !in_set(m, M4)) {
                 kappa = (bi + bo) / (disk_speed[m] * 1e9) * 1000;  // in ms
             }
             if (in_set(m, M3)) {
