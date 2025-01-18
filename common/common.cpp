@@ -1434,6 +1434,7 @@ struct llama_init_result llama_init_from_gpt_params(gpt_params & params) {
             dev_info_set = (struct device_info *)malloc(n_world * sizeof(struct device_info));
             dev_info_set[0] = dev_info;
             llama_gather_device_info(lctx, dev_info_set);
+            device_print_props(dev_info_set, n_world, model, cparams);
         } else {
             llama_send_device_info(lctx, &dev_info);
         }
@@ -1458,10 +1459,6 @@ struct llama_init_result llama_init_from_gpt_params(gpt_params & params) {
         cparams.n_gpu_layers = n_gpu_layers[my_rank];
         mparams.n_gpu_layers = n_gpu_layers[my_rank];
         llama_model_set_n_gpu_layers(model, n_gpu_layers[my_rank]);
-
-#ifdef LLAMA_DEBUG
-        device_print_props(dev_info_set, n_world, model, cparams);
-#endif
     }
 
     LOG_INF("\nUsing window size: %d, GPU layers: %d\n\n", cparams.n_layer_window[my_rank], cparams.n_gpu_layers);

@@ -1966,17 +1966,16 @@ void device_print_props(struct device_info * dev_info_set, int n, struct llama_m
     LOG_INF("| %-10" PRId64 "   ", dev_info_set[0].model_bytes.nb_output);
     LOG_INF("\n");
 
-    // todo: calculate for each device, not only master
-    float latency = 0.0f;
-    int n_layers  = llama_model_n_layers (model);
-    latency += device_compute_delay      (dev_info_set[0], n_layers, cparams);
-    latency += device_memory_access_delay(dev_info_set[0], model, cparams, n_layers);
-    latency += device_disk_access_delay  (dev_info_set[0], model, cparams); // if physical memory is not enough, some mapped data will be released and reloaded later
-    latency += device_mem_copy_delay     (dev_info_set[0], model, cparams); // memory copy delay in kvcache
+    // float latency = 0.0f;
+    // int n_layers  = llama_model_n_layers (model);
+    // latency += device_compute_delay      (dev_info_set[0], n_layers, cparams);
+    // latency += device_memory_access_delay(dev_info_set[0], model, cparams, n_layers);
+    // latency += device_disk_access_delay  (dev_info_set[0], model, cparams); // if physical memory is not enough, some mapped data will be released and reloaded later
+    // latency += device_mem_copy_delay     (dev_info_set[0], model, cparams); // memory copy delay in kvcache
 
-    LOG_INF("| Token latency (ms)           ");
-    LOG_INF("| %-10.2f   ", latency);
-    LOG_INF("\n");
+    // LOG_INF("| Token latency (ms)           ");
+    // LOG_INF("| %-10.2f   ", latency);
+    // LOG_INF("\n");
 
     LOG_INF("-------------------------------------------------------------------------------------------\n\n");
 }
