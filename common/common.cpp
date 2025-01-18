@@ -879,33 +879,34 @@ static void assign_device(
         alpha[m] = t_calc_cpu + t_kv_cpy_cpu + t_read_ram_cpu; // in ms
 
         // beta[m]
-        float t_calc_gpu     = 0.0;
-        float t_kv_cpy_gpu   = 0.0;
-        float t_read_ram_gpu = 0.0;
+        if (dev.gpu_support.metal || dev.gpu_support.cuda) {
+            float t_calc_gpu     = 0.0;
+            float t_kv_cpy_gpu   = 0.0;
+            float t_read_ram_gpu = 0.0;
 
-        if (dev.gpu_support.metal) {
-            t_calc_gpu = (
-                master.model_flops.layer_f32_f32 / (dev.gpu_props.metal_flops_f32_f32 * 1e9 + EPS) +
-                master.model_flops.layer_f16_f32 / (dev.gpu_props.metal_flops_f16_f32 * 1e9 + EPS) +
-                master.model_flops.layer_q4k_f32 / (dev.gpu_props.metal_flops_q4k_f32 * 1e9 + EPS) +
-                master.model_flops.layer_q5k_f32 / (dev.gpu_props.metal_flops_q5k_f32 * 1e9 + EPS) +
-                master.model_flops.layer_q6k_f32 / (dev.gpu_props.metal_flops_q6k_f32 * 1e9 + EPS) +
-                master.model_flops.layer_q80_f32 / (dev.gpu_props.metal_flops_q80_f32 * 1e9 + EPS)) * 1000; // in ms
-            t_kv_cpy_gpu = dev.gpu_props.metal_mem_cpy_delay; // in ms
-            t_read_ram_gpu = b_prime / (dev.gpu_props.metal_read_vram_bw * 1e9) * 1000; // in ms
-        } else if (dev.gpu_support.cuda) {
-            t_calc_gpu = (
-                master.model_flops.layer_f32_f32 / (dev.gpu_props.cuda_flops_f32_f32 * 1e9 + EPS) +
-                master.model_flops.layer_f16_f32 / (dev.gpu_props.cuda_flops_f16_f32 * 1e9 + EPS) +
-                master.model_flops.layer_q4k_f32 / (dev.gpu_props.cuda_flops_q4k_f32 * 1e9 + EPS) +
-                master.model_flops.layer_q5k_f32 / (dev.gpu_props.cuda_flops_q5k_f32 * 1e9 + EPS) +
-                master.model_flops.layer_q6k_f32 / (dev.gpu_props.cuda_flops_q6k_f32 * 1e9 + EPS) +
-                master.model_flops.layer_q80_f32 / (dev.gpu_props.cuda_flops_q80_f32 * 1e9 + EPS)) * 1000; // in ms
-            t_kv_cpy_gpu = dev.gpu_props.cuda_mem_cpy_delay; // in ms
-            t_read_ram_gpu = b_prime / (dev.gpu_props.cuda_read_vram_bw * 1e9) * 1000; // in ms
+            if (dev.gpu_support.metal) {
+                t_calc_gpu = (
+                    master.model_flops.layer_f32_f32 / (dev.gpu_props.metal_flops_f32_f32 * 1e9 + EPS) +
+                    master.model_flops.layer_f16_f32 / (dev.gpu_props.metal_flops_f16_f32 * 1e9 + EPS) +
+                    master.model_flops.layer_q4k_f32 / (dev.gpu_props.metal_flops_q4k_f32 * 1e9 + EPS) +
+                    master.model_flops.layer_q5k_f32 / (dev.gpu_props.metal_flops_q5k_f32 * 1e9 + EPS) +
+                    master.model_flops.layer_q6k_f32 / (dev.gpu_props.metal_flops_q6k_f32 * 1e9 + EPS) +
+                    master.model_flops.layer_q80_f32 / (dev.gpu_props.metal_flops_q80_f32 * 1e9 + EPS)) * 1000; // in ms
+                t_kv_cpy_gpu = dev.gpu_props.metal_mem_cpy_delay; // in ms
+                t_read_ram_gpu = b_prime / (dev.gpu_props.metal_read_vram_bw * 1e9) * 1000; // in ms
+            } else {
+                t_calc_gpu = (
+                    master.model_flops.layer_f32_f32 / (dev.gpu_props.cuda_flops_f32_f32 * 1e9 + EPS) +
+                    master.model_flops.layer_f16_f32 / (dev.gpu_props.cuda_flops_f16_f32 * 1e9 + EPS) +
+                    master.model_flops.layer_q4k_f32 / (dev.gpu_props.cuda_flops_q4k_f32 * 1e9 + EPS) +
+                    master.model_flops.layer_q5k_f32 / (dev.gpu_props.cuda_flops_q5k_f32 * 1e9 + EPS) +
+                    master.model_flops.layer_q6k_f32 / (dev.gpu_props.cuda_flops_q6k_f32 * 1e9 + EPS) +
+                    master.model_flops.layer_q80_f32 / (dev.gpu_props.cuda_flops_q80_f32 * 1e9 + EPS)) * 1000; // in ms
+                t_kv_cpy_gpu = dev.gpu_props.cuda_mem_cpy_delay; // in ms
+                t_read_ram_gpu = b_prime / (dev.gpu_props.cuda_read_vram_bw * 1e9) * 1000; // in ms
+            }
+            beta[m] = t_calc_gpu - t_calc_cpu + t_kv_cpy_gpu - t_kv_cpy_cpu + t_read_ram_gpu - t_read_ram_cpu; // in ms
         }
-
-        beta[m] = t_calc_gpu - t_calc_cpu + t_kv_cpy_gpu - t_kv_cpy_cpu + t_read_ram_gpu - t_read_ram_cpu; // in ms
         
         // xi[m]
         // the ram-vram and vram-ram transfer time and the communication time are less than 1 ms
