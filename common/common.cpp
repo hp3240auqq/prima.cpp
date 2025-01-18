@@ -1408,63 +1408,63 @@ struct llama_init_result llama_init_from_gpt_params(gpt_params & params) {
         }
     }
 
-    // get device profile
-    LOG_INF("Start profiling this device, this may take some seconds ...\n");
-
     device_info dev_info;
-    dev_info.rank = params.rank;
-    llama_profile_device(&dev_info, model, ml, params.cuda_mem, params.n_predict, params.n_ctx, params.cpuparams.n_threads, params.flash_attn);
+    uint32_t n_world   = params.n_world;
+    uint32_t my_rank   = params.rank;
+    bool auto_schedule = n_world == 1 || params.n_layer_window[0] == 0;
+
+    if (auto_schedule) {
+        // get device profile
+        LOG_INF("Start profiling this device, this may take some seconds ...\n");
+        dev_info.rank = params.rank;
+        llama_profile_device(&dev_info, model, ml, params.cuda_mem, params.n_predict, params.n_ctx, params.cpuparams.n_threads, params.flash_attn);
+    }
 
     // create llama context
     struct llama_context_params cparams = llama_context_params_from_gpt_params(params);
     llama_context * lctx                = llama_new_context_with_model(model, cparams);
 
-    uint32_t n_world = cparams.n_world;
-    uint32_t my_rank = cparams.rank;
-
     // initialize sockets
     llama_init_sockets(lctx, n_world, my_rank);
 
-    // sychronize device profile to the master node
-    struct device_info * dev_info_set = nullptr;
-    if (my_rank == 0) {
-        dev_info_set = (struct device_info *)malloc(n_world * sizeof(struct device_info));
-        dev_info_set[0] = dev_info;
-        llama_gather_device_info(lctx, dev_info_set);
-    } else {
-        llama_send_device_info(lctx, &dev_info);
-    }
-
-    uint32_t n_layer_window[32] = {0}, n_gpu_layers[32] = {0};
-    if (my_rank == 0) {
-        if (n_world == 1 || params.n_layer_window[0] == 0) {
-            // automatically determine n_layer_window and n_gpu_layers
-            assign_device(n_world, my_rank, dev_info_set, n_layer_window, n_gpu_layers, model, cparams);
+    if (auto_schedule) {
+        // sychronize device profile to the master node
+        struct device_info * dev_info_set = nullptr;
+        if (my_rank == 0) {
+            dev_info_set = (struct device_info *)malloc(n_world * sizeof(struct device_info));
+            dev_info_set[0] = dev_info;
+            llama_gather_device_info(lctx, dev_info_set);
         } else {
-            // use manually set n_layer_window
-            std::copy(std::begin(params.n_layer_window), std::end(params.n_layer_window), n_layer_window);
+            llama_send_device_info(lctx, &dev_info);
         }
 
-        // synchronize the new n_layer_window and n_gpu_layers to other nodes
-        llama_bcast_layer_setup(lctx, n_layer_window, n_gpu_layers);
-    } else {
-        llama_recv_layer_setup(lctx, n_layer_window, n_gpu_layers);
-    }
+        uint32_t n_layer_window[32] = {0}, n_gpu_layers[32] = {0};
+        if (my_rank == 0) {
+            // automatically determine n_layer_window and n_gpu_layers
+            assign_device(n_world, my_rank, dev_info_set, n_layer_window, n_gpu_layers, model, cparams);
+            // synchronize the new n_layer_window and n_gpu_layers to other nodes
+            llama_bcast_layer_setup(lctx, n_layer_window, n_gpu_layers);
+        } else {
+            llama_recv_layer_setup(lctx, n_layer_window, n_gpu_layers);
+        }
 
-    // update n_layer_window and n_gpu_layers
-    std::copy(std::begin(n_layer_window), std::end(n_layer_window), params.n_layer_window);
-    std::copy(std::begin(n_layer_window), std::end(n_layer_window), cparams.n_layer_window);
-    std::copy(std::begin(n_layer_window), std::end(n_layer_window), mparams.n_layer_window);
-    std::copy(std::begin(n_layer_window), std::end(n_layer_window), llama_context_n_layer_window(lctx));
+        // update n_layer_window and n_gpu_layers
+        std::copy(std::begin(n_layer_window), std::end(n_layer_window), params.n_layer_window);
+        std::copy(std::begin(n_layer_window), std::end(n_layer_window), cparams.n_layer_window);
+        std::copy(std::begin(n_layer_window), std::end(n_layer_window), mparams.n_layer_window);
+        std::copy(std::begin(n_layer_window), std::end(n_layer_window), llama_context_n_layer_window(lctx));
 
-    params.n_gpu_layers  = n_gpu_layers[my_rank];
-    cparams.n_gpu_layers = n_gpu_layers[my_rank];
-    mparams.n_gpu_layers = n_gpu_layers[my_rank];
-    llama_model_set_n_gpu_layers(model, n_gpu_layers[my_rank]);
+        params.n_gpu_layers  = n_gpu_layers[my_rank];
+        cparams.n_gpu_layers = n_gpu_layers[my_rank];
+        mparams.n_gpu_layers = n_gpu_layers[my_rank];
+        llama_model_set_n_gpu_layers(model, n_gpu_layers[my_rank]);
 
 #ifdef LLAMA_DEBUG
-    device_print_props(dev_info_set, n_world, model, cparams);
+        device_print_props(dev_info_set, n_world, model, cparams);
 #endif
+    }
+
+    LOG_INF("\nUsing window size: %d, GPU layers: %d\n\n", cparams.n_layer_window[my_rank], cparams.n_gpu_layers);
 
     if (!mparams.vocab_only && llm_load_tensors(ml, model, mparams) < 0) {
         LOG_ERR("%s: failed to load model '%s'\n", __func__, params.model.c_str());
