@@ -75,14 +75,8 @@ const char * device_os() {
 #ifdef _WIN32
     return "Windows";
 #elif __linux__
-    std::ifstream versionFile("/proc/version");
-    if (versionFile.is_open()) {
-        std::string line;
-        std::getline(versionFile, line);
-        versionFile.close();
-        if (line.find("Android") != std::string::npos) {
-            return "Android";
-        }
+    if (std::getenv("ANDROID_ROOT") != nullptr && std::getenv("PREFIX") != nullptr) {
+        return "Android"; // Termux env in Android 
     }
     return "Linux";
 #elif __APPLE__ || __MACH__
