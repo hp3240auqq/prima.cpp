@@ -829,7 +829,7 @@ static void assign_device(
                                 uint32_t * n_gpu_layers,
                       struct llama_model * model,
        const struct llama_context_params   cparams,
-                                   float   min_disk_read_speed = 0.1f) { // minimum disk I/O speed: 100 MB/s
+                                   float   min_disk_read_speed = 0.5f) { // minimum disk I/O speed: 500 MB/s
     GGML_ASSERT(dev_info_set != nullptr);
     GGML_ASSERT(n_layer_window != nullptr);
     GGML_ASSERT(my_rank == 0);
