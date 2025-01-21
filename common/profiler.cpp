@@ -1971,6 +1971,9 @@ void device_print_props(struct device_info * dev_info_set, int n, struct llama_m
     // LOG_INF("| %-10.2f   ", latency);
     // LOG_INF("\n");
 
+    (void)model;
+    (void)cparams;
+
     LOG_INF("-------------------------------------------------------------------------------------------\n\n");
 }
 
