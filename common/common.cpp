@@ -1045,6 +1045,7 @@ static void assign_device(
             printf("\n");
         }
     };
+    (void)print_matrix;
 
     double final_objective = 1.0e30;
     std::vector<double> final_solution;
@@ -1412,7 +1413,7 @@ struct llama_init_result llama_init_from_gpt_params(gpt_params & params) {
     device_info dev_info;
     uint32_t n_world   = params.n_world;
     uint32_t my_rank   = params.rank;
-    bool auto_schedule = n_world == 1 || params.n_layer_window[0] == 0;
+    bool auto_schedule = n_world > 1 && params.n_layer_window[0] == 0;
 
     if (auto_schedule) {
         // get device profile
@@ -1460,6 +1461,12 @@ struct llama_init_result llama_init_from_gpt_params(gpt_params & params) {
         cparams.n_gpu_layers = n_gpu_layers[my_rank];
         mparams.n_gpu_layers = n_gpu_layers[my_rank];
         llama_model_set_n_gpu_layers(model, n_gpu_layers[my_rank]);
+    } else if (n_world == 1) {
+        uint32_t n_layers = llama_model_n_layers(model);
+        params.n_layer_window[0]  = n_layers;
+        cparams.n_layer_window[0] = n_layers;
+        mparams.n_layer_window[0] = n_layers;
+        llama_context_n_layer_window(lctx)[0] = n_layers;
     }
 
     LOG_INF("\nUsing window size: %d, GPU layers: %d\n\n", cparams.n_layer_window[my_rank], cparams.n_gpu_layers);
