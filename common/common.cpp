@@ -1603,6 +1603,7 @@ struct llama_model_params llama_model_params_from_gpt_params(const gpt_params & 
     mparams.use_mmap        = params.use_mmap;
     mparams.use_mlock       = params.use_mlock;
     mparams.check_tensors   = params.check_tensors;
+    mparams.keep_inp_out_in_metal = params.keep_inp_out_in_metal;
     std::copy(std::begin(params.n_layer_window), std::end(params.n_layer_window), mparams.n_layer_window);
     if (params.kv_overrides.empty()) {
         mparams.kv_overrides = NULL;

@@ -312,6 +312,7 @@ extern "C" {
         bool use_mmap;      // use mmap if possible
         bool use_mlock;     // force system to keep model in RAM
         bool check_tensors; // validate model tensor data
+        bool keep_inp_out_in_metal; // whether to keep input/output weight in metal
     };
 
     // NOTE: changing the default values of parameters marked as [EXPERIMENTAL] may cause crashes or incorrect results in certain configurations

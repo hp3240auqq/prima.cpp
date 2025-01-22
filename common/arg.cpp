@@ -737,6 +737,14 @@ gpt_params_context gpt_params_parser_init(gpt_params & params, llama_example ex,
             params.cuda_mem = value; // in GiB
         }
     ).set_env("LLAMA_ARG_CUDA_MEM"));
+    // "--keep-inp-out-in-metal" is a temporary option to keep the input and output in metal
+    add_opt(llama_arg(
+        {"--keep-inp-out-in-metal"},
+        format("whether to keep input and output weight in metal (default: %s)", params.keep_inp_out_in_metal ? "true" : "false"),
+        [](gpt_params & params) {
+            params.keep_inp_out_in_metal = true;
+        }
+    ).set_env("LLAMA_ARG_KEEP_INP_OUT_IN_METAL"));
     add_opt(llama_arg(
         {"-n", "--predict", "--n-predict"}, "N",
         format("number of tokens to predict (default: %d, -1 = infinity, -2 = until context filled)", params.n_predict),
