@@ -5260,7 +5260,7 @@ struct llama_model_loader {
                 try {
                     const char * tname = ggml_get_name(tensor);
                     if (keep_only_inp_out && !(
-                            strcmp(tname, "token_embd.weight") == 0 || 
+                            // strcmp(tname, "token_embd.weight") == 0 || // lookup table is used so we do not need to keep it in metal memory
                             strcmp(tname, "output_norm.weight") == 0 || 
                             strcmp(tname, "output.weight") == 0)) {
                         continue;
