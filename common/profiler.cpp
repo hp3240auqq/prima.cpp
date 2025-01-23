@@ -1393,7 +1393,28 @@ static uint64_t device_termux_swappable_memory() {
     return total_swappable;
 }
 
+static uint64_t device_macos_swappable_memory() {
+#if defined(__APPLE__) && defined(__MACH__)
+    mach_msg_type_number_t count = HOST_VM_INFO64_COUNT;
+    vm_statistics64_data_t vm_stats;
+    kern_return_t kr = host_statistics64(mach_host_self(), HOST_VM_INFO64, (host_info64_t)&vm_stats, &count);
+    if (kr != KERN_SUCCESS) {
+        LOG_INF("Failed to get VM statistics\n");
+        return 0;
+    }
+    return vm_stats.internal_page_count * get_page_size();
+
+#else
+    return 0;
+
+#endif
+}
+
 uint64_t device_swappable_memory() {
+#if defined(__APPLE__) && defined(__MACH__)
+    return device_macos_swappable_memory();
+#endif
+
     if (access("/data/data/com.termux/files/usr/bin", F_OK) == 0) {
         return device_termux_swappable_memory();
     }
