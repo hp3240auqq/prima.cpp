@@ -739,10 +739,10 @@ gpt_params_context gpt_params_parser_init(gpt_params & params, llama_example ex,
     ).set_env("LLAMA_ARG_CUDA_MEM"));
 #ifdef GGML_USE_METAL
     add_opt(llama_arg(
-        {"--keep-inp-out-in-metal"},
-        format("whether to keep input and output weight in metal (default: %s)", params.keep_inp_out_in_metal ? "true" : "false"),
+        {"--keep-out-in-metal"},
+        format("whether to keep output weights in metal memory (default: %s)", params.keep_out_in_metal ? "true" : "false"),
         [](gpt_params & params) {
-            params.keep_inp_out_in_metal = true;
+            params.keep_out_in_metal = true;
         }
     ).set_env("LLAMA_ARG_KEEP_INP_OUT_IN_METAL"));
 #endif

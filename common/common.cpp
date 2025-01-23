@@ -1162,7 +1162,7 @@ static void assign_device(
             if (dev.gpu_support.cuda || dev.gpu_support.metal) {
                 float reserved_mem = 0.1f; // reserved shared memory to avoid potential OOM, set to 100 MiB by default
                 vec_z_gpu[m] = (double)((dev.gpu_props.memory_free - reserved_mem) * GIGABYTE - c_gpu[m]) / (double)(n_layer * b_prime);
-                if (dev.gpu_support.metal && m == 0 && cparams.keep_inp_out_in_metal) {
+                if (dev.gpu_support.metal && m == 0 && cparams.keep_out_in_metal) {
                     vec_z_gpu[m] -= (double)(bi + bo) / (double)(n_layer * b_prime);
                 }
                 dev_gpu[m] = 1;
@@ -1624,7 +1624,7 @@ struct llama_model_params llama_model_params_from_gpt_params(const gpt_params & 
     mparams.use_mmap        = params.use_mmap;
     mparams.use_mlock       = params.use_mlock;
     mparams.check_tensors   = params.check_tensors;
-    mparams.keep_inp_out_in_metal = params.keep_inp_out_in_metal;
+    mparams.keep_out_in_metal = params.keep_out_in_metal;
     std::copy(std::begin(params.n_layer_window), std::end(params.n_layer_window), mparams.n_layer_window);
     if (params.kv_overrides.empty()) {
         mparams.kv_overrides = NULL;
@@ -1671,7 +1671,7 @@ struct llama_context_params llama_context_params_from_gpt_params(const gpt_param
     cparams.n_world               = params.n_world;
     cparams.rank                  = params.rank;
     cparams.unload                = params.unload;
-    cparams.keep_inp_out_in_metal = params.keep_inp_out_in_metal;
+    cparams.keep_out_in_metal = params.keep_out_in_metal;
     cparams.n_gpu_layers          = params.n_gpu_layers;
     std::copy(std::begin(params.n_layer_window), std::end(params.n_layer_window), cparams.n_layer_window);
 

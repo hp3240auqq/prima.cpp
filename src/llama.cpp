@@ -7397,7 +7397,7 @@ static bool llm_load_tensors_impl(
         enum llama_split_mode   split_mode,
         int                     main_gpu,
         bool                    use_mlock,
-        bool                    keep_inp_out_in_metal,
+        bool                    keep_out_in_metal,
         llama_progress_callback progress_callback,
         void                  * progress_callback_user_data) {
     auto & hparams = model.hparams;
@@ -9283,7 +9283,7 @@ static bool llm_load_tensors_impl(
                 void * addr = nullptr;
                 auto & ranges = ctx_buffer_ranges[idx]; 
 
-                ml.get_mapping_ranges(ranges, &addr, idx, ctx, keep_inp_out_in_metal ? cpu_ctx : nullptr);
+                ml.get_mapping_ranges(ranges, &addr, idx, ctx, keep_out_in_metal ? cpu_ctx : nullptr);
 
                 for (const auto & range : ranges) {
                     size_t first = range.first;
@@ -9407,7 +9407,7 @@ int llm_load_tensors(
     try {
         if (!llm_load_tensors_impl(
             *ml, *model, params.n_world, params.rank, params.n_layer_window, params.n_gpu_layers, params.split_mode, 
-            params.main_gpu, params.use_mlock, params.keep_inp_out_in_metal, params.progress_callback, params.progress_callback_user_data
+            params.main_gpu, params.use_mlock, params.keep_out_in_metal, params.progress_callback, params.progress_callback_user_data
         )) {
             return -2;
         }
@@ -19784,7 +19784,7 @@ struct llama_model_params llama_model_default_params() {
         /*.use_mmap                    =*/ true,
         /*.use_mlock                   =*/ false,
         /*.check_tensors               =*/ false,
-        /*.keep_inp_out_in_metal       =*/ false,
+        /*.keep_out_in_metal           =*/ false,
     };
 
 #ifdef GGML_USE_METAL
@@ -19802,7 +19802,7 @@ struct llama_context_params llama_context_default_params() {
         /*.n_layer_window              =*/ {32},
         /*.n_gpu_layers                =*/ 0,
         /*.unload                      =*/ false,
-        /*.keep_inp_out_in_metal       =*/ false,
+        /*.keep_out_in_metal           =*/ false,
         /*.master_ip                   =*/ nullptr,
         /*.next_node_ip                =*/ nullptr,
         /*.n_ctx                       =*/ 512,

@@ -312,7 +312,7 @@ extern "C" {
         bool use_mmap;      // use mmap if possible
         bool use_mlock;     // force system to keep model in RAM
         bool check_tensors; // validate model tensor data
-        bool keep_inp_out_in_metal; // whether to keep input/output weight in metal
+        bool keep_out_in_metal; // whether to keep output weights in metal memory
     };
 
     // NOTE: changing the default values of parameters marked as [EXPERIMENTAL] may cause crashes or incorrect results in certain configurations
@@ -323,7 +323,7 @@ extern "C" {
         uint32_t    n_layer_window[32];// number of layers to process in each compute
         uint32_t    n_gpu_layers;      // number of layers to process on GPU
         bool        unload;            // whether to unload layer weights after use
-        bool        keep_inp_out_in_metal; // whether to keep input/output weight in metal
+        bool        keep_out_in_metal; // whether to keep output weights in metal memory
         char *      master_ip;         // ip address of the master node
         char *      next_node_ip;      // ip address of the next node
         uint32_t    n_ctx;             // text context, 0 = from model
