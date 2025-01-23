@@ -323,6 +323,7 @@ extern "C" {
         uint32_t    n_layer_window[32];// number of layers to process in each compute
         uint32_t    n_gpu_layers;      // number of layers to process on GPU
         bool        unload;            // whether to unload layer weights after use
+        bool        keep_inp_out_in_metal; // whether to keep input/output weight in metal
         char *      master_ip;         // ip address of the master node
         char *      next_node_ip;      // ip address of the next node
         uint32_t    n_ctx;             // text context, 0 = from model

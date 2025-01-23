@@ -16,6 +16,7 @@
 #include <codecvt>
 #include <cstdarg>
 #include <cstring>
+#include <csignal>
 #include <ctime>
 #include <fstream>
 #include <iostream>
@@ -75,6 +76,16 @@
 using json = nlohmann::ordered_json;
 
 constexpr int GIGABYTE = 1024 * 1024 * 1024;
+
+struct HiGHSException {
+    int signal;
+    const char * message;
+};
+
+[[noreturn]] static void highs_handler(int signal) {
+    HiGHSException e{signal, "HiGHS terminated due to signal"};
+    throw e;
+}
 
 //
 // CPU utils
@@ -846,7 +857,7 @@ static void assign_device(
     // model-specific constants
     const int n_embd_k_gqa = llama_model_n_embd_k_gqa(model);
     const int n_embd_v_gqa = llama_model_n_embd_v_gqa(model);
-    const int n_kv         = 16;
+    const int n_kv         = cparams.n_ctx;
 
     const int64_t b        = dev_info_set[0].model_bytes.nb_layer;
     const int64_t bi       = dev_info_set[0].model_bytes.nb_input;
@@ -1104,9 +1115,9 @@ static void assign_device(
         }
 
         // -------------------------------------------------------------
-        // Construct vectors vz, vz_cuda
+        // Construct vectors vz, vz_gpu
         // -------------------------------------------------------------
-        // z and z_cuda are used to express memory constraints:
+        // z and z_gpu are used to express memory constraints:
         // for z:
         //   - M1:  (d_m^{avail} - b_cio) / (L*b')
         //   - M2:  (d_m^{total} - b_cio - c_gpu) / (L*b')
@@ -1115,11 +1126,11 @@ static void assign_device(
         //       or - (d_m^{total} - b_cio - c_gpu) / (L*b') on macOS with Metal,
         //       or - (d_m^{avail}+d_m^{swapout} - b_cio) / (L*b') on Linux or Android
         //
-        // for z_cuda:
+        // for z_gpu:
         //   - M1:  (d_{m,cuda}^{avail} - c_gpu) / (L*b'),
         // d_{m,cuda}^{avail} is non-zero only if the device supports CUDA
-        std::vector<float> vec_z(n_world, 0.0f), vec_z_cuda(n_world, 0.0f);
-        std::vector<int> dev_cuda(n_world, 0);
+        std::vector<float> vec_z(n_world, 0.0f), vec_z_gpu(n_world, 0.0f);
+        std::vector<int> dev_gpu(n_world, 0);
 
         for (uint32_t m = 0; m < n_world; ++m) {
             const device_info &dev = dev_info_set[m];
@@ -1148,16 +1159,20 @@ static void assign_device(
                 }
             }
 
-            if (dev.gpu_support.cuda) {
-                vec_z_cuda[m] = (double)(dev.gpu_props.memory_free * GIGABYTE - c_gpu[m]) / (double)(n_layer * b_prime);
-                dev_cuda[m] = 1;
+            if (dev.gpu_support.cuda || dev.gpu_support.metal) {
+                float reserved_mem = 0.3f; // reserved shared memory to avoid potential OOM, set to 300 MiB by default
+                vec_z_gpu[m] = (double)((dev.gpu_props.memory_free - reserved_mem) * GIGABYTE - c_gpu[m]) / (double)(n_layer * b_prime);
+                if (dev.gpu_support.metal && m == 0 && cparams.keep_inp_out_in_metal) {
+                    vec_z_gpu[m] -= (double)(bi + bo) / (double)(n_layer * b_prime);
+                }
+                dev_gpu[m] = 1;
             } else {
-                vec_z_cuda[m] = -(double)c_gpu[m] / (double)(n_layer * b_prime);
+                vec_z_gpu[m] = -(double)c_gpu[m] / (double)(n_layer * b_prime);
             }
         }
 
         // count the number of cuda devices
-        int num_dev_cuda = std::accumulate(dev_cuda.begin(), dev_cuda.end(), 0);
+        int num_dev_gpu = std::accumulate(dev_gpu.begin(), dev_gpu.end(), 0);
 
         // -------------------------------------------------------------
         // Build and solve the optimization model
@@ -1175,7 +1190,7 @@ static void assign_device(
 
             // define the number of decision variables and constraints
             model.lp_.num_col_ = n_world * 2; // number of decision variables
-            model.lp_.num_row_ = 1 + 2 * n_world + num_dev_cuda; // number of constraints
+            model.lp_.num_row_ = 1 + 2 * n_world + num_dev_gpu; // number of constraints
 
             // define the objective: k * sum(a[m] * w[m] + b[m] * n[m]) + kappa + k * sum(c[m])
             model.lp_.sense_  = ObjSense::kMinimize;
@@ -1216,10 +1231,10 @@ static void assign_device(
             }
             constraint_idx += n_world;
 
-            // constraint bound 4: CUDA memory constraint for CUDA devices
+            // constraint bound 4: CUDA/shared memory constraint for CUDA/Metal devices
             for (uint32_t m = 0; m < n_world; ++m) {
-                if (dev_cuda[m]) {
-                    model.lp_.row_upper_[constraint_idx] = W * vec_z_cuda[m];
+                if (dev_gpu[m]) {
+                    model.lp_.row_upper_[constraint_idx] = W * vec_z_gpu[m];
                     constraint_idx++;
                 }
             }
@@ -1265,9 +1280,9 @@ static void assign_device(
             }
             constraint_idx += n_world;
 
-            // constraint coefficients 4: CUDA memory constraint for CUDA devices
+            // constraint coefficients 4: CUDA/shared memory constraint for CUDA/Metal devices
             for (uint32_t m = 0; m < n_world; ++m) {
-                if (dev_cuda[m]) {
+                if (dev_gpu[m]) {
                     A[constraint_idx][m] = 0.0; // coefficient for w[m]
                     A[constraint_idx][m + n_world] = 1.0; // coefficient for n[m]
                     constraint_idx++;
@@ -1304,8 +1319,14 @@ static void assign_device(
             GGML_ASSERT(return_status == HighsStatus::kOk && "Failed to pass model\n");
             
             // run the solver
-            return_status = highs.run();
-            GGML_ASSERT(return_status == HighsStatus::kOk && "Failed to run the solver\n");
+            try {
+                std::signal(SIGABRT, highs_handler);
+                return_status = highs.run();
+                GGML_ASSERT(return_status == HighsStatus::kOk && "Failed to run the solver\n");
+            } catch (const HiGHSException &e) {
+                LOG_INF("Failed to run the solver when k = %d: unknown exception\n", k);
+                continue;
+            }
 
             // get the solution
             const HighsModelStatus& model_status = highs.getModelStatus();
@@ -1419,7 +1440,7 @@ struct llama_init_result llama_init_from_gpt_params(gpt_params & params) {
         // get device profile
         LOG_INF("Start profiling this device, this may take some seconds ...\n");
         dev_info.rank = params.rank;
-        llama_profile_device(&dev_info, model, ml, params.cuda_mem, params.n_predict, params.n_ctx, params.cpuparams.n_threads, params.flash_attn);
+        llama_profile_device(&dev_info, model, ml, params.gpu_mem, params.n_predict, params.n_ctx, params.cpuparams.n_threads, params.flash_attn);
     }
 
     // create llama context
@@ -1647,10 +1668,11 @@ static ggml_type kv_cache_type_from_str(const std::string & s) {
 struct llama_context_params llama_context_params_from_gpt_params(const gpt_params & params) {
     auto cparams = llama_context_default_params();
 
-    cparams.n_world         = params.n_world;
-    cparams.rank            = params.rank;
-    cparams.unload          = params.unload;
-    cparams.n_gpu_layers    = params.n_gpu_layers;
+    cparams.n_world               = params.n_world;
+    cparams.rank                  = params.rank;
+    cparams.unload                = params.unload;
+    cparams.keep_inp_out_in_metal = params.keep_inp_out_in_metal;
+    cparams.n_gpu_layers          = params.n_gpu_layers;
     std::copy(std::begin(params.n_layer_window), std::end(params.n_layer_window), cparams.n_layer_window);
 
     if (cparams.master_ip != nullptr) {

@@ -149,7 +149,7 @@ struct gpt_params {
     std::string next_node_ip      = "localhost"; // ip address of my next node
     bool    unload                = false; // unload layer weights after use or not
     bool    keep_inp_out_in_metal = false; // whether to keep input/output weight in metal, not by default
-    int32_t cuda_mem              = 999.0; // cuda memory to use, in GiB
+    int32_t gpu_mem               = 999.0; // gpu memory to use, in GiB
     int32_t n_predict             =    -1; // new tokens to predict
     int32_t n_ctx                 =     0; // context size
     int32_t n_batch               =  2048; // logical batch size for prompt processing (must be >=32 to use BLAS)

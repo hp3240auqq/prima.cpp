@@ -731,10 +731,10 @@ gpt_params_context gpt_params_parser_init(gpt_params & params, llama_example ex,
         }
     ).set_env("LLAMA_ARG_UNLOAD"));
     add_opt(llama_arg(
-        {"-cm", "--cuda-mem"}, "N", 
-        format("maximum cuda memory to use (default: %d)", params.cuda_mem),
+        {"-gm", "--gpu-mem"}, "N", 
+        format("maximum GPU memory to use (default: %d)", params.gpu_mem),
         [](gpt_params & params, int value) {
-            params.cuda_mem = value; // in GiB
+            params.gpu_mem = value; // in GiB
         }
     ).set_env("LLAMA_ARG_CUDA_MEM"));
 #ifdef GGML_USE_METAL

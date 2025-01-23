@@ -3574,7 +3574,7 @@ void llama_profile_device(
                 device_info * dev_info, 
          struct llama_model * model, 
          llama_model_loader * ml, 
-                        int   cuda_mem,
+                        int   gpu_mem,
                         int   n_predict,
                         int   n_ctx, 
                         int   n_threads,
@@ -3622,9 +3622,9 @@ void llama_profile_device(
     dev_info->gpu_props.description         = gpu_props.description;
     dev_info->gpu_props.memory_free         = round(gpu_props.memory_free  / (double)(1 << 30) * 100) / 100;
 
-#ifdef GGML_USE_CUDA
-    // CUDA memory limitation
-    dev_info->gpu_props.memory_free         = std::min((float)cuda_mem, dev_info->gpu_props.memory_free);
+#if defined(GGML_USE_CUDA) || defined(GGML_USE_METAL)
+    // GPU memory limitation
+    dev_info->gpu_props.memory_free         = std::min((float)gpu_mem, dev_info->gpu_props.memory_free);
 #endif
 
     dev_info->gpu_props.memory_total        = round(gpu_props.memory_total / (double)(1 << 30) * 100) / 100;
@@ -5159,15 +5159,17 @@ struct llama_model_loader {
     static const int TENSOR_NOT_REQUIRED = 1;
     static const int TENSOR_DUPLICATED   = 2;
 
-    struct ggml_tensor * create_tensor(struct ggml_context * ctx, const std::string & name, const std::initializer_list<int64_t> & ne, int flags = 0) {
+    struct ggml_tensor * create_tensor(struct ggml_context * ctx, const std::string & name, const std::initializer_list<int64_t> & ne, int flags = 0, bool set_needed = false) {
         const struct ggml_tensor * cur = check_tensor_dims(name, ne, !(flags & TENSOR_NOT_REQUIRED));
 
         if (cur == NULL) {
             return NULL;
         }
 
-        auto * weight = get_weight(ggml_get_name(cur));
-        weight->set_as_needed(); // this tensor is needed for this device
+        if (set_needed) {
+            auto * weight = get_weight(ggml_get_name(cur));
+            weight->set_as_needed(); // this tensor is needed for this device
+        }
 
         return create_tensor_for(ctx, cur, flags & TENSOR_DUPLICATED);
     }
@@ -5253,10 +5255,18 @@ struct llama_model_loader {
         const auto & mapping = mappings.at(idx);
         *addr = mapping->addr;
 
-        auto merge_tensor_range = [&](ggml_context * context) {
+        auto merge_tensor_range = [&](ggml_context * context, bool keep_only_inp_out) {
             for (ggml_tensor * tensor = ggml_get_first_tensor(context); tensor; tensor = ggml_get_next_tensor(context, tensor)) {
                 try {
-                    const llama_tensor_weight* weight = get_weight(ggml_get_name(tensor));
+                    const char * tname = ggml_get_name(tensor);
+                    if (keep_only_inp_out && !(
+                            strcmp(tname, "token_embd.weight") == 0 || 
+                            strcmp(tname, "output_norm.weight") == 0 || 
+                            strcmp(tname, "output.weight") == 0)) {
+                        continue;
+                    }
+
+                    const llama_tensor_weight* weight = get_weight(tname);
                     if (!weight || weight->idx != idx) continue;
 
                     size_t first = weight->offs;
@@ -5286,10 +5296,10 @@ struct llama_model_loader {
             }
         };
 
-        merge_tensor_range(ctx);
+        merge_tensor_range(ctx, false);
 
         if (cpu_ctx != ctx && cpu_ctx != nullptr) {
-            merge_tensor_range(cpu_ctx);
+            merge_tensor_range(cpu_ctx, true);
         }
     }
 
@@ -7264,7 +7274,8 @@ static void llm_load_llama_tensors(
         uint32_t             n_world, 
         uint32_t             my_rank, 
         const uint32_t     * n_layer_window,
-        bool               * use_mmap_buffer) {
+        bool               * use_mmap_buffer,
+        bool                 set_needed) {
     const auto tn = LLM_TN(model.arch);
 
     ggml_context * ctx_input        = nullptr;
@@ -7295,13 +7306,13 @@ static void llm_load_llama_tensors(
 
     if (my_rank == 0) {
         // token embedding
-        model.tok_embd    = ml.create_tensor(ctx_input, tn(LLM_TENSOR_TOKEN_EMBD, "weight"), {n_embd, n_vocab});
+        model.tok_embd    = ml.create_tensor(ctx_input, tn(LLM_TENSOR_TOKEN_EMBD, "weight"), {n_embd, n_vocab}, 0, set_needed);
         // output
-        model.output_norm = ml.create_tensor(ctx_output, tn(LLM_TENSOR_OUTPUT_NORM, "weight"), {n_embd});
-        model.output      = ml.create_tensor(ctx_output_split, tn(LLM_TENSOR_OUTPUT, "weight"), {n_embd, n_vocab}, llama_model_loader::TENSOR_NOT_REQUIRED);
+        model.output_norm = ml.create_tensor(ctx_output, tn(LLM_TENSOR_OUTPUT_NORM, "weight"), {n_embd}, 0, set_needed);
+        model.output      = ml.create_tensor(ctx_output_split, tn(LLM_TENSOR_OUTPUT, "weight"), {n_embd, n_vocab}, llama_model_loader::TENSOR_NOT_REQUIRED, set_needed);
         // if output is NULL, init from the input tok embed
         if (model.output == NULL) {
-            model.output  = ml.create_tensor(ctx_output, tn(LLM_TENSOR_TOKEN_EMBD, "weight"), {n_embd, n_vocab}, llama_model_loader::TENSOR_DUPLICATED);
+            model.output  = ml.create_tensor(ctx_output, tn(LLM_TENSOR_TOKEN_EMBD, "weight"), {n_embd, n_vocab}, llama_model_loader::TENSOR_DUPLICATED, set_needed);
         }
     }
 
@@ -7316,37 +7327,37 @@ static void llm_load_llama_tensors(
         
         auto & layer = model.layers[local_i];
         
-        layer.attn_norm = ml.create_tensor(ctx_layer, tn(LLM_TENSOR_ATTN_NORM, "weight", i), {n_embd});
+        layer.attn_norm = ml.create_tensor(ctx_layer, tn(LLM_TENSOR_ATTN_NORM, "weight", i), {n_embd}, 0, set_needed);
 
-        layer.wq = ml.create_tensor(ctx_split, tn(LLM_TENSOR_ATTN_Q,   "weight", i), {n_embd, n_embd_head_k * n_head});
-        layer.wk = ml.create_tensor(ctx_split, tn(LLM_TENSOR_ATTN_K,   "weight", i), {n_embd, n_embd_k_gqa});
-        layer.wv = ml.create_tensor(ctx_split, tn(LLM_TENSOR_ATTN_V,   "weight", i), {n_embd, n_embd_v_gqa});
-        layer.wo = ml.create_tensor(ctx_split, tn(LLM_TENSOR_ATTN_OUT, "weight", i), {n_embd_head_k * n_head, n_embd});
+        layer.wq = ml.create_tensor(ctx_split, tn(LLM_TENSOR_ATTN_Q,   "weight", i), {n_embd, n_embd_head_k * n_head}, 0, set_needed);
+        layer.wk = ml.create_tensor(ctx_split, tn(LLM_TENSOR_ATTN_K,   "weight", i), {n_embd, n_embd_k_gqa},           0, set_needed);
+        layer.wv = ml.create_tensor(ctx_split, tn(LLM_TENSOR_ATTN_V,   "weight", i), {n_embd, n_embd_v_gqa},           0, set_needed);
+        layer.wo = ml.create_tensor(ctx_split, tn(LLM_TENSOR_ATTN_OUT, "weight", i), {n_embd_head_k * n_head, n_embd}, 0, set_needed);
 
         // optional bias tensors
-        layer.bq = ml.create_tensor(ctx_layer, tn(LLM_TENSOR_ATTN_Q,   "bias", i), {n_embd},     llama_model_loader::TENSOR_NOT_REQUIRED);
-        layer.bk = ml.create_tensor(ctx_layer, tn(LLM_TENSOR_ATTN_K,   "bias", i), {n_embd_gqa}, llama_model_loader::TENSOR_NOT_REQUIRED);
-        layer.bv = ml.create_tensor(ctx_layer, tn(LLM_TENSOR_ATTN_V,   "bias", i), {n_embd_gqa}, llama_model_loader::TENSOR_NOT_REQUIRED);
-        layer.bo = ml.create_tensor(ctx_layer, tn(LLM_TENSOR_ATTN_OUT, "bias", i), {n_embd},     llama_model_loader::TENSOR_NOT_REQUIRED);
+        layer.bq = ml.create_tensor(ctx_layer, tn(LLM_TENSOR_ATTN_Q,   "bias", i), {n_embd},     llama_model_loader::TENSOR_NOT_REQUIRED, set_needed);
+        layer.bk = ml.create_tensor(ctx_layer, tn(LLM_TENSOR_ATTN_K,   "bias", i), {n_embd_gqa}, llama_model_loader::TENSOR_NOT_REQUIRED, set_needed);
+        layer.bv = ml.create_tensor(ctx_layer, tn(LLM_TENSOR_ATTN_V,   "bias", i), {n_embd_gqa}, llama_model_loader::TENSOR_NOT_REQUIRED, set_needed);
+        layer.bo = ml.create_tensor(ctx_layer, tn(LLM_TENSOR_ATTN_OUT, "bias", i), {n_embd},     llama_model_loader::TENSOR_NOT_REQUIRED, set_needed);
 
-        layer.ffn_norm   = ml.create_tensor(ctx_layer, tn(LLM_TENSOR_FFN_NORM,   "weight", i), {n_embd});
-        layer.rope_freqs = ml.create_tensor(ctx_layer, tn(LLM_TENSOR_ROPE_FREQS, "weight"), {n_rot/2}, llama_model_loader::TENSOR_NOT_REQUIRED | (i != 0 ? llama_model_loader::TENSOR_DUPLICATED : 0));
+        layer.ffn_norm   = ml.create_tensor(ctx_layer, tn(LLM_TENSOR_FFN_NORM,   "weight", i), {n_embd}, 0, set_needed);
+        layer.rope_freqs = ml.create_tensor(ctx_layer, tn(LLM_TENSOR_ROPE_FREQS, "weight"), {n_rot/2}, llama_model_loader::TENSOR_NOT_REQUIRED | (i != 0 ? llama_model_loader::TENSOR_DUPLICATED : 0), set_needed);
 
         if (n_expert == 0) {
-            layer.ffn_gate = ml.create_tensor(ctx_split, tn(LLM_TENSOR_FFN_GATE, "weight", i), {n_embd,   n_ff});
-            layer.ffn_down = ml.create_tensor(ctx_split, tn(LLM_TENSOR_FFN_DOWN, "weight", i), {n_ff,   n_embd});
-            layer.ffn_up   = ml.create_tensor(ctx_split, tn(LLM_TENSOR_FFN_UP,   "weight", i), {n_embd,   n_ff});
+            layer.ffn_gate = ml.create_tensor(ctx_split, tn(LLM_TENSOR_FFN_GATE, "weight", i), {n_embd,   n_ff}, 0, set_needed);
+            layer.ffn_down = ml.create_tensor(ctx_split, tn(LLM_TENSOR_FFN_DOWN, "weight", i), {n_ff,   n_embd}, 0, set_needed);
+            layer.ffn_up   = ml.create_tensor(ctx_split, tn(LLM_TENSOR_FFN_UP,   "weight", i), {n_embd,   n_ff}, 0, set_needed);
 
             // optional MLP bias
-            layer.ffn_gate_b = ml.create_tensor(ctx_layer, tn(LLM_TENSOR_FFN_GATE, "bias", i), {n_ff},   llama_model_loader::TENSOR_NOT_REQUIRED);
-            layer.ffn_down_b = ml.create_tensor(ctx_layer, tn(LLM_TENSOR_FFN_DOWN, "bias", i), {n_embd}, llama_model_loader::TENSOR_NOT_REQUIRED);
-            layer.ffn_up_b   = ml.create_tensor(ctx_layer, tn(LLM_TENSOR_FFN_UP,   "bias", i), {n_ff},   llama_model_loader::TENSOR_NOT_REQUIRED);
+            layer.ffn_gate_b = ml.create_tensor(ctx_layer, tn(LLM_TENSOR_FFN_GATE, "bias", i), {n_ff},   llama_model_loader::TENSOR_NOT_REQUIRED, set_needed);
+            layer.ffn_down_b = ml.create_tensor(ctx_layer, tn(LLM_TENSOR_FFN_DOWN, "bias", i), {n_embd}, llama_model_loader::TENSOR_NOT_REQUIRED, set_needed);
+            layer.ffn_up_b   = ml.create_tensor(ctx_layer, tn(LLM_TENSOR_FFN_UP,   "bias", i), {n_ff},   llama_model_loader::TENSOR_NOT_REQUIRED, set_needed);
         } else {
-            layer.ffn_gate_inp  = ml.create_tensor(ctx_layer, tn(LLM_TENSOR_FFN_GATE_INP,  "weight", i), {n_embd, n_expert});
-            layer.ffn_gate_exps = ml.create_tensor(ctx_split, tn(LLM_TENSOR_FFN_GATE_EXPS, "weight", i), {n_embd, n_ff, n_expert}, llama_model_loader::TENSOR_NOT_REQUIRED);
+            layer.ffn_gate_inp  = ml.create_tensor(ctx_layer, tn(LLM_TENSOR_FFN_GATE_INP,  "weight", i), {n_embd, n_expert}, 0, set_needed);
+            layer.ffn_gate_exps = ml.create_tensor(ctx_split, tn(LLM_TENSOR_FFN_GATE_EXPS, "weight", i), {n_embd, n_ff, n_expert}, llama_model_loader::TENSOR_NOT_REQUIRED, set_needed);
             if (layer.ffn_gate_exps) {
-                layer.ffn_down_exps = ml.create_tensor(ctx_split, tn(LLM_TENSOR_FFN_DOWN_EXPS, "weight", i), {n_ff,   n_embd, n_expert});
-                layer.ffn_up_exps   = ml.create_tensor(ctx_split, tn(LLM_TENSOR_FFN_UP_EXPS,   "weight", i), {n_embd,   n_ff, n_expert});
+                layer.ffn_down_exps = ml.create_tensor(ctx_split, tn(LLM_TENSOR_FFN_DOWN_EXPS, "weight", i), {n_ff,   n_embd, n_expert}, 0, set_needed);
+                layer.ffn_up_exps   = ml.create_tensor(ctx_split, tn(LLM_TENSOR_FFN_UP_EXPS,   "weight", i), {n_embd,   n_ff, n_expert}, 0, set_needed);
             } else {
                 // merge split expert into a single tensor for compatibility with older models
                 // requires disabling mmap
@@ -7515,7 +7526,7 @@ static bool llm_load_tensors_impl(
             case LLM_ARCH_MINICPM:
             case LLM_ARCH_GRANITE:
             case LLM_ARCH_GRANITE_MOE:
-                llm_load_llama_tensors(ml, model, ctx_map, n_world, my_rank, n_layer_window, &use_mmap_buffer);
+                llm_load_llama_tensors(ml, model, ctx_map, n_world, my_rank, n_layer_window, &use_mmap_buffer, true);
                 break;
             case LLM_ARCH_MINICPM3:
                 {
@@ -19791,6 +19802,7 @@ struct llama_context_params llama_context_default_params() {
         /*.n_layer_window              =*/ {32},
         /*.n_gpu_layers                =*/ 0,
         /*.unload                      =*/ false,
+        /*.keep_inp_out_in_metal       =*/ false,
         /*.master_ip                   =*/ nullptr,
         /*.next_node_ip                =*/ nullptr,
         /*.n_ctx                       =*/ 512,
@@ -21207,7 +21219,7 @@ void llama_model_n_flops(
             case LLM_ARCH_MINICPM:
             case LLM_ARCH_GRANITE:
             case LLM_ARCH_GRANITE_MOE:
-                llm_load_llama_tensors(*ml, *model, ctx_map, 1, 0, n_layer_window, &use_mmap_buffer);
+                llm_load_llama_tensors(*ml, *model, ctx_map, 1, 0, n_layer_window, &use_mmap_buffer, false);
                 break;
             default:
                 throw std::runtime_error("unsupported architecture\n");
