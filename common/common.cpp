@@ -943,7 +943,7 @@ static void assign_device(
         if ((is_macos && !dev.gpu_support.metal) || is_linux) {
             mem_budget[m] = dev.memory.available_physical;
         } else if (is_macos && dev.gpu_support.metal) {
-            mem_budget[m] = dev.memory.total_physical;
+            mem_budget[m] = dev.gpu_props.memory_free;
         } else if (is_android) {
             mem_budget[m] = dev.memory.available_physical + dev.memory.used_can_swap;
         } else {
@@ -1146,14 +1146,14 @@ static void assign_device(
             if (in_set(m, M1)) {
                 vec_z[m] = (double)(dev.memory.available_physical * GIGABYTE - b_cio) / (double)(n_layer * b_prime);
             } else if (in_set(m, M2)) {
-                vec_z[m] = (double)(dev.memory.total_physical * GIGABYTE - b_cio - c_gpu[m]) / (double)(n_layer * b_prime);
+                vec_z[m] = (double)(dev.gpu_props.memory_free * GIGABYTE - b_cio - c_gpu[m]) / (double)(n_layer * b_prime);
             } else if (in_set(m, M3)) {
                 vec_z[m] = (double)(dev.memory.available_physical * GIGABYTE + dev.memory.used_can_swap * GIGABYTE * int(is_android) - b_cio) / (double)(n_layer * b_prime);
             } else {
                 if (is_macos && !dev.gpu_support.metal) {
                     vec_z[m] = - (double)(dev.memory.available_physical * GIGABYTE - b_cio) / (double)(n_layer * b_prime);
                 } else if (is_macos && dev.gpu_support.metal) {
-                    vec_z[m] = - (double)(dev.memory.total_physical * GIGABYTE - b_cio - c_gpu[m]) / (double)(n_layer * b_prime);
+                    vec_z[m] = - (double)(dev.gpu_props.memory_free * GIGABYTE - b_cio - c_gpu[m]) / (double)(n_layer * b_prime);
                 } else {
                     vec_z[m] = - (double)(dev.memory.available_physical * GIGABYTE + dev.memory.used_can_swap * GIGABYTE * int(is_android) - b_cio) / (double)(n_layer * b_prime);
                 }
