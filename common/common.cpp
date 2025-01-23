@@ -1160,7 +1160,7 @@ static void assign_device(
             }
 
             if (dev.gpu_support.cuda || dev.gpu_support.metal) {
-                float reserved_mem = 0.3f; // reserved shared memory to avoid potential OOM, set to 300 MiB by default
+                float reserved_mem = 0.1f; // reserved shared memory to avoid potential OOM, set to 100 MiB by default
                 vec_z_gpu[m] = (double)((dev.gpu_props.memory_free - reserved_mem) * GIGABYTE - c_gpu[m]) / (double)(n_layer * b_prime);
                 if (dev.gpu_support.metal && m == 0 && cparams.keep_inp_out_in_metal) {
                     vec_z_gpu[m] -= (double)(bi + bo) / (double)(n_layer * b_prime);
