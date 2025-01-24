@@ -48,6 +48,20 @@
 #include <dirent.h>
 
 
+static const char * get_uname_os() {
+    std::unique_ptr<FILE, decltype(&pclose)> pipe(popen("uname -o", "r"), pclose);
+    if (!pipe) {
+        return "Unknown"; 
+    }
+
+    static char buffer[16]; 
+    if (fgets(buffer, sizeof(buffer), pipe.get()) != nullptr) {
+        buffer[strcspn(buffer, "\n")] = '\0';
+        return buffer; 
+    }
+    return "Unknown"; 
+}
+
 const char * device_name() {
     static char device_name[256];
 
@@ -57,8 +71,20 @@ const char * device_name() {
         strncpy(device_name, "Unknown Windows Device", sizeof(device_name));
     }
 #elif defined(__linux__)
-    if (gethostname(device_name, sizeof(device_name)) != 0) {
-        strncpy(device_name, "Unknown Linux Device", sizeof(device_name));
+    const char * os = get_uname_os(); 
+    if (strstr(os, "Android") != nullptr) {
+        std::unique_ptr<FILE, decltype(&pclose)> pipe(popen("getprop ro.product.model", "r"), pclose);
+        if (pipe) {
+            if (fgets(device_name, sizeof(device_name), pipe.get()) != nullptr) {
+                device_name[strcspn(device_name, "\n")] = '\0';
+                return device_name;
+            }
+        }
+        strncpy(device_name, "Unknown Device", sizeof(device_name));
+    } else {
+        if (gethostname(device_name, sizeof(device_name)) != 0) {
+            strncpy(device_name, "Unknown Device", sizeof(device_name));
+        }
     }
 #elif defined(__APPLE__) && defined(__MACH__)
     if (gethostname(device_name, sizeof(device_name)) != 0) {
@@ -75,8 +101,9 @@ const char * device_os() {
 #ifdef _WIN32
     return "Windows";
 #elif __linux__
-    if (std::getenv("ANDROID_ROOT") != nullptr && std::getenv("PREFIX") != nullptr) {
-        return "Android"; // Termux env in Android 
+    const char * os = get_uname_os();
+    if (strstr(os, "Android") != nullptr) {
+        return "Android";
     }
     return "Linux";
 #elif __APPLE__ || __MACH__
