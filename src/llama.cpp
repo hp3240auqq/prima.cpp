@@ -5255,14 +5255,11 @@ struct llama_model_loader {
         const auto & mapping = mappings.at(idx);
         *addr = mapping->addr;
 
-        auto merge_tensor_range = [&](ggml_context * context, bool keep_only_inp_out) {
+        auto merge_tensor_range = [&](ggml_context * context, bool keep_output) {
             for (ggml_tensor * tensor = ggml_get_first_tensor(context); tensor; tensor = ggml_get_next_tensor(context, tensor)) {
                 try {
                     const char * tname = ggml_get_name(tensor);
-                    if (keep_only_inp_out && !(
-                            // strcmp(tname, "token_embd.weight") == 0 || // lookup table is used so we do not need to keep it in metal memory
-                            strcmp(tname, "output_norm.weight") == 0 || 
-                            strcmp(tname, "output.weight") == 0)) {
+                    if (keep_output && !(strcmp(tname, "output_norm.weight") == 0 || strcmp(tname, "output.weight") == 0)) {
                         continue;
                     }
 

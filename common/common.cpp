@@ -832,7 +832,7 @@ std::string fs_get_cache_file(const std::string & filename) {
     return cache_directory + filename;
 }
 
-static bool assign_device(
+static bool assign_layers_to_device(
                                 uint32_t   n_world, 
                                 uint32_t   my_rank, 
                        const device_info * dev_info_set, 
@@ -857,6 +857,7 @@ static bool assign_device(
     // model-specific constants
     const int n_embd_k_gqa = llama_model_n_embd_k_gqa(model);
     const int n_embd_v_gqa = llama_model_n_embd_v_gqa(model);
+    const int n_vocab      = llama_n_vocab(model);
     const int n_kv         = cparams.n_ctx;
 
     const int64_t b        = dev_info_set[0].model_bytes.nb_layer;
@@ -876,7 +877,7 @@ static bool assign_device(
     // -------- Compute alpha[m], beta[m], xi[m] --------
     for (uint32_t m = 0; m < n_world; ++m) {
         // alpha[m]
-        const device_info &dev = dev_info_set[m];
+        const device_info & dev = dev_info_set[m];
         float t_calc_cpu = (
             master.model_flops.layer_f32_f32 / (dev.cpu_props.flops_f32_f32 * 1e9 + EPS) +
             master.model_flops.layer_f16_f32 / (dev.cpu_props.flops_f16_f32 * 1e9 + EPS) +
@@ -931,7 +932,7 @@ static bool assign_device(
     // - $d_m^{\text{avail}}+d_m^{\text{swapout}}$ for Android
     // and $n_m$ is initialized to 0. 
     for (uint32_t m = 0; m < n_world; ++m) {
-        const device_info &dev = dev_info_set[m];
+        const device_info & dev = dev_info_set[m];
         GGML_ASSERT(dev.device_os != nullptr);
 
         bool is_macos   = strcmp(dev.device_os, "macOS") == 0;
@@ -968,7 +969,7 @@ static bool assign_device(
     // stores the actual read bandwidth (GB/s) for each device
     std::vector<float> disk_speed(n_world, 0.0f);
     for (uint32_t m = 0; m < n_world; ++m) {
-        const device_info &dev = dev_info_set[m];
+        const device_info & dev = dev_info_set[m];
         GGML_ASSERT(dev.device_os != nullptr);
         bool is_linux = strcmp(dev.device_os, "Linux") == 0;
 
@@ -1010,7 +1011,7 @@ static bool assign_device(
         M1.clear(), M2.clear(), M3.clear(), M4.clear();
 
         for (uint32_t m = 0; m < n_world; ++m) {
-            const device_info &dev = dev_info_set[m];
+            const device_info & dev = dev_info_set[m];
 
             GGML_ASSERT(dev.device_os != nullptr);
             bool is_macos   = strcmp(dev.device_os, "macOS") == 0;
@@ -1023,9 +1024,9 @@ static bool assign_device(
 
             int  l_m          = w[m] * k;  // total number of layers assigned to device m
             int  l_m_gpu      = n[m] * k;  // number of layers assigned to device m that run on GPU
-            bool condition1   = l_m * b + (bi + bo) * int(m == 0) + 2 * (n_embd_k_gqa + n_embd_v_gqa) * n_kv * l_m + c_cpu[m] > mem_budget[m] * GIGABYTE;
-            bool condition2   = l_m * b + (bi + bo) * int(m == 0) + 2 * (n_embd_k_gqa + n_embd_v_gqa) * n_kv * l_m + c_cpu[m] + c_gpu[m] > mem_budget[m] * GIGABYTE;
-            bool condition3   = (l_m - l_m_gpu) * b_prime + (bi + bo) * int(m == 0) + c_cpu[m] > mem_budget[m] * GIGABYTE;
+            bool condition1   = l_m * b + (bi / n_vocab + bo) * int(m == 0) + 2 * (n_embd_k_gqa + n_embd_v_gqa) * n_kv * l_m + c_cpu[m] > mem_budget[m] * GIGABYTE;
+            bool condition2   = l_m * b + (bi / n_vocab + bo) * int(m == 0) + 2 * (n_embd_k_gqa + n_embd_v_gqa) * n_kv * l_m + c_cpu[m] + c_gpu[m] > mem_budget[m] * GIGABYTE;
+            bool condition3   = (l_m - l_m_gpu) * b_prime + (bi / n_vocab + bo) * int(m == 0) + c_cpu[m] > mem_budget[m] * GIGABYTE;
             bool is_slow_disk = disk_speed[m] < min_disk_read_speed;
 
             if (is_macos && !dev.gpu_support.metal && condition1 && !is_slow_disk) {
@@ -1083,13 +1084,26 @@ static bool assign_device(
 
         // update kappa
         for (uint32_t m = 0; m < n_world; ++m) {
-            const device_info &dev = dev_info_set[m];
+            const device_info & dev = dev_info_set[m];
             GGML_ASSERT(dev.device_os != nullptr);
             bool is_android = strcmp(dev.device_os, "Android") == 0;
 
-            if (m == 0 && !in_set(m, M4)) {
-                kappa = (bi + bo) / (disk_speed[m] * 1e9) * 1000;  // in ms
+            if (m == 0) {
+                kappa = (
+                    dev.model_flops.layer_f32_f32 / (dev.cpu_props.flops_f32_f32 * 1e9 + EPS) +
+                    dev.model_flops.layer_f16_f32 / (dev.cpu_props.flops_f16_f32 * 1e9 + EPS) +
+                    dev.model_flops.layer_q4k_f32 / (dev.cpu_props.flops_q4k_f32 * 1e9 + EPS) +
+                    dev.model_flops.layer_q5k_f32 / (dev.cpu_props.flops_q5k_f32 * 1e9 + EPS) +
+                    dev.model_flops.layer_q6k_f32 / (dev.cpu_props.flops_q6k_f32 * 1e9 + EPS) +
+                    dev.model_flops.layer_q80_f32 / (dev.cpu_props.flops_q80_f32 * 1e9 + EPS)) * 1000; // in ms
+
+                kappa += (bi / n_vocab + bo) / (dev.memory.cpu_read_ram_bw * 1e9) * 1000; // in ms
+
+                if (!in_set(m, M4)) {
+                    kappa += (bi / n_vocab + bo) / (disk_speed[m] * 1e9) * 1000; // in ms
+                }
             }
+
             if (in_set(m, M3)) {
                 kappa += (c_cpu[m] - dev.memory.available_physical * GIGABYTE - dev.memory.used_can_swap * GIGABYTE * int(is_android)) / (disk_speed[m] * 1e9) * 1000; // in ms
             }
@@ -1128,23 +1142,11 @@ static bool assign_device(
         // -------------------------------------------------------------
         // Construct vectors vz, vz_gpu
         // -------------------------------------------------------------
-        // z and z_gpu are used to express memory constraints:
-        // for z:
-        //   - M1:  (d_m^{avail} - b_cio) / (L*b')
-        //   - M2:  (d_m^{total} - b_cio - c_gpu) / (L*b')
-        //   - M3:  (d_m^{avail}+d_m^{swapout} - b_cio) / (L*b')
-        //   - M4:  - (d_m^{avail} - b_cio) / (L*b') on macOS without Metal,
-        //       or - (d_m^{total} - b_cio - c_gpu) / (L*b') on macOS with Metal,
-        //       or - (d_m^{avail}+d_m^{swapout} - b_cio) / (L*b') on Linux or Android
-        //
-        // for z_gpu:
-        //   - M1:  (d_{m,cuda}^{avail} - c_gpu) / (L*b'),
-        // d_{m,cuda}^{avail} is non-zero only if the device supports CUDA
         std::vector<float> vec_z(n_world, 0.0f), vec_z_gpu(n_world, 0.0f);
         std::vector<int> dev_gpu(n_world, 0);
 
         for (uint32_t m = 0; m < n_world; ++m) {
-            const device_info &dev = dev_info_set[m];
+            const device_info & dev = dev_info_set[m];
 
             GGML_ASSERT(dev.device_os != nullptr);
             bool is_macos   = strcmp(dev.device_os, "macOS") == 0;
@@ -1152,7 +1154,7 @@ static bool assign_device(
             bool is_windows = strcmp(dev.device_os, "Windows") == 0;
             GGML_ASSERT(!is_windows && "Windows is not tested yet\n");
 
-            int64_t b_cio = (bi + bo) * int(m == 0) + c_cpu[m];
+            int64_t b_cio = (bi / n_vocab + bo) * int(m == 0) + c_cpu[m];
 
             if (in_set(m, M1)) {
                 vec_z[m] = (double)(dev.memory.available_physical * GIGABYTE - b_cio) / (double)(n_layer * b_prime);
@@ -1174,7 +1176,7 @@ static bool assign_device(
                 float reserved_mem = 0.1f; // reserved shared memory to avoid potential OOM, set to 100 MiB by default
                 vec_z_gpu[m] = (double)((dev.gpu_props.memory_free - reserved_mem) * GIGABYTE - c_gpu[m]) / (double)(n_layer * b_prime);
                 if (dev.gpu_support.metal && m == 0 && cparams.keep_out_in_metal) {
-                    vec_z_gpu[m] -= (double)(bi + bo) / (double)(n_layer * b_prime);
+                    vec_z_gpu[m] -= (double)bo / (double)(n_layer * b_prime);
                 }
                 dev_gpu[m] = 1;
             } else {
@@ -1269,7 +1271,7 @@ static bool assign_device(
             
             // constraint coefficients 3: RAM constraint for each device
             for (uint32_t m = 0; m < n_world; ++m) {
-                const device_info &dev = dev_info_set[m];
+                const device_info & dev = dev_info_set[m];
                 GGML_ASSERT(dev.device_os != nullptr);
                 bool is_macos = strcmp(dev.device_os, "macOS") == 0;
                 int cons_row = constraint_idx + m;
@@ -1373,10 +1375,11 @@ static bool assign_device(
         GGML_ASSERT(final_solution[m] == w[m] && final_solution[m + n_world] == n[m]);
         LOG_INF("\n%s:\n", device_name);
         LOG_INF("  - Device Index   : %d\n", m);
+        LOG_INF("  - Assignment Set : %s\n", in_set(m, M1) ? "M1" : in_set(m, M2) ? "M2" : in_set(m, M3) ? "M3" : "M4");
         LOG_INF("  - N Layer Window : %d\n", w[m]);
         LOG_INF("  - N GPU Layers   : %d\n", n[m]);
     }
-    LOG_INF("\nTotal Latency: %.3f ms\n", final_objective);
+    LOG_INF("\nEstimated Latency: %.3f ms\n", final_objective);
     LOG_INF("------------------------------------------");
 
 #else
@@ -1478,7 +1481,7 @@ struct llama_init_result llama_init_from_gpt_params(gpt_params & params) {
         uint32_t n_layer_window[32] = {0}, n_gpu_layers[32] = {0};
         if (my_rank == 0) {
             // automatically determine n_layer_window and n_gpu_layers
-            if (!assign_device(n_world, my_rank, dev_info_set, n_layer_window, n_gpu_layers, model, cparams)) {
+            if (!assign_layers_to_device(n_world, my_rank, dev_info_set, n_layer_window, n_gpu_layers, model, cparams)) {
                 LOG_ERR("%s: Invalid allocation by HiGHS solver\n", __func__);
                 llama_free(lctx);
                 llama_free_model(model);
