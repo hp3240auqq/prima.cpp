@@ -1691,11 +1691,11 @@ static ggml_type kv_cache_type_from_str(const std::string & s) {
 struct llama_context_params llama_context_params_from_gpt_params(const gpt_params & params) {
     auto cparams = llama_context_default_params();
 
-    cparams.n_world               = params.n_world;
-    cparams.rank                  = params.rank;
-    cparams.unload                = params.unload;
+    cparams.n_world           = params.n_world;
+    cparams.rank              = params.rank;
+    cparams.unload            = params.unload;
     cparams.keep_out_in_metal = params.keep_out_in_metal;
-    cparams.n_gpu_layers          = params.n_gpu_layers;
+    cparams.n_gpu_layers      = params.n_gpu_layers;
     std::copy(std::begin(params.n_layer_window), std::end(params.n_layer_window), cparams.n_layer_window);
 
     if (cparams.master_ip != nullptr) {

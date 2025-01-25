@@ -19781,7 +19781,7 @@ struct llama_model_params llama_model_default_params() {
         /*.use_mmap                    =*/ true,
         /*.use_mlock                   =*/ false,
         /*.check_tensors               =*/ false,
-        /*.keep_out_in_metal           =*/ false,
+        /*.keep_out_in_metal           =*/ true,
     };
 
 #ifdef GGML_USE_METAL
@@ -19799,7 +19799,7 @@ struct llama_context_params llama_context_default_params() {
         /*.n_layer_window              =*/ {32},
         /*.n_gpu_layers                =*/ 0,
         /*.unload                      =*/ false,
-        /*.keep_out_in_metal           =*/ false,
+        /*.keep_out_in_metal           =*/ true,
         /*.master_ip                   =*/ nullptr,
         /*.next_node_ip                =*/ nullptr,
         /*.n_ctx                       =*/ 512,
