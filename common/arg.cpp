@@ -738,6 +738,9 @@ gpt_params_context gpt_params_parser_init(gpt_params & params, llama_example ex,
         }
     ).set_env("LLAMA_ARG_CUDA_MEM"));
 // #ifdef GGML_USE_METAL
+//     // warn: if the output layer weights are not kept in metal shared memory, its mmap-ed weight data
+//     // could be released by the OS and reloaded repeatedly, which causes additional disk I/O latency.
+//     // so we recommend to keep the output layer weights in metal shared memory.
 //     add_opt(llama_arg(
 //         {"--keep-out-in-metal"},
 //         format("whether to keep output weights in metal memory (default: %s)", params.keep_out_in_metal ? "true" : "false"),
