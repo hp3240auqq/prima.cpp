@@ -3620,12 +3620,10 @@ void llama_profile_device(
 
     dev_info->gpu_props.name                = gpu_props.name;
     dev_info->gpu_props.description         = gpu_props.description;
-    dev_info->gpu_props.memory_free         = round(gpu_props.memory_free  / (double)(1 << 30) * 100) / 100;
 
-#if defined(GGML_USE_CUDA) || defined(GGML_USE_METAL)
-    // GPU memory limitation
+    // reserved/limit memory to avoid potential OOM, default to 200 MiB
+    dev_info->gpu_props.memory_free         = round(gpu_props.memory_free  / (double)(1 << 30) * 100) / 100 - 0.2;
     dev_info->gpu_props.memory_free         = std::min((float)gpu_mem, dev_info->gpu_props.memory_free);
-#endif
 
     dev_info->gpu_props.memory_total        = round(gpu_props.memory_total / (double)(1 << 30) * 100) / 100;
     dev_info->gpu_props.metal_read_vram_bw  = device_metal_read_vram_bw();
@@ -18072,9 +18070,9 @@ static int llama_decode_internal(
                     manage_graph_tensors(sub_gf,  POSIX_MADV_DONTNEED);
 
                     int next_gf_id = (i + 1) % gf.size();
-                    manage_graph_tensors(gf[next_gf_id], POSIX_MADV_WILLNEED, true);
+                    manage_graph_tensors(gf[next_gf_id], POSIX_MADV_WILLNEED, false);
                     if (my_rank == 0 && (is_last_l || (next_gf_id == (int)gf.size() - 1))) {
-                        manage_graph_tensors(gf[0], POSIX_MADV_WILLNEED, true);
+                        manage_graph_tensors(gf[0], POSIX_MADV_WILLNEED, false);
                     }
                 }
             }

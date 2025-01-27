@@ -1201,8 +1201,7 @@ static bool assign_layers_to_device(
             }
 
             if (dev_gpu[m]) {
-                float reserved_mem = 0.1f; // reserved shared memory to avoid potential OOM, set to 100 MiB by default
-                vec_z_gpu[m] = (double)((dev.gpu_props.memory_free - reserved_mem) * GIGABYTE - c_gpu[m]) / (double)(n_layer * b_prime);
+                vec_z_gpu[m] = (double)(dev.gpu_props.memory_free * GIGABYTE - c_gpu[m]) / (double)(n_layer * b_prime);
                 if (dev.gpu_support.metal && m == 0 && cparams.keep_out_in_metal) {
                     vec_z_gpu[m] -= (double)bo / (double)(n_layer * b_prime);
                 }
