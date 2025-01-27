@@ -101,10 +101,10 @@ const char * device_os() {
 #ifdef _WIN32
     return "Windows";
 #elif __linux__
-    const char * os = get_uname_os();
-    if (strstr(os, "Android") != nullptr) {
-        return "Android";
-    }
+    // const char * os = get_uname_os();
+    // if (strstr(os, "Android") != nullptr) {
+    //     return "Android";
+    // }
     return "Linux";
 #elif __APPLE__ || __MACH__
     return "macOS";
