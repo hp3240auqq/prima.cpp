@@ -104,10 +104,10 @@
 #define timer(name) auto _timer_##name = Timer(#name)
 
 struct Timer {
-    const char* name;
+    const char * name;
     int64_t start_time;
-    bool enable_timer = false;
-    Timer(const char* name) : name(name), start_time(ggml_time_us()) {}
+    bool enable_timer = true;
+    Timer(const char * name) : name(name), start_time(ggml_time_us()) {}
     ~Timer() {
         if (enable_timer) {
             int64_t end_time = ggml_time_us();
@@ -20093,8 +20093,10 @@ int llama_bcast_layer_setup(struct llama_context * ctx, uint32_t * n_layer_windo
         send_msgs.emplace_back("n_layer_window", strlen("n_layer_window"));
         send_msgs.emplace_back(n_layer_window, sizeof(uint32_t) * 32);
 
-        send_msgs.emplace_back("n_gpu_layers", strlen("n_gpu_layers"));
-        send_msgs.emplace_back(n_gpu_layers, sizeof(uint32_t) * 32);
+        if (n_gpu_layers != nullptr) {
+            send_msgs.emplace_back("n_gpu_layers", strlen("n_gpu_layers"));
+            send_msgs.emplace_back(n_gpu_layers, sizeof(uint32_t) * 32);
+        }
 
         zmq::send_multipart(*ctx->send_socket, send_msgs);
     } catch (const zmq::error_t& e) {
@@ -20114,20 +20116,15 @@ int llama_recv_layer_setup(struct llama_context * ctx, uint32_t * n_layer_window
         return -1;
     }
 
-    if (recv_msgs.size() != 4) { // expecting n_layer_windows and n_gpu_layers
-        LLAMA_LOG_INFO("Unexpected number of messages received: %zu\n", recv_msgs.size());
-        return -1;
-    }
-
-    if (recv_msgs[0].to_string() != "n_layer_window" || recv_msgs[2].to_string() != "n_gpu_layers") {
-        LLAMA_LOG_INFO("Unexpected message received\n");
-        return -1;
-    }
-
+    GGML_ASSERT(recv_msgs[0].to_string() == "n_layer_window");
     GGML_ASSERT(recv_msgs[1].size() == sizeof(uint32_t) * 32);
-    GGML_ASSERT(recv_msgs[3].size() == sizeof(uint32_t) * 32);
     memcpy(n_layer_window, recv_msgs[1].data(), sizeof(uint32_t) * 32);
-    memcpy(n_gpu_layers,   recv_msgs[3].data(), sizeof(uint32_t) * 32);
+
+    if (recv_msgs.size() > 2) {
+        GGML_ASSERT(recv_msgs[2].to_string() == "n_gpu_layers");
+        GGML_ASSERT(recv_msgs[3].size() == sizeof(uint32_t) * 32);
+        memcpy(n_gpu_layers,   recv_msgs[3].data(), sizeof(uint32_t) * 32);
+    }
 
     if (my_rank != n_world - 1) {
         try {

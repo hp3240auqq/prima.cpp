@@ -3259,7 +3259,7 @@ static void ggml_backend_metal_log_allocated_size(id<MTLDevice> device, size_t s
 #ifndef GGML_METAL_NDEBUG
 #if TARGET_OS_OSX || (TARGET_OS_IOS && __clang_major__ >= 15)
     if (@available(macOS 10.12, iOS 16.0, *)) {
-        GGML_LOG_DEBUG("%s: allocated buffer, size = %8.2f MiB, (%8.2f / %8.2f)\n",
+        GGML_LOG_WARN("%s: allocated buffer, size = %8.2f MiB, (%8.2f / %8.2f)\n",
                 __func__,
                 size_aligned / 1024.0 / 1024.0,
                 device.currentAllocatedSize / 1024.0 / 1024.0,
