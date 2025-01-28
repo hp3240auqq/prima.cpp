@@ -1486,7 +1486,7 @@ struct llama_init_result llama_init_from_gpt_params(gpt_params & params) {
 
     if (auto_schedule) {
         // get device profile
-        LOG_INF("Start profiling this device, this may take some seconds ...\n");
+        LOG_INF("\nstart profiling this device, this may take some seconds ...\n");
         dev_info.rank = params.rank;
         llama_profile_device(&dev_info, model, ml, params.gpu_mem, params.n_predict, params.n_ctx, params.cpuparams.n_threads, params.flash_attn);
     }

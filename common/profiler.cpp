@@ -3,13 +3,13 @@
 #include "ggml.h"
 #include "ggml-backend.h"
 #include "llama.h"
+#include <sys/stat.h>
 
 #if defined(_WIN32) || defined(_WIN64)
     #include <windows.h>
 #elif defined(__linux__)
     #include <unistd.h>
     #include <sys/sysinfo.h>
-    #include <sys/stat.h>
     #include <sys/types.h>
     #include <fcntl.h>
     #include <unistd.h>
@@ -828,6 +828,44 @@ static size_t get_default_readahead_size() {
 #endif
 }
 
+static std::vector<std::string> split(const std::string & str, char delimiter) {
+    std::vector<std::string> tokens;
+    std::stringstream ss(str);
+    std::string token;
+    while (std::getline(ss, token, delimiter)) {
+        tokens.push_back(token);
+    }
+    return tokens;
+}
+
+static bool path_exist_in_env(const std::string & path, const std::string & env_path) {
+    auto paths = split(env_path, ':');
+    return std::find(paths.begin(), paths.end(), path) != paths.end();
+}
+
+static bool path_exist_in_fs(const std::string & path) {
+    struct stat info;
+    return (stat(path.c_str(), &info) == 0 && (info.st_mode & S_IFDIR));
+}
+
+static void check_env_path() {
+    const char * cur_env_path   = std::getenv("PATH");
+    std::string update_env_path = cur_env_path ? cur_env_path : "";
+    std::vector<std::string> paths_to_check = {"/opt/homebrew/bin", "/usr/local/bin"};
+
+    for (const auto & path : paths_to_check) {
+        if (!path_exist_in_env(path, update_env_path) && path_exist_in_fs(path)) {
+            if (!update_env_path.empty() && update_env_path.back() != ':') {
+                update_env_path += ':';
+            }
+            update_env_path += path;
+            LOG_INF("add missing path: %s, current env path: %s\n", path.c_str(), update_env_path.c_str());
+        }
+    }
+
+    setenv("PATH", update_env_path.c_str(), 1);
+}
+
 static void external_fio_impl(float * read_bw, float * write_bw, bool op_rand, int n_threads) {
     const char * test_file = "fio_test";
     const char * fio_conf_template = R"(
@@ -889,6 +927,8 @@ numjobs=%d
     const char * ioengine    = "posixaio";
     const char * output_file = "fio_output.log";
     const char * conf_file   = "config.fio";
+
+    check_env_path(); // ensure the fio bin file can be found
 
     int num_try = 0;
     int ret;
