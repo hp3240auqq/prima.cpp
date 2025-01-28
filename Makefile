@@ -263,26 +263,26 @@ MK_CFLAGS    = -std=c11   -fPIC
 MK_CXXFLAGS  = -std=c++11 -fPIC
 MK_NVCCFLAGS = -std=c++11
 
+MK_CPPFLAGS += -isystem /usr/local/include
+MK_LDFLAGS  += -L/usr/local/lib -lzmq
+
 ifeq ($(UNAME_S),Darwin)
     MK_CPPFLAGS += -isystem /opt/homebrew/include
     MK_LDFLAGS  += -L/opt/homebrew/lib -lzmq
-else ifeq ($(UNAME_S),Linux)
-    MK_CPPFLAGS += -isystem /usr/local/include
-    MK_LDFLAGS  += -L/usr/local/lib -lzmq
 endif
 
 ifeq ($(USE_HIGHS),1)
+	HIGHS_CPPFLAGS = -isystem /usr/local/include/highs
+	HIGHS_LDFLAGS  = -L/usr/local/lib -lhighs
+
 	ifeq ($(UNAME_S),Darwin)
-        HIGHS_CPPFLAGS = -isystem /opt/homebrew/include/highs
-        HIGHS_LDFLAGS  = -L/opt/homebrew/lib -lhighs
-    else ifeq ($(UNAME_S),Linux)
-		HIGHS_CPPFLAGS = -isystem /usr/local/include/highs
-    	HIGHS_LDFLAGS  = -L/usr/local/lib -lhighs
-		ifneq ($(CONDA_PREFIX),)
-			HIGHS_CPPFLAGS += -isystem $(CONDA_PREFIX)/include -isystem $(CONDA_PREFIX)/include/highs
-			HIGHS_LDFLAGS  += -L$(CONDA_PREFIX)/lib -Wl,-rpath,$(CONDA_PREFIX)/lib
-		endif
+        HIGHS_CPPFLAGS += -isystem /opt/homebrew/include/highs
+        HIGHS_LDFLAGS  += -L/opt/homebrew/lib -lhighs
+	else ifneq ($(CONDA_PREFIX),)
+		HIGHS_CPPFLAGS += -isystem $(CONDA_PREFIX)/include -isystem $(CONDA_PREFIX)/include/highs
+		HIGHS_LDFLAGS  += -L$(CONDA_PREFIX)/lib -Wl,-rpath,$(CONDA_PREFIX)/lib
 	endif
+
 	MK_CPPFLAGS += $(HIGHS_CPPFLAGS) -DUSE_HIGHS
 	MK_LDFLAGS  += $(HIGHS_LDFLAGS)
 endif
