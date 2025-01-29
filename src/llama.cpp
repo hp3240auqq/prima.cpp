@@ -3618,6 +3618,7 @@ void llama_profile_device(
     dev_info->cpu_props.name                = cpu_props.name;
     dev_info->cpu_props.description         = cpu_props.description;
 
+#if defined(GGML_USE_METAL) || defined(GGML_USE_CUDA)
     dev_info->gpu_props.name                = gpu_props.name;
     dev_info->gpu_props.description         = gpu_props.description;
 
@@ -3630,6 +3631,7 @@ void llama_profile_device(
     dev_info->gpu_props.cuda_read_vram_bw   = device_cuda_read_vram_bw();
     dev_info->gpu_props.metal_mem_cpy_delay = device_metal_mem_copy(model);
     dev_info->gpu_props.cuda_mem_cpy_delay  = device_cuda_mem_copy(model);
+#endif
 
     if (is_dtype_exist(n_params, GGML_TYPE_F32)) {
         dev_info->cpu_props.flops_f32_f32       = device_cpu_flops  (model, GGML_TYPE_F32,  GGML_TYPE_F32, n_threads);

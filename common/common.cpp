@@ -1539,7 +1539,7 @@ struct llama_init_result llama_init_from_gpt_params(gpt_params & params) {
         std::copy(std::begin(n_layer_window), std::end(n_layer_window), mparams.n_layer_window);
         std::copy(std::begin(n_layer_window), std::end(n_layer_window), llama_context_n_layer_window(lctx));
 
-        if (params.n_gpu_layers > 0) {
+        if (params.n_gpu_layers == 0) { // if -ngl not set
             params.n_gpu_layers  = n_gpu_layers[my_rank];
             cparams.n_gpu_layers = n_gpu_layers[my_rank];
             mparams.n_gpu_layers = n_gpu_layers[my_rank];
