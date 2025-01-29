@@ -517,6 +517,19 @@ static uint64_t device_host_physical_memory(bool available) {
         if (host_statistics64(host, HOST_VM_INFO64, (host_info64_t)&vm_stats, &count) == KERN_SUCCESS) {
             size_t page_size = get_page_size();
             memory = (vm_stats.free_count + vm_stats.inactive_count + vm_stats.purgeable_count) * page_size;
+
+            // active pages compression has higher priority than releasing the clean mmap-ed pages
+            // some of the active pages can be compressed to save memory for our mmap-ed model weights
+            if (is_uma_arch()) {
+                // assume 20% of active pages can be compressed on macOS UMA (an empirical value) 
+                // because GPU is more likely to use the inactive memory
+                memory += vm_stats.active_count * 0.2 * page_size;
+            } else {
+                // assume 50% of active pages can be compressed on macOS x86_64 (an empirical value)
+                memory += vm_stats.active_count * 0.5 * page_size;
+            }
+
+            
             if (!is_uma_arch()) memory += vm_stats.speculative_count * page_size;
         } else {
             LOG_INF("host_statistics64 failed\n");
