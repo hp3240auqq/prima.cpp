@@ -48,6 +48,20 @@
 #include <dirent.h>
 
 
+static size_t get_page_size() {
+    size_t page_size = 0;
+
+#ifdef _WIN32
+    SYSTEM_INFO si;
+    GetSystemInfo(&si);
+    page_size = si.dwPageSize;
+#elif defined(__APPLE__) || defined(__linux__)
+    page_size = sysconf(_SC_PAGESIZE);
+#endif
+
+    return page_size;
+}
+
 static const char * get_uname_os() {
     std::unique_ptr<FILE, decltype(&pclose)> pipe(popen("uname -o", "r"), pclose);
     if (!pipe) {
@@ -726,20 +740,6 @@ uint64_t device_swap_memory(bool available) {
     } else {
         return device_host_swap_memory(available);
     }
-}
-
-static size_t get_page_size() {
-    size_t page_size = 0;
-
-#ifdef _WIN32
-    SYSTEM_INFO si;
-    GetSystemInfo(&si);
-    page_size = si.dwPageSize;
-#elif defined(__APPLE__) || defined(__linux__)
-    page_size = sysconf(_SC_PAGESIZE);
-#endif
-
-    return page_size;
 }
 
 static std::string get_default_device_path() {
