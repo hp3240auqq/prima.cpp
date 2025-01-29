@@ -501,13 +501,9 @@ static uint64_t device_host_physical_memory(bool available) {
 
     if (available) {
         if (host_statistics64(host, HOST_VM_INFO64, (host_info64_t)&vm_stats, &count) == KERN_SUCCESS) {
-            size_t page_size = sysconf(_SC_PAGESIZE);
-
-            if (is_uma_arch()) { // Mac UMA with ARM64
-                memory = (vm_stats.free_count + vm_stats.inactive_count) * page_size;
-            } else { // Mac with x86_64
-                memory = total_memory - (vm_stats.internal_page_count - vm_stats.purgeable_count) * page_size;
-            }
+            size_t page_size = get_page_size();
+            memory = (vm_stats.free_count + vm_stats.inactive_count + vm_stats.purgeable_count) * page_size;
+            if (!is_uma_arch()) memory += vm_stats.speculative_count * page_size;
         } else {
             LOG_INF("host_statistics64 failed\n");
         }
