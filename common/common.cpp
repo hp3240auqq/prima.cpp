@@ -1483,14 +1483,12 @@ struct llama_init_result llama_init_from_gpt_params(gpt_params & params) {
     uint32_t n_world   = params.n_world;
     uint32_t my_rank   = params.rank;
     bool auto_schedule = params.n_layer_window[0] == 0;
-
-    if (auto_schedule) {
-        // get device profile
-        LOG_INF("\nstart profiling this device, this may take some seconds ...\n");
-        dev_info.rank = params.rank;
-        llama_profile_device(&dev_info, model, ml, params.gpu_mem, params.n_predict, params.n_ctx, params.cpuparams.n_threads, params.flash_attn);
-    }
-
+    
+    // get device profile
+    LOG_INF("\nstart profiling this device, this may take some seconds ...\n");
+    dev_info.rank = params.rank;
+    llama_profile_device(&dev_info, model, ml, params.gpu_mem, params.n_predict, params.n_ctx, params.cpuparams.n_threads, params.flash_attn);
+    
     // create llama context
     struct llama_context_params cparams = llama_context_params_from_gpt_params(params);
     llama_context * lctx                = llama_new_context_with_model(model, cparams);
@@ -1502,24 +1500,21 @@ struct llama_init_result llama_init_from_gpt_params(gpt_params & params) {
         mparams.n_layer_window[0] = n_layers;
         llama_context_n_layer_window(lctx)[0] = n_layers;
     } else {
+        uint32_t n_layer_window[32] = {0}, n_gpu_layers[32] = {0};
+
         // initialize sockets
         llama_init_sockets(lctx, n_world, my_rank);
 
-        uint32_t n_layer_window[32] = {0}, n_gpu_layers[32] = {0};
+        // sychronize device profile to the master node
+        struct device_info * dev_info_set = nullptr;
+        if (my_rank == 0) {
+            dev_info_set = (struct device_info *)malloc(n_world * sizeof(struct device_info));
+            dev_info_set[0] = dev_info;
 
-        if (auto_schedule) {
-            // sychronize device profile to the master node
-            struct device_info * dev_info_set = nullptr;
-            if (my_rank == 0) {
-                dev_info_set = (struct device_info *)malloc(n_world * sizeof(struct device_info));
-                dev_info_set[0] = dev_info;
-                llama_gather_device_info(lctx, dev_info_set);
-                device_print_props(dev_info_set, n_world, model, cparams);
-            } else {
-                llama_send_device_info(lctx, &dev_info);
-            }
+            llama_gather_device_info(lctx, dev_info_set);
+            device_print_props(dev_info_set, n_world, model, cparams);
 
-            if (my_rank == 0) {
+            if (auto_schedule) {
                 // automatically determine n_layer_window and n_gpu_layers
                 if (!assign_layers_to_device(n_world, my_rank, dev_info_set, n_layer_window, n_gpu_layers, model, cparams)) {
                     LOG_ERR("%s: Invalid allocation by HiGHS solver\n", __func__);
@@ -1527,21 +1522,14 @@ struct llama_init_result llama_init_from_gpt_params(gpt_params & params) {
                     llama_free_model(model);
                     return iparams;
                 }
-            }
-        } else {
-            if (my_rank == 0) {
-                // use the user-defined n_layer_window
-                std::copy(std::begin(params.n_layer_window), std::end(params.n_layer_window), n_layer_window);
-            }
-        }
-
-        if (my_rank == 0) {
-            if (auto_schedule) {      
                 llama_bcast_layer_setup(lctx, n_layer_window, n_gpu_layers);
             } else {
+                // use the user-defined n_layer_window
+                std::copy(std::begin(params.n_layer_window), std::end(params.n_layer_window), n_layer_window);
                 llama_bcast_layer_setup(lctx, n_layer_window, nullptr);
             }
         } else {
+            llama_send_device_info(lctx, &dev_info);
             llama_recv_layer_setup(lctx, n_layer_window, n_gpu_layers);
         }
 
