@@ -526,7 +526,7 @@ static uint64_t device_host_physical_memory(bool available) {
                 memory += vm_stats.active_count * 0.2 * page_size;
             } else {
                 // assume 50% of active pages can be compressed on macOS x86_64 (an empirical value)
-                memory += vm_stats.active_count * 0.5 * page_size;
+                memory += vm_stats.active_count * 0.6 * page_size;
             }
 
             
