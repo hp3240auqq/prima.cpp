@@ -610,6 +610,12 @@ static uint64_t device_cgroup_physical_memory(bool available) {
             uint64_t mem_max     = read_value_from_file("/sys/fs/cgroup/memory.max");
             uint64_t mem_current = read_value_from_file("/sys/fs/cgroup/memory.current");
 
+            if (mem_max == UINT64_MAX) {
+                mem_max = device_host_physical_memory(false);
+            }
+
+            uint64_t mem_low = read_value_from_file("/sys/fs/cgroup/memory.low");
+
             auto stats = read_memory_stat();
 
             uint64_t slab_reclaimable = 0;
@@ -622,7 +628,12 @@ static uint64_t device_cgroup_physical_memory(bool available) {
                 mmap_file = stats["file"];
             }
 
-            uint64_t available_memory = mem_max - mem_current + mmap_file + slab_reclaimable;
+            uint64_t available_memory = mem_max - mem_current;
+            if (mem_low > 0 && available_memory < mem_low) {
+                available_memory = mem_low;
+            }
+            available_memory += slab_reclaimable * 0.5 + mmap_file * 0.5;
+            
             return available_memory < mem_max ? available_memory : mem_max;
         } else {
             LOG_WRN("Using cgroup v1, the available memory could be error, will be addressed later\n");
