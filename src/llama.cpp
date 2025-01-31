@@ -3623,8 +3623,8 @@ void llama_profile_device(
     dev_info->gpu_props.description         = gpu_props.description;
 
     // reserved/limit memory to avoid potential OOM, default to 300 MiB
-    dev_info->gpu_props.memory_free         = round(gpu_props.memory_free  / (double)(1 << 30) * 100) / 100 - 0.3;
-    dev_info->gpu_props.memory_free         = std::min((float)gpu_mem, dev_info->gpu_props.memory_free);
+    dev_info->gpu_props.memory_free         = round(gpu_props.memory_free  / (double)(1 << 30) * 100) / 100;
+    dev_info->gpu_props.memory_free         = std::min((float)gpu_mem, dev_info->gpu_props.memory_free) - 0.3;
 
     dev_info->gpu_props.memory_total        = round(gpu_props.memory_total / (double)(1 << 30) * 100) / 100;
     dev_info->gpu_props.metal_read_vram_bw  = device_metal_read_vram_bw();
