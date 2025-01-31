@@ -3344,7 +3344,7 @@ struct llama_context {
     mutable int64_t n_queued_tokens = 0;
 
     mutable int32_t n_p_eval = 0; // number of tokens in eval calls for the prompt (with batch size > 1)
-    mutable int32_t n_eval   = -1; // number of eval calls, set to -1 to ignore the first eval
+    mutable int32_t n_eval   = -5; // number of eval calls, set to -5 to ignore the first 5 evals
 
     // host buffer for the model output (logits and embeddings)
     ggml_backend_buffer_t buf_output = nullptr;
@@ -22716,7 +22716,7 @@ void llama_synchronize(struct llama_context * ctx) {
 
     // add the evaluation to the stats
     if (ctx->n_queued_tokens == 1) {
-        if (!ctx->cparams.no_perf && ctx->n_eval >= 0) { // ignore the first two evals due to preheat
+        if (!ctx->cparams.no_perf && ctx->n_eval >= 0) { // ignore the first 5 evals due to preheat
             ctx->t_eval_us += ggml_time_us() - ctx->t_compute_start_us;
         }
         ctx->n_eval++;
@@ -23364,7 +23364,7 @@ void llama_perf_context_print(const struct llama_context * ctx) {
 void llama_perf_context_reset(struct llama_context * ctx) {
     ctx->t_start_us  = ggml_time_us();
     ctx->t_eval_us   = 0;
-    ctx->n_eval      = -1; // set to -1 to ignore the first eval due to preheat
+    ctx->n_eval      = -5; // set to -5 to ignore the first 5 evals due to preheat
     ctx->t_p_eval_us = ctx->n_p_eval = 0;
 }
 
