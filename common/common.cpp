@@ -1145,27 +1145,18 @@ static bool assign_layers_to_device(
         std::vector<float> vec_a(n_world, 0.0f), vec_b(n_world, 0.0f), vec_c(n_world, 0.0f);
         
         for (uint32_t m = 0; m < n_world; ++m) {
-            if (in_set(m, M1)) {
-                vec_a[m] = alpha[m] + b / (disk_speed[m] * 1e9) * 1000; // in ms
-                vec_b[m] = 0.0f;
-                vec_c[m] = xi[m];
-            } else if (in_set(m, M2)) {
-                vec_a[m] = alpha[m] + b / (disk_speed[m] * 1e9) * 1000; // in ms
-                vec_b[m] = beta[m];
-                vec_c[m] = xi[m];
-            } else if (in_set(m, M3)) {
+            if (!in_set(m, M4)) {
                 vec_a[m] = alpha[m] + b_prime / (disk_speed[m] * 1e9) * 1000; // in ms
                 if (dev_gpu[m]) {
                     vec_b[m] = beta[m] - b_prime / (disk_speed[m] * 1e9) * 1000; // in ms
                 }
-                vec_c[m] = xi[m];
             } else {
                 vec_a[m] = alpha[m];
                 if (dev_gpu[m]) {
                     vec_b[m] = beta[m];
                 }
-                vec_c[m] = xi[m];
             }
+            vec_c[m] = xi[m];
         }
 
         // -------------------------------------------------------------
