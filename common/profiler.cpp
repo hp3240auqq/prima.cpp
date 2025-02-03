@@ -485,7 +485,7 @@ static uint64_t device_host_physical_memory(bool available) {
                     std::string key;
                     uint64_t kb;
                     iss >> key >> kb;
-                    memory = kb * 1024;
+                    memory = kb * 1024 * 0.8;
                     break;
                 }
             }
