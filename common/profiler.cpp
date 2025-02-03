@@ -521,17 +521,20 @@ static uint64_t device_host_physical_memory(bool available) {
             // active pages compression has higher priority than releasing the clean mmap-ed pages
             // some of the active pages can be compressed to save memory for our mmap-ed model weights
             if (is_uma_arch()) {
-                // assume 20% of active pages can be compressed on macOS UMA (an empirical value) 
+                // assume 30% of active pages can be compressed on macOS UMA (an empirical value) 
                 // because GPU is more likely to use the inactive memory
-                memory += vm_stats.active_count * 0.2 * page_size;
+                memory += vm_stats.active_count * 0.3 * page_size;
             } else {
                 // assume 50% of active pages can be compressed on macOS NUMA (an empirical value)
                 memory += vm_stats.active_count * 0.5 * page_size;
             }
 
             if (!is_uma_arch()) {
-                memory += vm_stats.speculative_count * page_size;
-                memory += vm_stats.compressor_page_count * page_size;
+                memory += (vm_stats.speculative_count + vm_stats.compressor_page_count) * page_size;
+            } else {
+// #ifndef GGML_USE_METAL
+//                 memory += vm_stats.speculative_count * page_size;
+// #endif
             }
         } else {
             LOG_INF("host_statistics64 failed\n");

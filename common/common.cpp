@@ -892,6 +892,8 @@ static bool assign_layers_to_device(
     for (uint32_t m = 0; m < n_world; ++m) {
         // alpha[m]
         const device_info & dev = dev_info_set[m];
+        float t_read_ram_cpu = 0.0f;
+
         float t_calc_cpu = (
             master.model_flops.layer_f32_f32 / (dev.cpu_props.flops_f32_f32 * 1e9 + EPS) +
             master.model_flops.layer_f16_f32 / (dev.cpu_props.flops_f16_f32 * 1e9 + EPS) +
@@ -900,7 +902,7 @@ static bool assign_layers_to_device(
             master.model_flops.layer_q6k_f32 / (dev.cpu_props.flops_q6k_f32 * 1e9 + EPS) +
             master.model_flops.layer_q80_f32 / (dev.cpu_props.flops_q80_f32 * 1e9 + EPS)) * 1000; // in ms
         float t_kv_cpy_cpu = dev.memory.mem_cpy_delay; // in ms
-        float t_read_ram_cpu = b_prime / (dev.memory.cpu_read_ram_bw * 1e9) * 1000; // in ms
+        // t_read_ram_cpu = b_prime / (dev.memory.cpu_read_ram_bw * 1e9) * 1000; // in ms
 
         alpha[m] = t_calc_cpu + t_kv_cpy_cpu + t_read_ram_cpu; // in ms
 
@@ -919,7 +921,7 @@ static bool assign_layers_to_device(
                     master.model_flops.layer_q6k_f32 / (dev.gpu_props.metal_flops_q6k_f32 * 1e9 + EPS) +
                     master.model_flops.layer_q80_f32 / (dev.gpu_props.metal_flops_q80_f32 * 1e9 + EPS)) * 1000; // in ms
                 t_kv_cpy_gpu = dev.gpu_props.metal_mem_cpy_delay; // in ms
-                t_read_ram_gpu = b_prime / (dev.gpu_props.metal_read_vram_bw * 1e9) * 1000; // in ms
+                // t_read_ram_gpu = b_prime / (dev.gpu_props.metal_read_vram_bw * 1e9) * 1000; // in ms
             } else {
                 t_calc_gpu = (
                     master.model_flops.layer_f32_f32 / (dev.gpu_props.cuda_flops_f32_f32 * 1e9 + EPS) +
@@ -929,7 +931,7 @@ static bool assign_layers_to_device(
                     master.model_flops.layer_q6k_f32 / (dev.gpu_props.cuda_flops_q6k_f32 * 1e9 + EPS) +
                     master.model_flops.layer_q80_f32 / (dev.gpu_props.cuda_flops_q80_f32 * 1e9 + EPS)) * 1000; // in ms
                 t_kv_cpy_gpu = dev.gpu_props.cuda_mem_cpy_delay; // in ms
-                t_read_ram_gpu = b_prime / (dev.gpu_props.cuda_read_vram_bw * 1e9) * 1000; // in ms
+                // t_read_ram_gpu = b_prime / (dev.gpu_props.cuda_read_vram_bw * 1e9) * 1000; // in ms
             }
             beta[m] = t_calc_gpu - t_calc_cpu + t_kv_cpy_gpu - t_kv_cpy_cpu + t_read_ram_gpu - t_read_ram_cpu; // in ms
         }
@@ -940,11 +942,7 @@ static bool assign_layers_to_device(
     }
 
     // we adopt an iterative optimization approach. Initially, $w_m$ is set proportionally 
-    // based on the available memory budget
-    // - $d_m^{\text{avail}}$ for macOS without Metal and Linux
-    // - $d_m^{\text{total}}$ for macOS with Metal
-    // - $d_m^{\text{avail}}+d_m^{\text{swapout}}$ for Android
-    // and $n_m$ is initialized to 0. 
+    // based on the available memory budget and $n_m$ is initialized to 0. 
     for (uint32_t m = 0; m < n_world; ++m) {
         const device_info & dev = dev_info_set[m];
         GGML_ASSERT(dev.device_os != nullptr);
@@ -1114,14 +1112,15 @@ static bool assign_layers_to_device(
                     dev.model_flops.layer_q6k_f32 / (dev.cpu_props.flops_q6k_f32 * 1e9 + EPS) +
                     dev.model_flops.layer_q80_f32 / (dev.cpu_props.flops_q80_f32 * 1e9 + EPS)) * 1000; // in ms
 
-                kappa += (bi / n_vocab + bo) / (dev.memory.cpu_read_ram_bw * 1e9) * 1000; // in ms
+                // kappa += (bi / n_vocab + bo) / (dev.memory.cpu_read_ram_bw * 1e9) * 1000; // in ms
 
+                kappa += (bi / n_vocab) / (disk_speed[m] * 1e9) * 1000; // in ms
                 if (!in_set(m, M4)) {
-                    kappa += (bi / n_vocab + bo) / (disk_speed[m] * 1e9) * 1000; // in ms
+                    kappa += bo / (disk_speed[m] * 1e9) * 1000; // in ms
                 }
             }
 
-            if (in_set(m, M3)) {
+            if (in_set(m, M1) || in_set(m, M3)) {  
                 kappa += (c_cpu[m] - dev.memory.available_physical * GIGABYTE - dev.memory.used_can_swap * GIGABYTE * int(is_android)) / (disk_speed[m] * 1e9) * 1000; // in ms
             }
         }
@@ -1137,24 +1136,20 @@ static bool assign_layers_to_device(
         // -------------------------------------------------------------
         // Construct vectors va, vb, vc
         // -------------------------------------------------------------
-        // a[m], b[m], c[m] are computed based on divisions M1, M2, M3, and M4:
-        //   - M1: a[m] = alpha[m] + b / s_m^{disk},  b[m] = 0,                        c[m] = xi[m]
-        //   - M2: a[m] = alpha[m] + b / s_m^{disk},  b[m] = beta[m],                  c[m] = xi[m]
-        //   - M3: a[m] = alpha[m] + b' / s_m^{disk}, b[m] = beta[m] - b'/ s_m^{disk}, c[m] = xi[m]
-        //   - M4: a[m] = alpha[m],                   b[m] = beta[m],                  c[m] = xi[m]
         std::vector<float> vec_a(n_world, 0.0f), vec_b(n_world, 0.0f), vec_c(n_world, 0.0f);
         
         for (uint32_t m = 0; m < n_world; ++m) {
-            if (!in_set(m, M4)) {
+            if (in_set(m, M1)) {
                 vec_a[m] = alpha[m] + b_prime / (disk_speed[m] * 1e9) * 1000; // in ms
-                if (dev_gpu[m]) {
-                    vec_b[m] = beta[m] - b_prime / (disk_speed[m] * 1e9) * 1000; // in ms
-                }
+            } else if (in_set(m, M2)) {
+                vec_a[m] = alpha[m] + b / (disk_speed[m] * 1e9) * 1000; // in ms
+                vec_b[m] = beta[m];
+            } else if (in_set(m, M3)) {
+                vec_a[m] = alpha[m] + b_prime / (disk_speed[m] * 1e9) * 1000; // in ms
+                if (dev_gpu[m]) vec_b[m] = beta[m] - b_prime / (disk_speed[m] * 1e9) * 1000; // in ms
             } else {
                 vec_a[m] = alpha[m];
-                if (dev_gpu[m]) {
-                    vec_b[m] = beta[m];
-                }
+                if (dev_gpu[m]) vec_b[m] = beta[m];
             }
             vec_c[m] = xi[m];
         }
@@ -1364,19 +1359,19 @@ static bool assign_layers_to_device(
                 k, objective_value, vec_to_str(solution.col_value).c_str(), best_k, best_objective, vec_to_str(best_solution).c_str());
         }
 
-        if (best_objective > final_objective) {
-            break; // avoid oscillation between two set assignments
-        }
-
         // update w[m] and n[m]
         GGML_ASSERT(best_solution.size() == n_world * 2 && "Invalid solution\n");
         std::copy(best_solution.begin(), best_solution.begin() + n_world, w.begin());
         std::copy(best_solution.begin() + n_world, best_solution.end(), n.begin());
 
+        bool solution_unchanged = (final_solution == best_solution);
+
         // update the global best solution
         final_k = best_k;
         final_objective = best_objective;
         final_solution = best_solution;
+
+        if (solution_unchanged) break;
     }
 
     LOG_INF("\n----- Allocation Strategy (by HiGHS) -----\n");
