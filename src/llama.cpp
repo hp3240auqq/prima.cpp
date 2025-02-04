@@ -17792,10 +17792,9 @@ static void manage_graph_tensors(struct ggml_cgraph * cgraph, int advice, bool f
     // if advice is POSIX_MADV_WILLNEED, force to prefetch data
     if (force && advice == POSIX_MADV_WILLNEED) {
         // coarse-grained prefetch
-        char * ptr = reinterpret_cast<char *>(first);
-        for (size_t off = 0; off < len; off += page_size * 32) {
-            volatile char data = ptr[off];
-            (void)data;
+        volatile char * ptr = (volatile char *)first;
+        for (size_t off = 0; off < len; off += page_size) {
+            (void)ptr[off];
         }
     }
 }
@@ -18070,9 +18069,9 @@ static int llama_decode_internal(
                 timer(manage_graph_tensors);
                 
                 int next_gf_id = (i + 1) % gf.size();
-                manage_graph_tensors(gf[next_gf_id], POSIX_MADV_WILLNEED, false);
+                manage_graph_tensors(gf[next_gf_id], POSIX_MADV_WILLNEED, true);
                 if (my_rank == 0 && (is_last_l || (next_gf_id == (int)gf.size() - 1))) {
-                    manage_graph_tensors(gf[0], POSIX_MADV_WILLNEED, false);
+                    manage_graph_tensors(gf[0], POSIX_MADV_WILLNEED, true);
                 }
 
                 if (cparams.unload && n_world > 1) {
