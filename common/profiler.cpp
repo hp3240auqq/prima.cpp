@@ -892,7 +892,12 @@ static void check_env_path() {
 }
 
 static void external_fio_impl(float * read_bw, float * write_bw, bool op_rand, int n_threads) {
-    const char * test_file = "fio_test";
+    pid_t pid = getpid(); // avoid conflict with other processes
+
+    std::string test_file   = "fio_test_"   + std::to_string(pid);
+    std::string output_file = "fio_output_" + std::to_string(pid) + ".log";
+    std::string conf_file   = "config_"     + std::to_string(pid) + ".fio";
+
     const char * fio_conf_template = R"(
 [global]
 ioengine=%s
@@ -948,10 +953,7 @@ numjobs=%d
     const char * read_type  = op_rand ? "randread" : "read";
     const char * write_type = op_rand ? "randwrite" : "write";
     const char * block_size = op_rand ? page_size_str : readahead_str;
-
-    const char * ioengine    = "posixaio";
-    const char * output_file = "fio_output.log";
-    const char * conf_file   = "config.fio";
+    const char * ioengine   = "posixaio";
 
     check_env_path(); // ensure the fio bin file can be found
 
@@ -960,10 +962,10 @@ numjobs=%d
     while (num_try < 2) {
         char fio_conf[1024];
         snprintf(fio_conf, sizeof(fio_conf), fio_conf_template, ioengine,
-                 read_type,  block_size, test_file, n_threads,
-                 write_type, block_size, test_file, n_threads);
+                 read_type,  block_size, test_file.c_str(), n_threads,
+                 write_type, block_size, test_file.c_str(), n_threads);
         
-        std::ofstream conf(conf_file);
+        std::ofstream conf(conf_file.c_str());
         if (!conf) {
             LOG_INF("Error: Unable to create configuration file\n");
             return;
@@ -971,7 +973,7 @@ numjobs=%d
         conf << fio_conf;
         conf.close();
 
-        std::string command = "fio " + std::string(conf_file) + " > " + std::string(output_file) + " 2>&1";
+        std::string command = "fio " + conf_file + " > " + output_file + " 2>&1";
         ret = std::system(command.c_str());
 
         num_try += 1;
@@ -989,7 +991,7 @@ numjobs=%d
     }
 
     // parse fio output
-    std::ifstream result(output_file);
+    std::ifstream result(output_file.c_str());
     if (!result) {
         LOG_INF("Error: Failed to open fio output file\n");
         return;
@@ -1023,9 +1025,9 @@ numjobs=%d
     }
 
     // clean up temporary files
-    std::remove(test_file);
-    std::remove(conf_file);
-    std::remove(output_file);
+    std::remove(test_file.c_str());
+    std::remove(conf_file.c_str());
+    std::remove(output_file.c_str());
 }
 
 void device_disk_rnd_bw(float * read_rnd_bw, float * write_rnd_bw, int n_threads) {
