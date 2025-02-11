@@ -17794,8 +17794,6 @@ static void manage_graph_tensors(struct ggml_cgraph * cgraph, int advice, bool f
             if (lower_name.find("cuda") != std::string::npos) continue;
         }
 
-        if (is_tensor_loaded(cur)) continue;
-
         size_t size  = ggml_nbytes(cur);
         size_t first = reinterpret_cast<size_t>(cur->data);
         size_t last  = first + size;
