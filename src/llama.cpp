@@ -17723,14 +17723,12 @@ static bool is_tensor_loaded(struct ggml_tensor * tensor) {
         // align addr
         llama_mmap::align_range(&first, &last, page_size);
         size_t len = std::max(last - first, static_cast<size_t>(page_size));
-
-        // calculate the number of pages to check
-        size_t page_count = (len + page_size - 1) / page_size;
+        size_t page_count = len / page_size;
 
         #ifdef __APPLE__
             char * mincore_res = new char[page_count];
         #else
-            unsigned char *mincore_res = new unsigned char[page_count]; // use 'unsigned char' for Linux
+            unsigned char * mincore_res = new unsigned char[page_count]; // use 'unsigned char' for Linux
         #endif
 
         // call mincore to check if pages are resident in memory
@@ -17758,6 +17756,13 @@ static float is_graph_loaded(struct ggml_cgraph * cgraph) {
         struct ggml_tensor * cur = ggml_graph_leaf(cgraph, i); 
         if (strstr(cur->name, "weight") == nullptr || cur->data == nullptr) {
             continue;
+        }
+        const char * backend_name = ggml_backend_buffer_name(cur->buffer);
+        if (backend_name) {
+            std::string lower_name(backend_name);
+            std::transform(lower_name.begin(), lower_name.end(), lower_name.begin(), 
+                           [](unsigned char c) { return std::tolower(c); });
+            if (lower_name.find("cuda") != std::string::npos) continue;
         }
         if (is_tensor_loaded(cur)) n_loaded++;
         n_total++;
@@ -17788,6 +17793,8 @@ static void manage_graph_tensors(struct ggml_cgraph * cgraph, int advice, bool f
                            [](unsigned char c) { return std::tolower(c); });
             if (lower_name.find("cuda") != std::string::npos) continue;
         }
+
+        if (is_tensor_loaded(cur)) continue;
 
         size_t size  = ggml_nbytes(cur);
         size_t first = reinterpret_cast<size_t>(cur->data);
