@@ -17776,8 +17776,17 @@ static void manage_graph_tensors(struct ggml_cgraph * cgraph, int advice, bool f
 
     for (int i = 0; i < ggml_graph_n_leafs(cgraph); i++) {
         struct ggml_tensor * cur = ggml_graph_leaf(cgraph, i);
+
         if (strstr(cur->name, "weight") == nullptr || cur->data == nullptr) {
             continue;
+        }
+
+        const char * backend_name = ggml_backend_buffer_name(cur->buffer);
+        if (backend_name) {
+            std::string lower_name(backend_name);
+            std::transform(lower_name.begin(), lower_name.end(), lower_name.begin(), 
+                           [](unsigned char c) { return std::tolower(c); });
+            if (lower_name.find("cuda") != std::string::npos) continue;
         }
 
         size_t size  = ggml_nbytes(cur);
