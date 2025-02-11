@@ -18108,9 +18108,9 @@ static int llama_decode_internal(
                 timer(manage_graph_tensors);
                 
                 int next_gf_id = (i + 1) % gf.size();
-                manage_graph_tensors(gf[next_gf_id], POSIX_MADV_WILLNEED, true);
+                manage_graph_tensors(gf[next_gf_id], POSIX_MADV_WILLNEED, n_world > 1);
                 if (my_rank == 0 && (is_last_l || (next_gf_id == (int)gf.size() - 1))) {
-                    manage_graph_tensors(gf[0], POSIX_MADV_WILLNEED, true);
+                    manage_graph_tensors(gf[0], POSIX_MADV_WILLNEED, n_world > 1);
                 }
 
                 if (cparams.unload && n_world > 1) {
