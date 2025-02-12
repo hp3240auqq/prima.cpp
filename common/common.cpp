@@ -1473,8 +1473,10 @@ struct llama_init_result llama_init_from_gpt_params(gpt_params & params) {
     // get device profile
     LOG_INF("\nstart profiling this device, this may take some seconds ...\n");
     dev_info.rank = params.rank;
-    llama_profile_device(&dev_info, model, ml, params.gpu_mem, params.n_predict, params.n_ctx, params.cpuparams.n_threads, params.flash_attn);
-    
+    if (n_world > 1) {
+        llama_profile_device(&dev_info, model, ml, params.gpu_mem, params.n_predict, params.n_ctx, params.cpuparams.n_threads, params.flash_attn);
+    }
+
     // create llama context
     struct llama_context_params cparams = llama_context_params_from_gpt_params(params);
     llama_context * lctx                = llama_new_context_with_model(model, cparams);
