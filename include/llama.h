@@ -322,7 +322,7 @@ extern "C" {
         uint32_t    rank;              // my rank
         uint32_t    n_layer_window[32];// number of layers to process in each compute
         uint32_t    n_gpu_layers;      // number of layers to process on GPU
-        bool        unload;            // whether to unload layer weights after use
+        bool        prefetch;          // whether to prefetch layer weights
         bool        keep_out_in_metal; // whether to keep output weights in metal memory
         char *      master_ip;         // ip address of the master node
         char *      next_node_ip;      // ip address of the next node

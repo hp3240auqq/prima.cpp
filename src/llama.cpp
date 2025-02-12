@@ -2571,7 +2571,7 @@ struct llama_cparams {
     uint32_t  n_world;
     uint32_t  rank;
     uint32_t  n_layer_window[32];
-    bool      unload;
+    bool      prefetch;
     uint32_t  n_ctx;           // context size used during inference
     uint32_t  n_batch;
     uint32_t  n_ubatch;
@@ -17770,7 +17770,7 @@ static float is_graph_loaded(struct ggml_cgraph * cgraph) {
     return float(n_loaded) / float(n_total) * 100.0f;
 }
 
-static void manage_graph_tensors(struct ggml_cgraph * cgraph, int advice, bool force = false) {
+static void manage_graph_tensors(struct ggml_cgraph * cgraph, int advice) {
     long page_size = sysconf(_SC_PAGESIZE);
 
     struct Segment {
@@ -17826,8 +17826,8 @@ static void manage_graph_tensors(struct ggml_cgraph * cgraph, int advice, bool f
         size_t prefetch_dense = 4;
         size_t len = std::max(segment.end - segment.start, static_cast<size_t>(page_size));
         posix_madvise(reinterpret_cast<void *>(segment.start), len, advice); // hint to load into memory
-        // force to prefetch data
-        if (force && advice == POSIX_MADV_WILLNEED && false) {
+        // force to prefetch data, disabled by default
+        if (advice == POSIX_MADV_WILLNEED && false) {
             volatile char * ptr = reinterpret_cast<volatile char *>(segment.start);
             for (size_t off = 0; off < len; off += prefetch_dense * page_size) {
                 for (size_t i = 0; i < prefetch_dense; i++) {
@@ -18104,17 +18104,13 @@ static int llama_decode_internal(
             }
 
             // overlap memory scheduling with other nodes' communication and computing
-            {
+            if (cparams.prefetch && n_world > 1) {
                 timer(manage_graph_tensors);
                 
                 int next_gf_id = (i + 1) % gf.size();
-                manage_graph_tensors(gf[next_gf_id], POSIX_MADV_WILLNEED, n_world > 1);
+                manage_graph_tensors(gf[next_gf_id], POSIX_MADV_WILLNEED);
                 if (my_rank == 0 && (is_last_l || (next_gf_id == (int)gf.size() - 1))) {
-                    manage_graph_tensors(gf[0], POSIX_MADV_WILLNEED, n_world > 1);
-                }
-
-                if (cparams.unload && n_world > 1) {
-                    manage_graph_tensors(sub_gf,  POSIX_MADV_DONTNEED);
+                    manage_graph_tensors(gf[0], POSIX_MADV_WILLNEED);
                 }
             }
         }
@@ -19837,7 +19833,7 @@ struct llama_context_params llama_context_default_params() {
         /*.rank                        =*/ 0,
         /*.n_layer_window              =*/ {32},
         /*.n_gpu_layers                =*/ 0,
-        /*.unload                      =*/ false,
+        /*.prefetch                    =*/ false,
         /*.keep_out_in_metal           =*/ true,
         /*.master_ip                   =*/ nullptr,
         /*.next_node_ip                =*/ nullptr,
@@ -20265,7 +20261,7 @@ void * llama_context_setup_backend(
     auto       & cparams = ctx->cparams;
 
     std::copy(std::begin(params.n_layer_window), std::end(params.n_layer_window), cparams.n_layer_window);
-    cparams.unload           = params.unload;
+    cparams.prefetch           = params.prefetch;
     cparams.n_seq_max        = std::max(1u, params.n_seq_max);
     cparams.n_threads        = params.n_threads;
     cparams.n_threads_batch  = params.n_threads_batch;
