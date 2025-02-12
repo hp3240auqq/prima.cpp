@@ -17827,14 +17827,14 @@ static void manage_graph_tensors(struct ggml_cgraph * cgraph, int advice, bool f
         size_t len = std::max(segment.end - segment.start, static_cast<size_t>(page_size));
         posix_madvise(reinterpret_cast<void *>(segment.start), len, advice); // hint to load into memory
         // force to prefetch data
-        if (force && advice == POSIX_MADV_WILLNEED) {
-            volatile char * ptr = reinterpret_cast<volatile char *>(segment.start);
-            for (size_t off = 0; off < len; off += prefetch_dense * page_size) {
-                for (size_t i = 0; i < prefetch_dense; i++) {
-                    if (off + i * page_size < len) (void)ptr[off + i * page_size];
-                }
-            }
-        }
+        // if (force && advice == POSIX_MADV_WILLNEED && false) {
+        //     volatile char * ptr = reinterpret_cast<volatile char *>(segment.start);
+        //     for (size_t off = 0; off < len; off += prefetch_dense * page_size) {
+        //         for (size_t i = 0; i < prefetch_dense; i++) {
+        //             if (off + i * page_size < len) (void)ptr[off + i * page_size];
+        //         }
+        //     }
+        // }
     }
 }
 
