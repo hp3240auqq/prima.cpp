@@ -876,13 +876,13 @@ static bool assign_layers_to_device(
     const int n_kv         = cparams.n_ctx;
 
     const int64_t b        = dev_info_set[0].model_bytes.nb_layer;
+    const int64_t bo       = dev_info_set[0].model_bytes.nb_output;
     const int64_t b_prime  = b + 2 * (n_embd_k_gqa + n_embd_v_gqa) * n_kv;
 
 #if defined(USE_HIGHS)
     const device_info &master = dev_info_set[0];
     const int n_vocab = llama_n_vocab(model);
     const int64_t bi  = dev_info_set[0].model_bytes.nb_input;
-    const int64_t bo  = dev_info_set[0].model_bytes.nb_output;
 
     // device-specific constants
     std::vector<float> alpha(n_world, 0.0f);
