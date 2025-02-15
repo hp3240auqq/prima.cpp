@@ -870,20 +870,20 @@ static bool assign_layers_to_device(
     std::vector<int>   n(n_world, 0);
     std::vector<float> mem_budget(n_world, 0.0f);
 
-    const device_info &master = dev_info_set[0];
-
     // model-specific constants
     const int n_embd_k_gqa = llama_model_n_embd_k_gqa(model);
     const int n_embd_v_gqa = llama_model_n_embd_v_gqa(model);
-    const int n_vocab      = llama_n_vocab(model);
     const int n_kv         = cparams.n_ctx;
 
     const int64_t b        = dev_info_set[0].model_bytes.nb_layer;
-    const int64_t bi       = dev_info_set[0].model_bytes.nb_input;
-    const int64_t bo       = dev_info_set[0].model_bytes.nb_output;
     const int64_t b_prime  = b + 2 * (n_embd_k_gqa + n_embd_v_gqa) * n_kv;
 
 #if defined(USE_HIGHS)
+    const device_info &master = dev_info_set[0];
+    const int n_vocab = llama_n_vocab(model);
+    const int64_t bi  = dev_info_set[0].model_bytes.nb_input;
+    const int64_t bo  = dev_info_set[0].model_bytes.nb_output;
+
     // device-specific constants
     std::vector<float> alpha(n_world, 0.0f);
     std::vector<float> beta(n_world, 0.0f);
@@ -1397,6 +1397,8 @@ static bool assign_layers_to_device(
     std::copy(n.begin(), n.end(), n_gpu_layers);
 
 #else
+    (void)min_disk_read_speed;
+
     // assign layers according to RAM/VRAM
     for (uint32_t m = 0; m < n_world; ++m) {
         const device_info & dev = dev_info_set[m];
@@ -1426,7 +1428,7 @@ static bool assign_layers_to_device(
     for (uint32_t m = 0; m < n_world; ++m) {
         const device_info & dev = dev_info_set[m];
         bool use_gpu = dev.gpu_support.metal || dev.gpu_support.cuda;
-        llama_model_compute_buf_size(&c_cpu[m], &c_gpu[m], model, cparams, use_gpu, m == 0, w[m] * k, n[m] * k);
+        llama_model_compute_buf_size(&c_cpu[m], &c_gpu[m], model, cparams, use_gpu, m == 0, w[m], n[m]);
 
         if (dev.gpu_support.cuda || dev.gpu_support.metal) {
             int64_t required_mem = w[m] * b_prime;
