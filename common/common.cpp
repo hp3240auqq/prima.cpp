@@ -1432,7 +1432,11 @@ static bool assign_layers_to_device(
 
         if (dev.gpu_support.cuda || dev.gpu_support.metal) {
             int64_t required_mem = w[m] * b_prime;
-            int64_t available_mem = dev.gpu_props.memory_free * GIGABYTE - c_gpu[m];            
+            int64_t available_mem = dev.gpu_props.memory_free * GIGABYTE - c_gpu[m];
+            if (dev.gpu_support.metal && m == 0 && cparams.keep_out_in_metal) {
+                available_mem -= bo;
+            }
+
             if (required_mem <= available_mem) {
                 n_gpu_layers[m] = w[m];
             } else {
