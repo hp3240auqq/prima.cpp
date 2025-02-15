@@ -866,6 +866,10 @@ static bool assign_layers_to_device(
         return true;
     }
 
+    std::vector<int>   w(n_world, 0);
+    std::vector<int>   n(n_world, 0);
+    std::vector<float> mem_budget(n_world, 0.0f);
+
     const device_info &master = dev_info_set[0];
 
     // model-specific constants
@@ -879,14 +883,12 @@ static bool assign_layers_to_device(
     const int64_t bo       = dev_info_set[0].model_bytes.nb_output;
     const int64_t b_prime  = b + 2 * (n_embd_k_gqa + n_embd_v_gqa) * n_kv;
 
+#if defined(USE_HIGHS)
     // device-specific constants
     std::vector<float> alpha(n_world, 0.0f);
     std::vector<float> beta(n_world, 0.0f);
     std::vector<float> xi(n_world, 0.0f);
     float kappa = 0.0f;
-    std::vector<int>   w(n_world, 0);
-    std::vector<int>   n(n_world, 0);
-    std::vector<float> mem_budget(n_world, 0.0f);
 
     // -------- Compute alpha[m], beta[m], xi[m] --------
     for (uint32_t m = 0; m < n_world; ++m) {
@@ -977,7 +979,6 @@ static bool assign_layers_to_device(
                              : std::min_element(mem_budget.begin(), mem_budget.end());
     w[std::distance(mem_budget.begin(), device)] += diff;
 
-#if defined(USE_HIGHS)
     // stores the actual read bandwidth (GB/s) for each device
     std::vector<float> disk_speed(n_world, 0.0f);
     for (uint32_t m = 0; m < n_world; ++m) {
@@ -1032,7 +1033,8 @@ static bool assign_layers_to_device(
             bool is_windows = strcmp(dev.device_os, "Windows") == 0;
             GGML_ASSERT(!is_windows && "Windows is not tested yet\n");
 
-            llama_model_compute_buf_size(&c_cpu[m], &c_gpu[m], model, cparams, dev.gpu_support.metal, m == 0, w[m] * k, n[m] * k);
+            bool use_gpu = dev.gpu_support.metal || dev.gpu_support.cuda;
+            llama_model_compute_buf_size(&c_cpu[m], &c_gpu[m], model, cparams, use_gpu, m == 0, w[m] * k, n[m] * k);
 
             int  l_m          = w[m] * k;  // total number of layers assigned to device m
             int  l_m_gpu      = n[m] * k;  // number of layers assigned to device m that run on GPU
@@ -1395,19 +1397,45 @@ static bool assign_layers_to_device(
     std::copy(n.begin(), n.end(), n_gpu_layers);
 
 #else
-    (void)bi;
-    (void)bo;
-    (void)kappa;
-    (void)cparams;
-    (void)min_disk_read_speed;
-    (void)n_vocab;
-    (void)GIGABYTE;
-
-    std::copy(w.begin(), w.end(), n_layer_window);
+    // assign layers according to RAM/VRAM
     for (uint32_t m = 0; m < n_world; ++m) {
         const device_info & dev = dev_info_set[m];
+        if (dev.gpu_support.metal || dev.gpu_support.cuda) {
+            mem_budget[m] = dev.gpu_props.memory_free;
+        } else {
+            mem_budget[m] = dev.memory.available_physical;
+        } 
+    }
+
+    // initialize w_m proportionally to memory budget and n_m to 0
+    float total_mem_budget = std::accumulate(mem_budget.begin(), mem_budget.end(), 0.0f);
+    for (uint32_t m = 0; m < n_world; ++m) {
+        w[m] = std::round(mem_budget[m] / total_mem_budget * n_layer);
+        n[m] = 0;
+    }
+    // adjust w[m] to ensure L mod W = 0
+    int diff = n_layer - std::accumulate(w.begin(), w.end(), 0);
+    auto device = (diff > 0) ? std::max_element(mem_budget.begin(), mem_budget.end()) 
+                            : std::min_element(mem_budget.begin(), mem_budget.end());
+    w[std::distance(mem_budget.begin(), device)] += diff;
+    std::copy(w.begin(), w.end(), n_layer_window);
+
+    std::vector<float> vec_z_gpu(n_world, 0.0f);
+    std::vector<int64_t> c_cpu(n_world, 0), c_gpu(n_world, 0); 
+
+    for (uint32_t m = 0; m < n_world; ++m) {
+        const device_info & dev = dev_info_set[m];
+        bool use_gpu = dev.gpu_support.metal || dev.gpu_support.cuda;
+        llama_model_compute_buf_size(&c_cpu[m], &c_gpu[m], model, cparams, use_gpu, m == 0, w[m] * k, n[m] * k);
+
         if (dev.gpu_support.cuda || dev.gpu_support.metal) {
-            n_gpu_layers[m] = w[m];
+            int64_t required_mem = w[m] * b_prime;
+            int64_t available_mem = dev.gpu_props.memory_free * GIGABYTE - c_gpu[m];            
+            if (required_mem <= available_mem) {
+                n_gpu_layers[m] = w[m];
+            } else {
+                n_gpu_layers[m] = available_mem / b_prime;
+            }
         }
     }
 
