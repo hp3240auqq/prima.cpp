@@ -1013,6 +1013,7 @@ static bool assign_layers_to_device(
     // M3: devices running on Linux or Android and with insufficient memory
     // M4: devices with sufficient memory or very slow disk I/O (slower than min_disk_io_speed)
     std::vector<uint32_t> M1, M2, M3, M4, M1_prev, M2_prev, M3_prev, M4_prev;
+    std::vector<bool> M4_force(n_world, false);
     std::vector<int64_t> c_cpu(n_world, 0), c_gpu(n_world, 0);
 
     // helper function to check if a device is in a specific set
@@ -1043,18 +1044,16 @@ static bool assign_layers_to_device(
             bool condition3   = (l_m - l_m_gpu) * b_prime + (bi / n_vocab + bo) * int(m == 0) + c_cpu[m] > mem_budget[m] * GIGABYTE;
             bool is_slow_disk = disk_speed[m] < min_disk_read_speed;
 
-            if (is_macos && !dev.gpu_support.metal && condition1 && !is_slow_disk) {
-                // case 1: macOS without Metal, and with insufficient memory
-                M1.push_back(m);
-            } else if (is_macos && dev.gpu_support.metal && condition2 && !is_slow_disk) {
-                // case 2: macOS with Metal, and with insufficient memory
-                M2.push_back(m);
-            } else if ((is_linux || is_android) && condition3 && !is_slow_disk) {
-                // case 3: Linux with insufficient memory
-                M3.push_back(m);
+            if (M4_force[m] || is_slow_disk) {
+                M4.push_back(m); // case 4: devices with very slow disk or force to be in M4
+            } else if (is_macos && !dev.gpu_support.metal && condition1) {
+                M1.push_back(m); // case 1: macOS without Metal, and with insufficient memory
+            } else if (is_macos && dev.gpu_support.metal && condition2) {
+                M2.push_back(m); // case 2: macOS with Metal, and with insufficient memory
+            } else if ((is_linux || is_android) && condition3) {
+                M3.push_back(m); // case 3: Linux with insufficient memory
             } else {
-                // case 4: otherwise, assigned to M4
-                M4.push_back(m);
+                M4.push_back(m); // case 4: devices with sufficient memory
             }
         }
 
@@ -1255,7 +1254,8 @@ static bool assign_layers_to_device(
 
             // constraint bound 4: CUDA/shared memory constraint for CUDA/Metal devices
             for (uint32_t m = 0; m < n_world; ++m) {
-                model.lp_.row_upper_[constraint_idx] = W * vec_z_gpu[m];
+                double upper_bound = W * vec_z_gpu[m];
+                model.lp_.row_upper_[constraint_idx] = (upper_bound > 0) ? std::max(upper_bound, 1.0) : upper_bound;
                 constraint_idx++;
             }
 
@@ -1359,6 +1359,39 @@ static bool assign_layers_to_device(
 
             LOG_INF("k = %2d, obj = %7.1f, solution: %s | best_k = %2d, best_obj = %7.1f, best_solution: %s\n", 
                 k, objective_value, vec_to_str(solution.col_value).c_str(), best_k, best_objective, vec_to_str(best_solution).c_str());
+        }
+
+        // check the solution
+        bool is_set_suboptimal = false;
+        for (uint32_t m = 0; m < n_world; ++m) {
+            uint32_t w_m = best_solution[m], n_m = best_solution[m + n_world];
+            // if w[m] > n[m] and there is still free VRAM, the GPU is not fully utilized, 
+            // indicating that the memory constraints are too strict, and the set assignment is suboptimal.
+            if (w_m > n_m && n_m < static_cast<uint32_t>(std::round(W * vec_z_gpu[m]))) {
+                is_set_suboptimal = true;
+            } 
+        }
+
+        if (is_set_suboptimal) {
+            int worst_device = -1;
+            float worst_speed = std::numeric_limits<float>::max();
+
+            // find the device with slowest disk speed but was not in M4 yet
+            for (uint32_t m = 0; m < n_world; ++m) {
+                if (!in_set(m, M4) && disk_speed[m] < worst_speed) {
+                    worst_speed = disk_speed[m];
+                    worst_device = m;
+                }
+            }
+
+            if (worst_device != -1) {
+                M4_force[worst_device] = true;
+                LOG_INF("Forcing device %d (disk speed %.2f GB/s) into M4\n", worst_device, worst_speed);
+            } else {
+                LOG_INF("Infeasible solution detected but no device can be forced into M4\n");
+            }
+
+            continue;
         }
 
         // update w[m] and n[m]
