@@ -1362,17 +1362,22 @@ static bool assign_layers_to_device(
         }
 
         // check the solution
-        bool is_set_suboptimal = false;
+        bool has_free_gpu_memory = false, has_overload = false;
         for (uint32_t m = 0; m < n_world; ++m) {
             uint32_t w_m = best_solution[m], n_m = best_solution[m + n_world];
-            // if w[m] > n[m] and there is still free VRAM, the GPU is not fully utilized, 
-            // indicating that the memory constraints are too strict, and the set assignment is suboptimal.
-            if (w_m > n_m && n_m < static_cast<uint32_t>(std::round(W * vec_z_gpu[m]))) {
-                is_set_suboptimal = true;
-            } 
+
+            // if there is still free GPU memory
+            if (n_m < static_cast<uint32_t>(std::round(W * vec_z_gpu[m]))) {
+                has_free_gpu_memory = true;
+            }
+
+            // if there is device overloaded
+            if (w_m > n_m) {
+                has_overload = true;
+            }
         }
 
-        if (is_set_suboptimal) {
+        if (has_free_gpu_memory && has_overload) {
             int worst_device = -1;
             float worst_speed = std::numeric_limits<float>::max();
 
@@ -1422,8 +1427,8 @@ static bool assign_layers_to_device(
         LOG_INF("  - N Layer Window : %d\n", w[m]);
         LOG_INF("  - N GPU Layers   : %d\n", n[m]);
     }
-    LOG_INF("\nEstimated Latency: %.3f ms\n", final_objective);
-    LOG_INF("------------------------------------------");
+    // LOG_INF("\nEstimated Latency: %.3f ms\n", final_objective);
+    // LOG_INF("------------------------------------------");
 
     // copy value from w and n to n_layer_window and n_gpu_layers, respectively
     std::copy(w.begin(), w.end(), n_layer_window);
