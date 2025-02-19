@@ -106,7 +106,7 @@
 struct Timer {
     const char * name;
     int64_t start_time;
-    bool enable_timer = true;
+    bool enable_timer = false;
     Timer(const char * name) : name(name), start_time(ggml_time_us()) {}
     ~Timer() {
         if (enable_timer) {
