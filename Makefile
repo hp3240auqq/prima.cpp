@@ -274,15 +274,10 @@ endif
 ifeq ($(USE_HIGHS),1)
 	HIGHS_CPPFLAGS = -isystem /usr/local/include/highs
 	HIGHS_LDFLAGS  = -L/usr/local/lib -lhighs
-
 	ifeq ($(UNAME_S),Darwin)
         HIGHS_CPPFLAGS += -isystem /opt/homebrew/include/highs
         HIGHS_LDFLAGS  += -L/opt/homebrew/lib -lhighs
-	else ifneq ($(CONDA_PREFIX),)
-		HIGHS_CPPFLAGS += -isystem $(CONDA_PREFIX)/include -isystem $(CONDA_PREFIX)/include/highs
-		HIGHS_LDFLAGS  += -L$(CONDA_PREFIX)/lib -Wl,-rpath,$(CONDA_PREFIX)/lib
 	endif
-
 	MK_CPPFLAGS += $(HIGHS_CPPFLAGS) -DUSE_HIGHS
 	MK_LDFLAGS  += $(HIGHS_LDFLAGS)
 endif

@@ -521,9 +521,9 @@ static uint64_t device_host_physical_memory(bool available) {
             // active pages compression has higher priority than releasing the clean mmap-ed pages
             // some of the active pages can be compressed to save memory for our mmap-ed model weights
             if (is_uma_arch()) {
-                // assume 30% of active pages can be compressed on macOS UMA (an empirical value) 
+                // assume 10% of active pages can be compressed on macOS UMA (an empirical value) 
                 // because GPU is more likely to use the inactive memory
-                memory += vm_stats.active_count * 0.3 * page_size;
+                memory += vm_stats.active_count * 0.1 * page_size;
             } else {
                 // assume 50% of active pages can be compressed on macOS NUMA (an empirical value)
                 memory += vm_stats.active_count * 0.5 * page_size;

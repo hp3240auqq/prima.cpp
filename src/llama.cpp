@@ -106,7 +106,7 @@
 struct Timer {
     const char * name;
     int64_t start_time;
-    bool enable_timer = true;
+    bool enable_timer = false;
     Timer(const char * name) : name(name), start_time(ggml_time_us()) {}
     ~Timer() {
         if (enable_timer) {
@@ -2571,7 +2571,7 @@ struct llama_cparams {
     uint32_t  n_world;
     uint32_t  rank;
     uint32_t  n_layer_window[32];
-    bool      unload;
+    bool      prefetch;
     uint32_t  n_ctx;           // context size used during inference
     uint32_t  n_batch;
     uint32_t  n_ubatch;
@@ -17829,14 +17829,12 @@ static bool is_tensor_loaded(struct ggml_tensor * tensor) {
         // align addr
         llama_mmap::align_range(&first, &last, page_size);
         size_t len = std::max(last - first, static_cast<size_t>(page_size));
-
-        // calculate the number of pages to check
-        size_t page_count = (len + page_size - 1) / page_size;
+        size_t page_count = len / page_size;
 
         #ifdef __APPLE__
             char * mincore_res = new char[page_count];
         #else
-            unsigned char *mincore_res = new unsigned char[page_count]; // use 'unsigned char' for Linux
+            unsigned char * mincore_res = new unsigned char[page_count]; // use 'unsigned char' for Linux
         #endif
 
         // call mincore to check if pages are resident in memory
@@ -17865,13 +17863,20 @@ static float is_graph_loaded(struct ggml_cgraph * cgraph) {
         if (strstr(cur->name, "weight") == nullptr || cur->data == nullptr) {
             continue;
         }
+        const char * backend_name = ggml_backend_buffer_name(cur->buffer);
+        if (backend_name) {
+            std::string lower_name(backend_name);
+            std::transform(lower_name.begin(), lower_name.end(), lower_name.begin(), 
+                           [](unsigned char c) { return std::tolower(c); });
+            if (lower_name.find("cuda") != std::string::npos) continue;
+        }
         if (is_tensor_loaded(cur)) n_loaded++;
         n_total++;
     }
     return float(n_loaded) / float(n_total) * 100.0f;
 }
 
-static void manage_graph_tensors(struct ggml_cgraph * cgraph, int advice, bool force = false) {
+static void manage_graph_tensors(struct ggml_cgraph * cgraph, int advice) {
     long page_size = sysconf(_SC_PAGESIZE);
 
     struct Segment {
@@ -17882,8 +17887,17 @@ static void manage_graph_tensors(struct ggml_cgraph * cgraph, int advice, bool f
 
     for (int i = 0; i < ggml_graph_n_leafs(cgraph); i++) {
         struct ggml_tensor * cur = ggml_graph_leaf(cgraph, i);
+
         if (strstr(cur->name, "weight") == nullptr || cur->data == nullptr) {
             continue;
+        }
+
+        const char * backend_name = ggml_backend_buffer_name(cur->buffer);
+        if (backend_name) {
+            std::string lower_name(backend_name);
+            std::transform(lower_name.begin(), lower_name.end(), lower_name.begin(), 
+                           [](unsigned char c) { return std::tolower(c); });
+            if (lower_name.find("cuda") != std::string::npos) continue;
         }
 
         size_t size  = ggml_nbytes(cur);
@@ -17915,13 +17929,16 @@ static void manage_graph_tensors(struct ggml_cgraph * cgraph, int advice, bool f
     }
 
     for (const auto & segment : merged_segments) {
+        size_t prefetch_dense = 4;
         size_t len = std::max(segment.end - segment.start, static_cast<size_t>(page_size));
         posix_madvise(reinterpret_cast<void *>(segment.start), len, advice); // hint to load into memory
-        // force to prefetch data
-        if (force && advice == POSIX_MADV_WILLNEED) {
+        // force to prefetch data, disabled by default
+        if (advice == POSIX_MADV_WILLNEED && false) {
             volatile char * ptr = reinterpret_cast<volatile char *>(segment.start);
-            for (size_t off = 0; off < len; off += page_size) {
-                (void)ptr[off];
+            for (size_t off = 0; off < len; off += prefetch_dense * page_size) {
+                for (size_t i = 0; i < prefetch_dense; i++) {
+                    if (off + i * page_size < len) (void)ptr[off + i * page_size];
+                }
             }
         }
     }
@@ -18193,17 +18210,13 @@ static int llama_decode_internal(
             }
 
             // overlap memory scheduling with other nodes' communication and computing
-            {
+            if (cparams.prefetch && n_world > 1) {
                 timer(manage_graph_tensors);
                 
                 int next_gf_id = (i + 1) % gf.size();
-                manage_graph_tensors(gf[next_gf_id], POSIX_MADV_WILLNEED, true);
+                manage_graph_tensors(gf[next_gf_id], POSIX_MADV_WILLNEED);
                 if (my_rank == 0 && (is_last_l || (next_gf_id == (int)gf.size() - 1))) {
-                    manage_graph_tensors(gf[0], POSIX_MADV_WILLNEED, true);
-                }
-
-                if (cparams.unload && n_world > 1) {
-                    manage_graph_tensors(sub_gf,  POSIX_MADV_DONTNEED);
+                    manage_graph_tensors(gf[0], POSIX_MADV_WILLNEED);
                 }
             }
         }
@@ -19926,7 +19939,7 @@ struct llama_context_params llama_context_default_params() {
         /*.rank                        =*/ 0,
         /*.n_layer_window              =*/ {32},
         /*.n_gpu_layers                =*/ 0,
-        /*.unload                      =*/ false,
+        /*.prefetch                    =*/ false,
         /*.keep_out_in_metal           =*/ true,
         /*.master_ip                   =*/ nullptr,
         /*.next_node_ip                =*/ nullptr,
@@ -20354,7 +20367,7 @@ void * llama_context_setup_backend(
     auto       & cparams = ctx->cparams;
 
     std::copy(std::begin(params.n_layer_window), std::end(params.n_layer_window), cparams.n_layer_window);
-    cparams.unload           = params.unload;
+    cparams.prefetch           = params.prefetch;
     cparams.n_seq_max        = std::max(1u, params.n_seq_max);
     cparams.n_threads        = params.n_threads;
     cparams.n_threads_batch  = params.n_threads_batch;

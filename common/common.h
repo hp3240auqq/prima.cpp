@@ -147,7 +147,7 @@ struct gpt_params {
     uint32_t n_layer_window[32]   =   {0}; // layer window size on each node
     std::string master_ip         = "localhost"; // ip address of the master node
     std::string next_node_ip      = "localhost"; // ip address of my next node
-    bool    unload                = false; // unload layer weights after use or not
+    bool    prefetch              = false; // prefetch layer weights
     bool    keep_out_in_metal     =  true; // whether to keep output weights in metal memory, true by default
     int32_t gpu_mem               = 999.0; // gpu memory to use, in GiB
     int32_t n_predict             =    -1; // new tokens to predict

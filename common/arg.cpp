@@ -724,10 +724,10 @@ gpt_params_context gpt_params_parser_init(gpt_params & params, llama_example ex,
         }
     ).set_env("LLAMA_ARG_NEXT_NODE_IP"));
     add_opt(llama_arg(
-        {"--unload", "--unload-weight"},
-        format("whether to unload layer weights after use (default: %s)", params.unload ? "true" : "false"),
+        {"--prefetch"},
+        format("whether to prefetch layer weights (default: %s)", params.prefetch ? "true" : "false"),
         [](gpt_params & params) {
-            params.unload = true;
+            params.prefetch = true;
         }
     ).set_env("LLAMA_ARG_UNLOAD"));
     add_opt(llama_arg(
