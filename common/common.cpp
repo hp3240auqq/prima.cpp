@@ -1362,22 +1362,23 @@ static bool assign_layers_to_device(
         }
 
         // check the solution
-        bool has_free_gpu_memory = false, has_overload = false;
+        bool has_free_gpu_memory = false, has_gpu_overload = false;
         for (uint32_t m = 0; m < n_world; ++m) {
+            if (!dev_gpu[m]) continue;
             uint32_t w_m = best_solution[m], n_m = best_solution[m + n_world];
 
             // if there is still free GPU memory
             if (n_m < static_cast<uint32_t>(std::round(W * vec_z_gpu[m]))) {
                 has_free_gpu_memory = true;
             }
-
-            // if there is device overloaded
+            
+            // if there is GPU device overloaded
             if (w_m > n_m) {
-                has_overload = true;
+                has_gpu_overload = true;
             }
         }
 
-        if (has_free_gpu_memory && has_overload) {
+        if (has_free_gpu_memory && has_gpu_overload) {
             int worst_device = -1;
             float worst_speed = std::numeric_limits<float>::max();
 
