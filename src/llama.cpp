@@ -6695,7 +6695,7 @@ static void llm_load_vocab(
                 vocab.type_pre = LLAMA_VOCAB_PRE_TYPE_COMMAND_R;
                 vocab.tokenizer_clean_spaces = false;
             } else if (
-                tokenizer_pre == "qwen2") {
+                tokenizer_pre == "qwen2" || tokenizer_pre == "deepseek-r1-qwen") {
                 vocab.type_pre = LLAMA_VOCAB_PRE_TYPE_QWEN2;
                 vocab.tokenizer_clean_spaces = false;
             } else if (
@@ -7383,6 +7383,86 @@ static void llm_load_llama_tensors(
     }
 }
 
+static void llm_load_qwen2_tensors(
+    llama_model_loader & ml,
+    llama_model        & model,
+    std::map<ggml_backend_buffer_type_t, ggml_context *> & ctx_map,
+    uint32_t             n_world, 
+    uint32_t             my_rank, 
+    const uint32_t     * n_layer_window,
+    bool               * use_mmap_buffer,
+    bool                 set_needed) {
+    const auto tn = LLM_TN(model.arch);
+
+    ggml_context * ctx_input        = nullptr;
+    ggml_context * ctx_output       = nullptr;
+    ggml_context * ctx_output_split = nullptr;
+
+    if (my_rank == 0) {
+        ctx_input        = ctx_map.at(model.buft_input.buft); 
+        ctx_output       = ctx_map.at(model.buft_output.buft);
+        ctx_output_split = ctx_map.at(model.buft_output.buft_matrix);
+    }
+
+    auto ctx_for_layer       = [&](int i) { return ctx_map.at(model.buft_layer[i].buft); };
+    auto ctx_for_layer_split = [&](int i) { return ctx_map.at(model.buft_layer[i].buft_matrix); };
+
+    const llama_hparams hparams = model.hparams;
+    const int64_t n_embd        = hparams.n_embd;
+    const int64_t n_embd_gqa  = hparams.n_embd_v_gqa();
+    // const int64_t n_embd_gqa    = n_embd_v_gqa;
+    const int64_t n_ff          = hparams.n_ff();
+    const int64_t n_vocab       = hparams.n_vocab;
+    const int64_t n_layer       = hparams.n_layer;    
+
+    if (my_rank == 0) {
+        // token embedding
+        model.tok_embd    = ml.create_tensor(ctx_input, tn(LLM_TENSOR_TOKEN_EMBD, "weight"), {n_embd, n_vocab}, 0, set_needed);
+        
+        // output
+        model.output_norm = ml.create_tensor(ctx_output, tn(LLM_TENSOR_OUTPUT_NORM, "weight"), {n_embd}, 0, set_needed);
+        model.output      = ml.create_tensor(ctx_output_split, tn(LLM_TENSOR_OUTPUT, "weight"), {n_embd, n_vocab}, llama_model_loader::TENSOR_NOT_REQUIRED, set_needed);
+        
+        // if output is NULL, init from the input tok embed
+        if (model.output == NULL) {
+            model.output = ml.create_tensor(ctx_output, tn(LLM_TENSOR_TOKEN_EMBD, "weight"), {n_embd, n_vocab}, llama_model_loader::TENSOR_DUPLICATED, set_needed);
+        }
+    }    
+
+    for (int i = 0; i < n_layer; ++i) {
+        if (!this_layer_is_mine(i, n_world, my_rank, n_layer_window)) {
+            continue;
+        }
+
+        int local_i = map_layer_to_local_id(i, n_world, my_rank, n_layer_window);
+        ggml_context * ctx_layer = ctx_for_layer(local_i);
+        ggml_context * ctx_split = ctx_for_layer_split(local_i);
+        
+        auto & layer = model.layers[local_i];
+        
+        // attention norm
+        layer.attn_norm = ml.create_tensor(ctx_layer, tn(LLM_TENSOR_ATTN_NORM, "weight", i), {n_embd}, 0, set_needed);
+
+        // attention
+        layer.wq = ml.create_tensor(ctx_split, tn(LLM_TENSOR_ATTN_Q,   "weight", i), {n_embd, n_embd}, 0, set_needed);
+        layer.wk = ml.create_tensor(ctx_split, tn(LLM_TENSOR_ATTN_K,   "weight", i), {n_embd, n_embd_gqa}, 0, set_needed);
+        layer.wv = ml.create_tensor(ctx_split, tn(LLM_TENSOR_ATTN_V,   "weight", i), {n_embd, n_embd_gqa}, 0, set_needed);
+        layer.wo = ml.create_tensor(ctx_split, tn(LLM_TENSOR_ATTN_OUT, "weight", i), {n_embd, n_embd}, 0, set_needed);
+
+        // attention bias tensors
+        layer.bq = ml.create_tensor(ctx_layer, tn(LLM_TENSOR_ATTN_Q,   "bias", i), {n_embd}, 0, set_needed);
+        layer.bk = ml.create_tensor(ctx_layer, tn(LLM_TENSOR_ATTN_K,   "bias", i), {n_embd_gqa}, 0, set_needed);
+        layer.bv = ml.create_tensor(ctx_layer, tn(LLM_TENSOR_ATTN_V,   "bias", i), {n_embd_gqa}, 0, set_needed);
+
+        // feed-forward
+        layer.ffn_norm = ml.create_tensor(ctx_layer, tn(LLM_TENSOR_FFN_NORM, "weight", i), {n_embd}, 0, set_needed);
+        
+        layer.ffn_gate = ml.create_tensor(ctx_split, tn(LLM_TENSOR_FFN_GATE, "weight", i), {n_embd, n_ff}, 0, set_needed);
+        layer.ffn_down = ml.create_tensor(ctx_split, tn(LLM_TENSOR_FFN_DOWN, "weight", i), {n_ff, n_embd}, 0, set_needed);
+        layer.ffn_up   = ml.create_tensor(ctx_split, tn(LLM_TENSOR_FFN_UP,   "weight", i), {n_embd, n_ff}, 0, set_needed);
+    }
+}
+
 // Returns false if cancelled by progress_callback
 static bool llm_load_tensors_impl(
         llama_model_loader   &  ml,
@@ -8049,44 +8129,8 @@ static bool llm_load_tensors_impl(
                     }
                 } break;
             case LLM_ARCH_QWEN2:
-                {
-                    model.tok_embd = ml.create_tensor(ctx_input, tn(LLM_TENSOR_TOKEN_EMBD, "weight"), {n_embd, n_vocab});
-
-                    // output
-                    {
-                        model.output_norm = ml.create_tensor(ctx_output,       tn(LLM_TENSOR_OUTPUT_NORM, "weight"), {n_embd});
-                        model.output      = ml.create_tensor(ctx_output_split, tn(LLM_TENSOR_OUTPUT,      "weight"), {n_embd, n_vocab}, llama_model_loader::TENSOR_NOT_REQUIRED);
-                        // if output is NULL, init from the input tok embed
-                        if (model.output == NULL) {
-                            model.output = ml.create_tensor(ctx_output, tn(LLM_TENSOR_TOKEN_EMBD, "weight"), {n_embd, n_vocab}, llama_model_loader::TENSOR_DUPLICATED);
-                        }
-                    }
-
-                    for (int i = 0; i < n_layer; ++i) {
-                        ggml_context * ctx_layer = ctx_for_layer(i);
-                        ggml_context * ctx_split = ctx_for_layer_split(i);
-
-                        auto & layer = model.layers[i];
-
-                        layer.attn_norm = ml.create_tensor(ctx_layer, tn(LLM_TENSOR_ATTN_NORM, "weight", i), {n_embd});
-
-                        layer.wq = ml.create_tensor(ctx_split, tn(LLM_TENSOR_ATTN_Q,   "weight", i), {n_embd, n_embd});
-                        layer.wk = ml.create_tensor(ctx_split, tn(LLM_TENSOR_ATTN_K,   "weight", i), {n_embd, n_embd_gqa});
-                        layer.wv = ml.create_tensor(ctx_split, tn(LLM_TENSOR_ATTN_V,   "weight", i), {n_embd, n_embd_gqa});
-                        layer.wo = ml.create_tensor(ctx_split, tn(LLM_TENSOR_ATTN_OUT, "weight", i), {n_embd, n_embd});
-
-                        // optional bias tensors
-                        layer.bq = ml.create_tensor(ctx_layer, tn(LLM_TENSOR_ATTN_Q,   "bias", i), {n_embd});
-                        layer.bk = ml.create_tensor(ctx_layer, tn(LLM_TENSOR_ATTN_K,   "bias", i), {n_embd_gqa});
-                        layer.bv = ml.create_tensor(ctx_layer, tn(LLM_TENSOR_ATTN_V,   "bias", i), {n_embd_gqa});
-
-                        layer.ffn_norm = ml.create_tensor(ctx_layer, tn(LLM_TENSOR_FFN_NORM, "weight", i), {n_embd});
-
-                        layer.ffn_gate = ml.create_tensor(ctx_split, tn(LLM_TENSOR_FFN_GATE, "weight", i), {n_embd,   n_ff});
-                        layer.ffn_down = ml.create_tensor(ctx_split, tn(LLM_TENSOR_FFN_DOWN, "weight", i), {  n_ff, n_embd});
-                        layer.ffn_up   = ml.create_tensor(ctx_split, tn(LLM_TENSOR_FFN_UP,   "weight", i), {n_embd,   n_ff});
-                    }
-                } break;
+                llm_load_qwen2_tensors(ml, model, ctx_map, n_world, my_rank, n_layer_window, &use_mmap_buffer, true);
+                break;
             case LLM_ARCH_QWEN2MOE:
                 {
                     model.tok_embd = ml.create_tensor(ctx_input, tn(LLM_TENSOR_TOKEN_EMBD, "weight"), {n_embd, n_vocab});
@@ -12591,18 +12635,40 @@ struct llm_build_context {
         return gf;
     }
 
-    struct ggml_cgraph * build_qwen2() {
-        struct ggml_cgraph * gf = ggml_new_graph_custom(ctx0, llama_model_max_nodes(model), false);
+    std::vector<ggml_cgraph *> build_qwen2() {
 
         const int64_t n_embd_head = hparams.n_embd_head_v;
         GGML_ASSERT(n_embd_head == hparams.n_embd_head_k);
         GGML_ASSERT(n_embd_head == hparams.n_rot);
 
-        struct ggml_tensor * cur;
-        struct ggml_tensor * inpL;
+        // create a vector to hold the subgraphs
+        std::vector<struct ggml_cgraph *> sub_gfs; 
+        struct ggml_cgraph * sub_gf  = nullptr;
+        struct ggml_tensor * cur = nullptr;
+        struct ggml_tensor * inpL = nullptr;
+        struct ggml_tensor * inpB = nullptr;
 
-        inpL = llm_build_inp_embd(ctx0, lctx, hparams, batch, model.tok_embd, cb);
+        const  uint32_t      n_world = this->cparams.n_world;
+        const  uint32_t      my_rank = this->cparams.rank;
+        const  uint32_t    * n_layer_window = this->cparams.n_layer_window;
 
+        if (my_rank == 0) {
+            sub_gf = ggml_new_graph_custom(ctx0, llama_model_max_nodes(model), false);
+
+            // inp_embd - contains the input embedding
+            inpL = llm_build_inp_embd(ctx0, lctx, hparams, batch, model.tok_embd, cb);
+
+            // build the input layer as a seperate subgraph
+            ggml_build_forward_expand(sub_gf, inpL);
+            sub_gfs.push_back(sub_gf);
+
+            sub_gf = nullptr;
+            inpL = nullptr;
+        }
+
+        // inpB - contains the output embedding from other nodes
+        inpB = llm_build_backend_embd(ctx0, lctx, hparams, batch, cb);
+          
         // inp_pos - contains the positions
         struct ggml_tensor * inp_pos = build_inp_pos();
 
@@ -12610,30 +12676,54 @@ struct llm_build_context {
         struct ggml_tensor * KQ_mask = build_inp_KQ_mask();
 
         for (int il = 0; il < n_layer; ++il) {
-            struct ggml_tensor * inpSA = inpL;
+            if (!this_layer_is_mine(il, n_world, my_rank, n_layer_window)) {
+                // if we have an active sub-graph, add it to the list 
+                if (sub_gf != nullptr && inpL != nullptr) {
+                    ggml_build_forward_expand(sub_gf, cur);
+                    sub_gfs.push_back(sub_gf);
+                    sub_gf = nullptr;
+                }
+                // synchronous input tensor
+                if (inpL != inpB) {
+                    inpL = inpB;
+                }
+                continue;
+            }
 
+            if (inpL == nullptr) {
+                inpL = inpB;
+            }
+
+            // start a new sub-graph
+            if (sub_gf == nullptr) {
+                sub_gf = ggml_new_graph_custom(ctx0, llama_model_max_nodes(model), false);
+            }
+
+            struct ggml_tensor * inpSA = inpL; // use for shortcut
+            int local_il = map_layer_to_local_id(il, n_world, my_rank, n_layer_window);
+            
             // norm
             cur = llm_build_norm(ctx0, inpL, hparams,
-                    model.layers[il].attn_norm, NULL,
-                    LLM_NORM_RMS, cb, il);
+                model.layers[local_il].attn_norm, NULL,
+                LLM_NORM_RMS, cb, il);
             cb(cur, "attn_norm", il);
 
             // self-attention
             {
                 // compute Q and K and RoPE them
-                struct ggml_tensor * Qcur = llm_build_lora_mm(lctx, ctx0, model.layers[il].wq, cur);
+                struct ggml_tensor * Qcur = llm_build_lora_mm(lctx, ctx0, model.layers[local_il].wq, cur);
                 cb(Qcur, "Qcur", il);
-                Qcur = ggml_add(ctx0, Qcur, model.layers[il].bq);
+                Qcur = ggml_add(ctx0, Qcur, model.layers[local_il].bq);
                 cb(Qcur, "Qcur", il);
 
-                struct ggml_tensor * Kcur = llm_build_lora_mm(lctx, ctx0, model.layers[il].wk, cur);
+                struct ggml_tensor * Kcur = llm_build_lora_mm(lctx, ctx0, model.layers[local_il].wk, cur);
                 cb(Kcur, "Kcur", il);
-                Kcur = ggml_add(ctx0, Kcur, model.layers[il].bk);
+                Kcur = ggml_add(ctx0, Kcur, model.layers[local_il].bk);
                 cb(Kcur, "Kcur", il);
 
-                struct ggml_tensor * Vcur = llm_build_lora_mm(lctx, ctx0, model.layers[il].wv, cur);
+                struct ggml_tensor * Vcur = llm_build_lora_mm(lctx, ctx0, model.layers[local_il].wv, cur);
                 cb(Vcur, "Vcur", il);
-                Vcur = ggml_add(ctx0, Vcur, model.layers[il].bv);
+                Vcur = ggml_add(ctx0, Vcur, model.layers[local_il].bv);
                 cb(Vcur, "Vcur", il);
 
                 Qcur = ggml_rope_ext(
@@ -12650,9 +12740,9 @@ struct llm_build_context {
                 );
                 cb(Kcur, "Kcur", il);
 
-                cur = llm_build_kv(ctx0, lctx, kv_self, gf,
-                        model.layers[il].wo, model.layers[il].bo,
-                        Kcur, Vcur, Qcur, KQ_mask, n_tokens, kv_head, n_kv, 1.0f/sqrtf(float(n_embd_head)), cb, il);
+                cur = llm_build_kv(ctx0, lctx, kv_self, sub_gf,
+                    model.layers[local_il].wo, model.layers[local_il].bo,
+                    Kcur, Vcur, Qcur, KQ_mask, n_tokens, kv_head, n_kv, 1.0f/sqrtf(float(n_embd_head)), cb, il);
             }
 
             if (il == n_layer - 1) {
@@ -12667,19 +12757,19 @@ struct llm_build_context {
 
             // feed-forward network
             cur = llm_build_norm(ctx0, ffn_inp, hparams,
-                    model.layers[il].ffn_norm, NULL,
+                    model.layers[local_il].ffn_norm, NULL,
                     LLM_NORM_RMS, cb, il);
             cb(cur, "ffn_norm", il);
 
             cur = llm_build_ffn(ctx0, lctx, cur,
-                    model.layers[il].ffn_up,   NULL, NULL,
-                    model.layers[il].ffn_gate, NULL, NULL,
-                    model.layers[il].ffn_down, NULL, NULL,
+                    model.layers[local_il].ffn_up,   NULL, NULL,
+                    model.layers[local_il].ffn_gate, NULL, NULL,
+                    model.layers[local_il].ffn_down, NULL, NULL,
                     NULL,
                     LLM_FFN_SILU, LLM_FFN_PAR, cb, il);
             cb(cur, "ffn_out", il);
 
-            cur = ggml_add(ctx0, cur, ffn_inp);
+            cur = ggml_add(ctx0, cur, ffn_inp); // shortcut
             cur = lctx.cvec.apply_to(ctx0, cur, il);
             cb(cur, "l_out", il);
 
@@ -12687,20 +12777,35 @@ struct llm_build_context {
             inpL = cur;
         }
 
-        cur = inpL;
+        // add the last active sub-graph to the list
+        if (sub_gf != nullptr) {
+            ggml_build_forward_expand(sub_gf, cur);
+            sub_gfs.push_back(sub_gf);
+            sub_gf = nullptr;
+        }
 
-        cur = llm_build_norm(ctx0, cur, hparams,
-                model.output_norm, NULL,
-                LLM_NORM_RMS, cb, -1);
-        cb(cur, "result_norm", -1);
+        // output norm and lm_head
+        if (my_rank == 0) {
+            // start a new sub-graph for the output
+            sub_gf = ggml_new_graph_custom(ctx0, llama_model_max_nodes(model), false);
 
-        // lm_head
-        cur = llm_build_lora_mm(lctx, ctx0, model.output, cur);
-        cb(cur, "result_output", -1);
+            cur = llm_build_out_embd(ctx0, lctx, hparams, cb);
 
-        ggml_build_forward_expand(gf, cur);
+            cur = llm_build_norm(ctx0, cur, hparams,
+                    model.output_norm, NULL,
+                    LLM_NORM_RMS, cb, -1);
+            cb(cur, "result_norm", -1);
 
-        return gf;
+            // lm_head
+            cur = llm_build_lora_mm(lctx, ctx0, model.output, cur);
+            cb(cur, "result_output", -1);
+
+            ggml_build_forward_expand(sub_gf, cur);
+            sub_gfs.push_back(sub_gf);
+            sub_gf = nullptr;
+        }
+
+        return sub_gfs;
     }
 
     struct ggml_cgraph * build_qwen2moe() {
@@ -16788,7 +16893,7 @@ static std::vector<struct ggml_cgraph *> llama_build_graph(
 
     llm.init();
 
-    GGML_ASSERT(model.arch == LLM_ARCH_LLAMA && "this model is currently not supported");
+    GGML_ASSERT((model.arch == LLM_ARCH_LLAMA || model.arch == LLM_ARCH_QWEN2) && "this model is currently not supported");
 
     switch (model.arch) {
         case LLM_ARCH_LLAMA:
@@ -16841,7 +16946,8 @@ static std::vector<struct ggml_cgraph *> llama_build_graph(
             } break;
         case LLM_ARCH_QWEN2:
             {
-                result.push_back(llm.build_qwen2());
+                // result.push_back(llm.build_qwen2()); // TODO:Rewrite the build graph function for distributed inference
+                result = llm.build_qwen2();
             } break;
         case LLM_ARCH_QWEN2MOE:
             {
@@ -21235,7 +21341,11 @@ void llama_model_n_flops(
             case LLM_ARCH_MINICPM:
             case LLM_ARCH_GRANITE:
             case LLM_ARCH_GRANITE_MOE:
+                
                 llm_load_llama_tensors(*ml, *model, ctx_map, 1, 0, n_layer_window, &use_mmap_buffer, false);
+                break;
+            case LLM_ARCH_QWEN2:
+                llm_load_qwen2_tensors(*ml, *model, ctx_map, 1, 0, n_layer_window, &use_mmap_buffer, false);
                 break;
             default:
                 throw std::runtime_error("unsupported architecture\n");
