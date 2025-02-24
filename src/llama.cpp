@@ -2318,6 +2318,7 @@ enum e_model {
     MODEL_1B,
     MODEL_1_3B,
     MODEL_1_4B,
+    MODEL_1_5B,
     MODEL_1_6B,
     MODEL_2B,
     MODEL_2_8B,
@@ -2336,6 +2337,7 @@ enum e_model {
     MODEL_16B,
     MODEL_20B,
     MODEL_30B,
+    MODEL_32B,
     MODEL_34B,
     MODEL_35B,
     MODEL_40B,
@@ -5675,6 +5677,7 @@ static const char * llama_model_type_name(e_model type) {
         case MODEL_1B:            return "1B";
         case MODEL_1_3B:          return "1.3B";
         case MODEL_1_4B:          return "1.4B";
+        case MODEL_1_5B:          return "1.5B";
         case MODEL_1_6B:          return "1.6B";
         case MODEL_2B:            return "2B";
         case MODEL_2_8B:          return "2.8B";
@@ -5693,6 +5696,7 @@ static const char * llama_model_type_name(e_model type) {
         case MODEL_16B:           return "16B";
         case MODEL_20B:           return "20B";
         case MODEL_30B:           return "30B";
+        case MODEL_32B:           return "32B";
         case MODEL_34B:           return "34B";
         case MODEL_35B:           return "35B";
         case MODEL_40B:           return "40B";
@@ -6046,8 +6050,12 @@ static void llm_load_hparams(
                 ml.get_key(LLM_KV_ATTENTION_LAYERNORM_RMS_EPS, hparams.f_norm_rms_eps);
                 switch (hparams.n_layer) {
                     case 24: model.type = hparams.n_embd == 1024 ? e_model::MODEL_0_5B : e_model::MODEL_1B; break;
+                    case 28: model.type = hparams.n_embd == 1536 ? e_model::MODEL_1_5B : e_model::MODEL_7B; break;
                     case 32: model.type = e_model::MODEL_7B; break;
+                    case 36: model.type = e_model::MODEL_3B; break;
                     case 40: model.type = hparams.n_head() == 20 ? e_model::MODEL_4B : e_model::MODEL_13B; break;
+                    case 48: model.type = e_model::MODEL_14B; break;
+                    case 64: model.type = e_model::MODEL_32B; break;
                     case 80: model.type = e_model::MODEL_70B; break;
                     default: model.type = e_model::MODEL_UNKNOWN;
                 }
@@ -16946,7 +16954,7 @@ static std::vector<struct ggml_cgraph *> llama_build_graph(
             } break;
         case LLM_ARCH_QWEN2:
             {
-                // result.push_back(llm.build_qwen2()); // TODO:Rewrite the build graph function for distributed inference
+                // result.push_back(llm.build_qwen2()); 
                 result = llm.build_qwen2();
             } break;
         case LLM_ARCH_QWEN2MOE:

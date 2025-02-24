@@ -873,13 +873,17 @@ static bool assign_layers_to_device(
     // model-specific constants
     const int n_embd_k_gqa = llama_model_n_embd_k_gqa(model);
     const int n_embd_v_gqa = llama_model_n_embd_v_gqa(model);
+    if (n_embd_k_gqa <= 0 || n_embd_v_gqa <= 0) {
+        LOG_ERR("Invalid model parameters,n_embd_k_gqa and n_embd_v_gqa cannot be less than 0");
+        return false;
+    }
     const int n_kv         = cparams.n_ctx;
 
     const int64_t b        = dev_info_set[0].model_bytes.nb_layer;
     const int64_t bo       = dev_info_set[0].model_bytes.nb_output;
     const int64_t b_prime  = b + 2 * (n_embd_k_gqa + n_embd_v_gqa) * n_kv;
 
-#if defined(USE_HIGHS)
+#if defined(USE_HIGHS) 
     const device_info &master = dev_info_set[0];
     const int n_vocab = llama_n_vocab(model);
     const int64_t bi  = dev_info_set[0].model_bytes.nb_input;
