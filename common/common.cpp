@@ -1371,13 +1371,11 @@ static bool assign_layers_to_device(
             if (!dev_gpu[m]) continue;
             uint32_t w_m = best_solution[m], n_m = best_solution[m + n_world];
 
-            // if there is still free GPU memory
             if (n_m < static_cast<uint32_t>(std::round(W * vec_z_gpu[m]))) {
+                // if there is still free GPU memory
                 has_free_gpu_memory = true;
-            }
-            
-            // if there is GPU device overloaded
-            if (w_m > n_m) {
+            } else if (w_m > n_m) {
+                // if the GPU is overloaded
                 has_gpu_overload = true;
             }
         }
