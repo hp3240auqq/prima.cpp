@@ -1376,7 +1376,7 @@ static bool assign_layers_to_device(
             uint32_t w_m = best_solution[m], n_m = best_solution[m + n_world];
 
             if (dev_gpu[m]) {
-                if (n_m < static_cast<uint32_t>(std::round(W * vec_z_gpu[m]))) {
+                if (n_m < static_cast<uint32_t>(std::floor(W * vec_z_gpu[m]))) {
                     // if there is still free GPU memory
                     has_free_gpu_memory = true;
                 } else if (w_m > n_m) {
