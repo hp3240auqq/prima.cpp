@@ -1978,6 +1978,10 @@ void device_print_props(struct device_info * dev_info_set, int n, struct llama_m
     LOG_INF("| %-10" PRId64 "   ", dev_info_set[0].model_flops.output_q4k_f32);
     LOG_INF("\n");
 
+    LOG_INF("| Model flops (output Q50xF32) ");
+    LOG_INF("| %-10" PRId64 "   ", dev_info_set[0].model_flops.output_q50_f32);
+    LOG_INF("\n");
+
     LOG_INF("| Model flops (output Q5KxF32) ");
     LOG_INF("| %-10" PRId64 "   ", dev_info_set[0].model_flops.output_q5k_f32);
     LOG_INF("\n");
@@ -2000,6 +2004,10 @@ void device_print_props(struct device_info * dev_info_set, int n, struct llama_m
 
     LOG_INF("| Model flops (layer Q4KxF32)  ");
     LOG_INF("| %-10" PRId64 "   ", dev_info_set[0].model_flops.layer_q4k_f32);
+    LOG_INF("\n");
+
+    LOG_INF("| Model flops (layer Q50xF32)  ");
+    LOG_INF("| %-10" PRId64 "   ", dev_info_set[0].model_flops.layer_q50_f32);
     LOG_INF("\n");
 
     LOG_INF("| Model flops (layer Q5KxF32)  ");
@@ -2026,6 +2034,10 @@ void device_print_props(struct device_info * dev_info_set, int n, struct llama_m
     LOG_INF("| %-10" PRId64 "   ", dev_info_set[0].model_params.input_q4k);
     LOG_INF("\n");
 
+    LOG_INF("| Model params (input Q50)     ");
+    LOG_INF("| %-10" PRId64 "   ", dev_info_set[0].model_params.input_q50);
+    LOG_INF("\n");
+
     LOG_INF("| Model params (input Q5K)     ");
     LOG_INF("| %-10" PRId64 "   ", dev_info_set[0].model_params.input_q5k);
     LOG_INF("\n");
@@ -2050,6 +2062,10 @@ void device_print_props(struct device_info * dev_info_set, int n, struct llama_m
     LOG_INF("| %-10" PRId64 "   ", dev_info_set[0].model_params.layer_q4k);
     LOG_INF("\n");
 
+    LOG_INF("| Model params (layer Q50)     ");
+    LOG_INF("| %-10" PRId64 "   ", dev_info_set[0].model_params.layer_q50);
+    LOG_INF("\n");
+
     LOG_INF("| Model params (layer Q5K)     ");
     LOG_INF("| %-10" PRId64 "   ", dev_info_set[0].model_params.layer_q5k);
     LOG_INF("\n");
@@ -2072,6 +2088,10 @@ void device_print_props(struct device_info * dev_info_set, int n, struct llama_m
 
     LOG_INF("| Model params (output Q4K)    ");
     LOG_INF("| %-10" PRId64 "   ", dev_info_set[0].model_params.output_q4k);
+    LOG_INF("\n");
+
+    LOG_INF("| Model params (output Q50)    ");
+    LOG_INF("| %-10" PRId64 "   ", dev_info_set[0].model_params.output_q50);
     LOG_INF("\n");
 
     LOG_INF("| Model params (output Q5K)    ");

@@ -21476,6 +21476,7 @@ void llama_model_n_flops(
     n_flops->layer_f32_f32 = static_cast<int64_t>((double)n_flops->layer_f32_f32 / (double)n_layer);
     n_flops->layer_f16_f32 = static_cast<int64_t>((double)n_flops->layer_f16_f32 / (double)n_layer);
     n_flops->layer_q4k_f32 = static_cast<int64_t>((double)n_flops->layer_q4k_f32 / (double)n_layer);
+    n_flops->layer_q50_f32 = static_cast<int64_t>((double)n_flops->layer_q50_f32 / (double)n_layer);
     n_flops->layer_q5k_f32 = static_cast<int64_t>((double)n_flops->layer_q5k_f32 / (double)n_layer);
     n_flops->layer_q6k_f32 = static_cast<int64_t>((double)n_flops->layer_q6k_f32 / (double)n_layer);
     n_flops->layer_q80_f32 = static_cast<int64_t>((double)n_flops->layer_q80_f32 / (double)n_layer);
@@ -21483,6 +21484,7 @@ void llama_model_n_flops(
     n_params->layer_f32    = static_cast<int64_t>((double)n_params->layer_f32    / (double)n_layer);
     n_params->layer_f16    = static_cast<int64_t>((double)n_params->layer_f16    / (double)n_layer);
     n_params->layer_q4k    = static_cast<int64_t>((double)n_params->layer_q4k    / (double)n_layer);
+    n_params->layer_q50    = static_cast<int64_t>((double)n_params->layer_q50    / (double)n_layer);
     n_params->layer_q5k    = static_cast<int64_t>((double)n_params->layer_q5k    / (double)n_layer);
     n_params->layer_q6k    = static_cast<int64_t>((double)n_params->layer_q6k    / (double)n_layer);
     n_params->layer_q80    = static_cast<int64_t>((double)n_params->layer_q80    / (double)n_layer);
