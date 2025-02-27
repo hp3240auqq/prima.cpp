@@ -904,6 +904,7 @@ static bool assign_layers_to_device(
             master.model_flops.layer_f32_f32 / (dev.cpu_props.flops_f32_f32 * 1e9 + EPS) +
             master.model_flops.layer_f16_f32 / (dev.cpu_props.flops_f16_f32 * 1e9 + EPS) +
             master.model_flops.layer_q4k_f32 / (dev.cpu_props.flops_q4k_f32 * 1e9 + EPS) +
+            master.model_flops.layer_q50_f32 / (dev.cpu_props.flops_q50_f32 * 1e9 + EPS) +
             master.model_flops.layer_q5k_f32 / (dev.cpu_props.flops_q5k_f32 * 1e9 + EPS) +
             master.model_flops.layer_q6k_f32 / (dev.cpu_props.flops_q6k_f32 * 1e9 + EPS) +
             master.model_flops.layer_q80_f32 / (dev.cpu_props.flops_q80_f32 * 1e9 + EPS)) * 1000; // in ms
@@ -923,6 +924,7 @@ static bool assign_layers_to_device(
                     master.model_flops.layer_f32_f32 / (dev.gpu_props.metal_flops_f32_f32 * 1e9 + EPS) +
                     master.model_flops.layer_f16_f32 / (dev.gpu_props.metal_flops_f16_f32 * 1e9 + EPS) +
                     master.model_flops.layer_q4k_f32 / (dev.gpu_props.metal_flops_q4k_f32 * 1e9 + EPS) +
+                    master.model_flops.layer_q50_f32 / (dev.gpu_props.metal_flops_q50_f32 * 1e9 + EPS) +
                     master.model_flops.layer_q5k_f32 / (dev.gpu_props.metal_flops_q5k_f32 * 1e9 + EPS) +
                     master.model_flops.layer_q6k_f32 / (dev.gpu_props.metal_flops_q6k_f32 * 1e9 + EPS) +
                     master.model_flops.layer_q80_f32 / (dev.gpu_props.metal_flops_q80_f32 * 1e9 + EPS)) * 1000; // in ms
@@ -933,6 +935,7 @@ static bool assign_layers_to_device(
                     master.model_flops.layer_f32_f32 / (dev.gpu_props.cuda_flops_f32_f32 * 1e9 + EPS) +
                     master.model_flops.layer_f16_f32 / (dev.gpu_props.cuda_flops_f16_f32 * 1e9 + EPS) +
                     master.model_flops.layer_q4k_f32 / (dev.gpu_props.cuda_flops_q4k_f32 * 1e9 + EPS) +
+                    master.model_flops.layer_q50_f32 / (dev.gpu_props.cuda_flops_q50_f32 * 1e9 + EPS) +
                     master.model_flops.layer_q5k_f32 / (dev.gpu_props.cuda_flops_q5k_f32 * 1e9 + EPS) +
                     master.model_flops.layer_q6k_f32 / (dev.gpu_props.cuda_flops_q6k_f32 * 1e9 + EPS) +
                     master.model_flops.layer_q80_f32 / (dev.gpu_props.cuda_flops_q80_f32 * 1e9 + EPS)) * 1000; // in ms
@@ -1113,6 +1116,7 @@ static bool assign_layers_to_device(
                     dev.model_flops.layer_f32_f32 / (dev.cpu_props.flops_f32_f32 * 1e9 + EPS) +
                     dev.model_flops.layer_f16_f32 / (dev.cpu_props.flops_f16_f32 * 1e9 + EPS) +
                     dev.model_flops.layer_q4k_f32 / (dev.cpu_props.flops_q4k_f32 * 1e9 + EPS) +
+                    dev.model_flops.layer_q5k_f32 / (dev.cpu_props.flops_q50_f32 * 1e9 + EPS) +
                     dev.model_flops.layer_q5k_f32 / (dev.cpu_props.flops_q5k_f32 * 1e9 + EPS) +
                     dev.model_flops.layer_q6k_f32 / (dev.cpu_props.flops_q6k_f32 * 1e9 + EPS) +
                     dev.model_flops.layer_q80_f32 / (dev.cpu_props.flops_q80_f32 * 1e9 + EPS)) * 1000; // in ms

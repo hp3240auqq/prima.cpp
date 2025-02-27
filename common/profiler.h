@@ -18,6 +18,7 @@ struct cpu_props {
     float        flops_f32_f32; // in GFLOPS
     float        flops_f16_f32; // in GFLOPS
     float        flops_q4k_f32; // in GFLOPS
+    float        flops_q50_f32; // in GFLOPS
     float        flops_q5k_f32; // in GFLOPS
     float        flops_q6k_f32; // in GFLOPS
     float        flops_q80_f32; // in GFLOPS
@@ -29,6 +30,7 @@ struct cpu_props {
         flops_f32_f32(0.0f), 
         flops_f16_f32(0.0f), 
         flops_q4k_f32(0.0f),
+        flops_q50_f32(0.0f),
         flops_q5k_f32(0.0f),
         flops_q6k_f32(0.0f),
         flops_q80_f32(0.0f) {}
@@ -81,6 +83,7 @@ struct gpu_props {
     float        metal_flops_f32_f32; // in GFLOPS
     float        metal_flops_f16_f32; // in GFLOPS
     float        metal_flops_q4k_f32; // in GFLOPS
+    float        metal_flops_q50_f32; // in GFLOPS
     float        metal_flops_q5k_f32; // in GFLOPS
     float        metal_flops_q6k_f32; // in GFLOPS
     float        metal_flops_q80_f32; // in GFLOPS
@@ -89,6 +92,7 @@ struct gpu_props {
     float        cuda_flops_f32_f32;  // in GFLOPS
     float        cuda_flops_f16_f32;  // in GFLOPS
     float        cuda_flops_q4k_f32;  // in GFLOPS
+    float        cuda_flops_q50_f32;  // in GFLOPS
     float        cuda_flops_q5k_f32;  // in GFLOPS
     float        cuda_flops_q6k_f32;  // in GFLOPS
     float        cuda_flops_q80_f32;  // in GFLOPS
@@ -103,6 +107,7 @@ struct gpu_props {
         metal_flops_f32_f32(0.0f), 
         metal_flops_f16_f32(0.0f),
         metal_flops_q4k_f32(0.0f),
+        metal_flops_q50_f32(0.0f),
         metal_flops_q5k_f32(0.0f),
         metal_flops_q6k_f32(0.0f),
         metal_flops_q80_f32(0.0f),
@@ -111,6 +116,7 @@ struct gpu_props {
         cuda_flops_f32_f32 (0.0f), 
         cuda_flops_f16_f32 (0.0f), 
         cuda_flops_q4k_f32 (0.0f),
+        cuda_flops_q50_f32 (0.0f),
         cuda_flops_q5k_f32 (0.0f),
         cuda_flops_q6k_f32 (0.0f),
         cuda_flops_q80_f32 (0.0f),
@@ -122,12 +128,14 @@ struct model_flops {
     int64_t output_f32_f32;
     int64_t output_f16_f32;
     int64_t output_q4k_f32;
+    int64_t output_q50_f32;
     int64_t output_q5k_f32;
     int64_t output_q6k_f32;
     int64_t output_q80_f32;
     int64_t layer_f32_f32;
     int64_t layer_f16_f32;
     int64_t layer_q4k_f32;
+    int64_t layer_q50_f32;
     int64_t layer_q5k_f32;
     int64_t layer_q6k_f32;
     int64_t layer_q80_f32;
@@ -137,12 +145,14 @@ struct model_flops {
         output_f32_f32(0), 
         output_f16_f32(0),
         output_q4k_f32(0),
+        output_q50_f32(0),
         output_q5k_f32(0),
         output_q6k_f32(0), 
         output_q80_f32(0),
         layer_f32_f32 (0),
         layer_f16_f32 (0),
         layer_q4k_f32 (0),
+        layer_q50_f32 (0),
         layer_q5k_f32 (0),
         layer_q6k_f32 (0),
         layer_q80_f32 (0) {}
@@ -152,18 +162,21 @@ struct model_params {
     int64_t input_f32;
     int64_t input_f16;
     int64_t input_q4k;
+    int64_t input_q50;
     int64_t input_q5k;
     int64_t input_q6k;
     int64_t input_q80;
     int64_t output_f32;
     int64_t output_f16;
     int64_t output_q4k;
+    int64_t output_q50;
     int64_t output_q5k;
     int64_t output_q6k;
     int64_t output_q80;
     int64_t layer_f32;
     int64_t layer_f16;
     int64_t layer_q4k;
+    int64_t layer_q50;
     int64_t layer_q5k;
     int64_t layer_q6k;
     int64_t layer_q80;
@@ -172,18 +185,21 @@ struct model_params {
         input_f32 (0),
         input_f16 (0),
         input_q4k (0),
+        input_q50 (0),
         input_q5k (0),
         input_q6k (0),
         input_q80 (0),
         output_f32(0),
         output_f16(0),
         output_q4k(0),
+        output_q50(0),
         output_q5k(0),
         output_q6k(0),
         output_q80(0),
         layer_f32 (0),
         layer_f16 (0),
         layer_q4k (0),
+        layer_q50 (0),
         layer_q5k (0),
         layer_q6k (0),
         layer_q80 (0) {}

@@ -3561,6 +3561,8 @@ static bool is_dtype_exist(struct model_params * n_params, enum ggml_type dtype)
             return true;
         case GGML_TYPE_Q4_K:
             return n_params->layer_q4k > 0 || n_params->output_q4k > 0;
+        case GGML_TYPE_Q5_0:
+            return n_params->layer_q50 > 0 || n_params->output_q50 > 0;
         case GGML_TYPE_Q5_K:
             return n_params->layer_q5k > 0 || n_params->output_q5k > 0;
         case GGML_TYPE_Q6_K:
@@ -3651,6 +3653,12 @@ void llama_profile_device(
         dev_info->cpu_props.flops_q4k_f32       = device_cpu_flops  (model, GGML_TYPE_Q4_K, GGML_TYPE_F32, n_threads);
         dev_info->gpu_props.metal_flops_q4k_f32 = device_metal_flops(model, GGML_TYPE_Q4_K, GGML_TYPE_F32);
         dev_info->gpu_props.cuda_flops_q4k_f32  = device_cuda_flops (model, GGML_TYPE_Q4_K, GGML_TYPE_F32);
+    }
+
+    if (is_dtype_exist(n_params, GGML_TYPE_Q5_0)) {
+        dev_info->cpu_props.flops_q50_f32       = device_cpu_flops  (model, GGML_TYPE_Q5_0, GGML_TYPE_F32, n_threads);
+        dev_info->gpu_props.metal_flops_q50_f32 = device_metal_flops(model, GGML_TYPE_Q5_0, GGML_TYPE_F32);
+        dev_info->gpu_props.cuda_flops_q50_f32  = device_cuda_flops (model, GGML_TYPE_Q5_0, GGML_TYPE_F32);
     }
 
     if (is_dtype_exist(n_params, GGML_TYPE_Q5_K)) {
@@ -21045,6 +21053,9 @@ static void count_n_flops(struct model_flops * n_flops, enum ggml_type dtype, en
                 case GGML_TYPE_Q4_K:
                     n_flops->output_q4k_f32 += n;
                     break;
+                case GGML_TYPE_Q5_0:
+                    n_flops->output_q50_f32 += n;
+                    break;
                 case GGML_TYPE_Q5_K:
                     n_flops->output_q5k_f32 += n;
                     break;
@@ -21069,6 +21080,9 @@ static void count_n_flops(struct model_flops * n_flops, enum ggml_type dtype, en
                     break;
                 case GGML_TYPE_Q4_K:
                     n_flops->layer_q4k_f32 += n;
+                    break;
+                case GGML_TYPE_Q5_0:
+                    n_flops->layer_q50_f32 += n;
                     break;
                 case GGML_TYPE_Q5_K:
                     n_flops->layer_q5k_f32 += n;
@@ -21103,6 +21117,9 @@ static void count_n_params(struct model_params * n_params, enum ggml_type dtype,
                 case GGML_TYPE_Q4_K:
                     n_params->input_q4k += n_i64t;
                     break;
+                case GGML_TYPE_Q5_0:
+                    n_params->input_q50 += n_i64t;
+                    break;
                 case GGML_TYPE_Q5_K:
                     n_params->input_q5k += n_i64t;
                     break;
@@ -21128,6 +21145,9 @@ static void count_n_params(struct model_params * n_params, enum ggml_type dtype,
                 case GGML_TYPE_Q4_K:
                     n_params->output_q4k += n_i64t;
                     break;
+                case GGML_TYPE_Q5_0:
+                    n_params->output_q50 += n_i64t;
+                    break;
                 case GGML_TYPE_Q5_K:
                     n_params->output_q5k += n_i64t;
                     break;
@@ -21152,6 +21172,9 @@ static void count_n_params(struct model_params * n_params, enum ggml_type dtype,
                     break;
                 case GGML_TYPE_Q4_K:
                     n_params->layer_q4k += n_i64t;
+                    break;
+                case GGML_TYPE_Q5_0:
+                    n_params->layer_q50 += n_i64t;
                     break;
                 case GGML_TYPE_Q5_K:
                     n_params->layer_q5k += n_i64t;
@@ -21362,7 +21385,6 @@ void llama_model_n_flops(
             case LLM_ARCH_MINICPM:
             case LLM_ARCH_GRANITE:
             case LLM_ARCH_GRANITE_MOE:
-                
                 llm_load_llama_tensors(*ml, *model, ctx_map, 1, 0, n_layer_window, &use_mmap_buffer, false);
                 break;
             case LLM_ARCH_QWEN2:

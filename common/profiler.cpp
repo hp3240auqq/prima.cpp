@@ -365,6 +365,7 @@ float device_inp_embd_delay(struct llama_model * model, enum ggml_type src0t, in
             break;
         }
         case GGML_TYPE_Q4_K:
+        case GGML_TYPE_Q5_0:
         case GGML_TYPE_Q5_K:
         case GGML_TYPE_Q6_K:
         case GGML_TYPE_Q8_K:
@@ -1349,6 +1350,7 @@ static float device_compute_delay(struct device_info & dev_info, int n_layers, c
     gpu_latency_per_layer += (double)n_flops.layer_f32_f32  / ((double)gpu.cuda_flops_f32_f32 + EPS) / 1e9;
     gpu_latency_per_layer += (double)n_flops.layer_f16_f32  / ((double)gpu.cuda_flops_f16_f32 + EPS) / 1e9;
     gpu_latency_per_layer += (double)n_flops.layer_q4k_f32  / ((double)gpu.cuda_flops_q4k_f32 + EPS) / 1e9;
+    gpu_latency_per_layer += (double)n_flops.layer_q50_f32  / ((double)gpu.cuda_flops_q50_f32 + EPS) / 1e9;
     gpu_latency_per_layer += (double)n_flops.layer_q5k_f32  / ((double)gpu.cuda_flops_q5k_f32 + EPS) / 1e9;
     gpu_latency_per_layer += (double)n_flops.layer_q6k_f32  / ((double)gpu.cuda_flops_q6k_f32 + EPS) / 1e9;
     gpu_latency_per_layer += (double)n_flops.layer_q80_f32  / ((double)gpu.cuda_flops_q80_f32 + EPS) / 1e9;
@@ -1358,6 +1360,7 @@ static float device_compute_delay(struct device_info & dev_info, int n_layers, c
     gpu_latency_per_layer += (double)n_flops.layer_f32_f32  / ((double)gpu.metal_flops_f32_f32 + EPS) / 1e9;
     gpu_latency_per_layer += (double)n_flops.layer_f16_f32  / ((double)gpu.metal_flops_f16_f32 + EPS) / 1e9;
     gpu_latency_per_layer += (double)n_flops.layer_q4k_f32  / ((double)gpu.metal_flops_q4k_f32 + EPS) / 1e9;
+    gpu_latency_per_layer += (double)n_flops.layer_q50_f32  / ((double)gpu.metal_flops_q50_f32 + EPS) / 1e9;
     gpu_latency_per_layer += (double)n_flops.layer_q5k_f32  / ((double)gpu.metal_flops_q5k_f32 + EPS) / 1e9;
     gpu_latency_per_layer += (double)n_flops.layer_q6k_f32  / ((double)gpu.metal_flops_q6k_f32 + EPS) / 1e9;
     gpu_latency_per_layer += (double)n_flops.layer_q80_f32  / ((double)gpu.metal_flops_q80_f32 + EPS) / 1e9;
@@ -1366,6 +1369,7 @@ static float device_compute_delay(struct device_info & dev_info, int n_layers, c
     cpu_latency_per_layer += (double)n_flops.layer_f32_f32  / ((double)cpu.flops_f32_f32 + EPS) / 1e9;
     cpu_latency_per_layer += (double)n_flops.layer_f16_f32  / ((double)cpu.flops_f16_f32 + EPS) / 1e9;
     cpu_latency_per_layer += (double)n_flops.layer_q4k_f32  / ((double)cpu.flops_q4k_f32 + EPS) / 1e9;
+    cpu_latency_per_layer += (double)n_flops.layer_q50_f32  / ((double)cpu.flops_q50_f32 + EPS) / 1e9;
     cpu_latency_per_layer += (double)n_flops.layer_q5k_f32  / ((double)cpu.flops_q5k_f32 + EPS) / 1e9;
     cpu_latency_per_layer += (double)n_flops.layer_q6k_f32  / ((double)cpu.flops_q6k_f32 + EPS) / 1e9;
     cpu_latency_per_layer += (double)n_flops.layer_q80_f32  / ((double)cpu.flops_q80_f32 + EPS) / 1e9;
@@ -1384,6 +1388,7 @@ static float device_compute_delay(struct device_info & dev_info, int n_layers, c
     total_latency += (double)n_flops.output_f32_f32 / ((double)cpu.flops_f32_f32 + EPS) / 1e9;
     total_latency += (double)n_flops.output_f16_f32 / ((double)cpu.flops_f16_f32 + EPS) / 1e9;
     total_latency += (double)n_flops.output_q4k_f32 / ((double)cpu.flops_q4k_f32 + EPS) / 1e9;
+    total_latency += (double)n_flops.output_q50_f32 / ((double)cpu.flops_q50_f32 + EPS) / 1e9;
     total_latency += (double)n_flops.output_q5k_f32 / ((double)cpu.flops_q5k_f32 + EPS) / 1e9;
     total_latency += (double)n_flops.output_q6k_f32 / ((double)cpu.flops_q6k_f32 + EPS) / 1e9;
     total_latency += (double)n_flops.output_q80_f32 / ((double)cpu.flops_q80_f32 + EPS) / 1e9;
@@ -1697,6 +1702,12 @@ void device_print_props(struct device_info * dev_info_set, int n, struct llama_m
     }
     LOG_INF("\n");
 
+    LOG_INF("| CPU flops (Q50 x F32, GFLOPS)");
+    for (int i = 0; i < n; ++i) {
+        LOG_INF("| %-10.1f   ", dev_info_set[i].cpu_props.flops_q50_f32);
+    }
+    LOG_INF("\n");
+
     LOG_INF("| CPU flops (Q5K x F32, GFLOPS)");
     for (int i = 0; i < n; ++i) {
         LOG_INF("| %-10.1f   ", dev_info_set[i].cpu_props.flops_q5k_f32);
@@ -1877,6 +1888,12 @@ void device_print_props(struct device_info * dev_info_set, int n, struct llama_m
     }
     LOG_INF("\n");
 
+    LOG_INF("| Metal flops (Q50xF32, GFLOPS)");
+    for (int i = 0; i < n; ++i) {
+        LOG_INF("| %-10.1f   ", dev_info_set[i].gpu_props.metal_flops_q50_f32);
+    }
+    LOG_INF("\n");
+
     LOG_INF("| Metal flops (Q5KxF32, GFLOPS)");
     for (int i = 0; i < n; ++i) {
         LOG_INF("| %-10.1f   ", dev_info_set[i].gpu_props.metal_flops_q5k_f32);
@@ -1922,6 +1939,12 @@ void device_print_props(struct device_info * dev_info_set, int n, struct llama_m
     LOG_INF("| CUDA flops (Q4KxF32, GFLOPS) ");
     for (int i = 0; i < n; ++i) {
         LOG_INF("| %-10.1f   ", dev_info_set[i].gpu_props.cuda_flops_q4k_f32);
+    }
+    LOG_INF("\n");
+
+    LOG_INF("| CUDA flops (Q50xF32, GFLOPS) ");
+    for (int i = 0; i < n; ++i) {
+        LOG_INF("| %-10.1f   ", dev_info_set[i].gpu_props.cuda_flops_q50_f32);
     }
     LOG_INF("\n");
 
@@ -2112,12 +2135,12 @@ size_t serialize(const struct device_info * dev_info, char ** buffer) {
                       + gpu_description_len
                       + sizeof(struct disk_props)
                       + sizeof(uint32_t)    // cpu_props.cores
-                      + sizeof(float) * 6   // cpu_props.flops_f32_f32, cpu_props.flops_f16_f32, cpu_props.flops_q4k_f32, cpu_props.flops_q5k_f32, cpu_props.flops_q6k_f32, cpu_props.flops_q80_f32
+                      + sizeof(float) * 7   // cpu_props.flops_f32_f32, cpu_props.flops_f16_f32, cpu_props.flops_q4k_f32, cpu_props.flops_q50_f32, cpu_props.flops_q5k_f32, cpu_props.flops_q6k_f32, cpu_props.flops_q80_f32
                       + sizeof(struct memory_info)
                       + sizeof(struct gpu_support)
-                      + sizeof(float) * 18; // gpu_props.memory_free, gpu_props.memory_total, gpu_props.metal_read_vram_bw, gpu_props.cuda_read_vram_bw,
-                                            // gpu_props.metal_flops_f32_f32, gpu_props.metal_flops_f16_f32, gpu_props.metal_flops_q4k_f32, gpu_props.metal_flops_q5k_f32, gpu_props.metal_flops_q6k_f32, gpu_props.metal_flops_q80_f32, 
-                                            // gpu_props.cuda_flops_f32_f32, gpu_props.cuda_flops_f16_f32, gpu_props.cuda_flops_q4k_f32, gpu_props.cuda_flops_q5k_f32, gpu_props.cuda_flops_q6k_f32, gpu_props.cuda_flops_q80_f32,
+                      + sizeof(float) * 20; // gpu_props.memory_free, gpu_props.memory_total, gpu_props.metal_read_vram_bw, gpu_props.cuda_read_vram_bw,
+                                            // gpu_props.metal_flops_f32_f32, gpu_props.metal_flops_f16_f32, gpu_props.metal_flops_q4k_f32, gpu_props.metal_flops_q50_f32, gpu_props.metal_flops_q5k_f32, gpu_props.metal_flops_q6k_f32, gpu_props.metal_flops_q80_f32, 
+                                            // gpu_props.cuda_flops_f32_f32, gpu_props.cuda_flops_f16_f32, gpu_props.cuda_flops_q4k_f32, gpu_props.cuda_flops_q50_f32, gpu_props.cuda_flops_q5k_f32, gpu_props.cuda_flops_q6k_f32, gpu_props.cuda_flops_q80_f32,
                                             // gpu_props.metal_mem_cpy_delay, gpu_props.cuda_mem_cpy_delay
 
     *buffer = (char *)malloc(total_size);
@@ -2174,6 +2197,9 @@ size_t serialize(const struct device_info * dev_info, char ** buffer) {
     memcpy(ptr, &dev_info->cpu_props.flops_q4k_f32, sizeof(float));
     ptr += sizeof(float);
 
+    memcpy(ptr, &dev_info->cpu_props.flops_q50_f32, sizeof(float));
+    ptr += sizeof(float);
+
     memcpy(ptr, &dev_info->cpu_props.flops_q5k_f32, sizeof(float));
     ptr += sizeof(float);
 
@@ -2207,6 +2233,9 @@ size_t serialize(const struct device_info * dev_info, char ** buffer) {
     memcpy(ptr, &dev_info->gpu_props.metal_flops_q4k_f32, sizeof(float));
     ptr += sizeof(float);
 
+    memcpy(ptr, &dev_info->gpu_props.metal_flops_q50_f32, sizeof(float));
+    ptr += sizeof(float);
+
     memcpy(ptr, &dev_info->gpu_props.metal_flops_q5k_f32, sizeof(float));
     ptr += sizeof(float);
 
@@ -2229,6 +2258,9 @@ size_t serialize(const struct device_info * dev_info, char ** buffer) {
     ptr += sizeof(float);
 
     memcpy(ptr, &dev_info->gpu_props.cuda_flops_q4k_f32, sizeof(float));
+    ptr += sizeof(float);
+
+    memcpy(ptr, &dev_info->gpu_props.cuda_flops_q50_f32, sizeof(float));
     ptr += sizeof(float);
 
     memcpy(ptr, &dev_info->gpu_props.cuda_flops_q5k_f32, sizeof(float));
@@ -2317,6 +2349,9 @@ void deserialize(const char * buffer, struct device_info * dev_info) {
     memcpy(&dev_info->cpu_props.flops_q4k_f32, ptr, sizeof(float));
     ptr += sizeof(float);
 
+    memcpy(&dev_info->cpu_props.flops_q50_f32, ptr, sizeof(float));
+    ptr += sizeof(float);
+
     memcpy(&dev_info->cpu_props.flops_q5k_f32, ptr, sizeof(float));
     ptr += sizeof(float);
 
@@ -2350,6 +2385,9 @@ void deserialize(const char * buffer, struct device_info * dev_info) {
     memcpy(&dev_info->gpu_props.metal_flops_q4k_f32, ptr, sizeof(float));
     ptr += sizeof(float);
 
+    memcpy(&dev_info->gpu_props.metal_flops_q50_f32, ptr, sizeof(float));
+    ptr += sizeof(float);
+
     memcpy(&dev_info->gpu_props.metal_flops_q5k_f32, ptr, sizeof(float));
     ptr += sizeof(float);
 
@@ -2372,6 +2410,9 @@ void deserialize(const char * buffer, struct device_info * dev_info) {
     ptr += sizeof(float);
 
     memcpy(&dev_info->gpu_props.cuda_flops_q4k_f32, ptr, sizeof(float));
+    ptr += sizeof(float);
+
+    memcpy(&dev_info->gpu_props.cuda_flops_q50_f32, ptr, sizeof(float));
     ptr += sizeof(float);
 
     memcpy(&dev_info->gpu_props.cuda_flops_q5k_f32, ptr, sizeof(float));
