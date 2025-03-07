@@ -1665,92 +1665,92 @@ static float device_mem_copy_delay(struct device_info & dev_info, struct llama_m
 
 void device_print_props(struct device_info * dev_info_set, int n, struct llama_model * model, const struct llama_context_params cparams) {
     LOG_INF("\n-------------------------------------------------------------------------------------------\n");
-    LOG_INF("| Property                     ");
+    LOG_INF("| Property                       ");
     for (int i = 0; i < n; ++i) {
         LOG_INF("| Rank %-8d", i);
         GGML_ASSERT((int)dev_info_set[i].rank == i);
     }
     LOG_INF("\n-------------------------------------------------------------------------------------------\n");
 
-    LOG_INF("| Device Name                  ");
+    LOG_INF("| Device Name                    ");
     for (int i = 0; i < n; ++i) {
         LOG_INF("| %-10.10s   ", dev_info_set[i].device_name);
     }
     LOG_INF("\n");
 
-    LOG_INF("| Device OS                    ");
+    LOG_INF("| Device OS                      ");
     for (int i = 0; i < n; ++i) {
         LOG_INF("| %-10.10s   ", dev_info_set[i].device_os);
     }
     LOG_INF("\n");
 
-    LOG_INF("| CPU Name                     ");
+    LOG_INF("| CPU Name                       ");
     for (int i = 0; i < n; ++i) {
         LOG_INF("| %-10.10s   ", dev_info_set[i].cpu_props.name);
     }
     LOG_INF("\n");
 
-    LOG_INF("| CPU Description              ");
+    LOG_INF("| CPU Description                ");
     for (int i = 0; i < n; ++i) {
         LOG_INF("| %-10.10s   ", dev_info_set[i].cpu_props.description);
     }
     LOG_INF("\n");
 
-    LOG_INF("| Number of CPU cores          ");
+    LOG_INF("| Number of CPU cores            ");
     for (int i = 0; i < n; ++i) {
         LOG_INF("| %-10u   ", dev_info_set[i].cpu_props.cores);
     }
     LOG_INF("\n");
 
-    LOG_INF("| CPU flops (F32xF32, GFLOPS)  ");
+    LOG_INF("| CPU flops (F32xF32, GFLOPS)    ");
     for (int i = 0; i < n; ++i) {
         LOG_INF("| %-10.1f   ", dev_info_set[i].cpu_props.flops_f32_f32);
     }
     LOG_INF("\n");
 
-    LOG_INF("| CPU flops (F16xF32, GFLOPS)  ");
+    LOG_INF("| CPU flops (F16xF32, GFLOPS)    ");
     for (int i = 0; i < n; ++i) {
         LOG_INF("| %-10.1f   ", dev_info_set[i].cpu_props.flops_f16_f32);
     }
     LOG_INF("\n");
 
-    LOG_INF("| CPU flops (Q2K x F32, GFLOPS)");
+    LOG_INF("| CPU flops (Q2K x F32, GFLOPS)  ");
     for (int i = 0; i < n; ++i) {
         LOG_INF("| %-10.1f   ", dev_info_set[i].cpu_props.flops_q2k_f32);
     }
     LOG_INF("\n");
 
-    LOG_INF("| CPU flops (Q4K x F32, GFLOPS)");
+    LOG_INF("| CPU flops (Q4K x F32, GFLOPS)  ");
     for (int i = 0; i < n; ++i) {
         LOG_INF("| %-10.1f   ", dev_info_set[i].cpu_props.flops_q4k_f32);
     }
     LOG_INF("\n");
 
-    LOG_INF("| CPU flops (Q5K x F32, GFLOPS)");
+    LOG_INF("| CPU flops (Q5K x F32, GFLOPS)  ");
     for (int i = 0; i < n; ++i) {
         LOG_INF("| %-10.1f   ", dev_info_set[i].cpu_props.flops_q5k_f32);
     }
     LOG_INF("\n");
 
-    LOG_INF("| CPU flops (Q6K x F32, GFLOPS)");
+    LOG_INF("| CPU flops (Q6K x F32, GFLOPS)  ");
     for (int i = 0; i < n; ++i) {
         LOG_INF("| %-10.1f   ", dev_info_set[i].cpu_props.flops_q6k_f32);
     }
     LOG_INF("\n");
 
-    LOG_INF("| CPU flops (Q50 x F32, GFLOPS)");
+    LOG_INF("| CPU flops (Q50 x F32, GFLOPS)  ");
     for (int i = 0; i < n; ++i) {
         LOG_INF("| %-10.1f   ", dev_info_set[i].cpu_props.flops_q50_f32);
     }
     LOG_INF("\n");
 
-    LOG_INF("| CPU flops (Q80 x F32, GFLOPS)");
+    LOG_INF("| CPU flops (Q80 x F32, GFLOPS)  ");
     for (int i = 0; i < n; ++i) {
         LOG_INF("| %-10.1f   ", dev_info_set[i].cpu_props.flops_q80_f32);
     }
     LOG_INF("\n");
 
-    LOG_INF("| CPU flops (IQ1S x F32, GFLOPS)");
+    LOG_INF("| CPU flops (IQ1S x F32, GFLOPS) ");
     for (int i = 0; i < n; ++i) {
         LOG_INF("| %-10.1f   ", dev_info_set[i].cpu_props.flops_iq1s_f32);
     }
@@ -1762,199 +1762,199 @@ void device_print_props(struct device_info * dev_info_set, int n, struct llama_m
     }
     LOG_INF("\n");
 
-    LOG_INF("| Physical Mem Total (GiB)     ");
+    LOG_INF("| Physical Mem Total (GiB)       ");
     for (int i = 0; i < n; ++i) {
         LOG_INF("| %-10.2f   ", dev_info_set[i].memory.total_physical);
     }
     LOG_INF("\n");
 
-    LOG_INF("| Physical Mem Available (GiB) ");
+    LOG_INF("| Physical Mem Available (GiB)   ");
     for (int i = 0; i < n; ++i) {
         LOG_INF("| %-10.2f   ", dev_info_set[i].memory.available_physical);
     }
     LOG_INF("\n");
 
-    LOG_INF("| Used Mem Swappable (GiB)     ");
+    LOG_INF("| Used Mem Swappable (GiB)       ");
     for (int i = 0; i < n; ++i) {
         LOG_INF("| %-10.2f   ", dev_info_set[i].memory.used_can_swap);
     }
     LOG_INF("\n");
 
-    LOG_INF("| Swap Mem Total (GiB)         ");
+    LOG_INF("| Swap Mem Total (GiB)           ");
     for (int i = 0; i < n; ++i) {
         LOG_INF("| %-10.2f   ", dev_info_set[i].memory.total_swap);
     }
     LOG_INF("\n");
 
-    LOG_INF("| Swap Mem Available (GiB)     ");
+    LOG_INF("| Swap Mem Available (GiB)       ");
     for (int i = 0; i < n; ++i) {
         LOG_INF("| %-10.2f   ", dev_info_set[i].memory.available_swap);
     }
     LOG_INF("\n");
 
-    LOG_INF("| CPU RAM Read BW (GB/s)       ");
+    LOG_INF("| CPU RAM Read BW (GB/s)         ");
     for (int i = 0; i < n; ++i) {
         LOG_INF("| %-10.2f   ", dev_info_set[i].memory.cpu_read_ram_bw);
     }
     LOG_INF("\n");
 
-    LOG_INF("| CPU KVCache Copy Time (ms/l) ");
+    LOG_INF("| CPU KVCache Copy Time (ms/l)   ");
     for (int i = 0; i < n; ++i) {
         LOG_INF("| %-10.2f   ", dev_info_set[i].memory.mem_cpy_delay);
     }
     LOG_INF("\n");
 
-    LOG_INF("| Disk Read Seq Speed (GB/s)   ");
+    LOG_INF("| Disk Read Seq Speed (GB/s)     ");
     for (int i = 0; i < n; ++i) {
         LOG_INF("| %-10.2f   ", dev_info_set[i].disk.read_seq_bw);
     }
     LOG_INF("\n");
 
-    LOG_INF("| Disk Write Seq Speed (GB/s)  ");
+    LOG_INF("| Disk Write Seq Speed (GB/s)   ");
     for (int i = 0; i < n; ++i) {
         LOG_INF("| %-10.2f   ", dev_info_set[i].disk.write_seq_bw);
     }
     LOG_INF("\n");
 
-    LOG_INF("| Disk Read Rnd Speed (GB/s)   ");
+    LOG_INF("| Disk Read Rnd Speed (GB/s)     ");
     for (int i = 0; i < n; ++i) {
         LOG_INF("| %-10.2f   ", dev_info_set[i].disk.read_rnd_bw);
     }
     LOG_INF("\n");
 
-    LOG_INF("| Disk Write Rnd Speed (GB/s)  ");
+    LOG_INF("| Disk Write Rnd Speed (GB/s)    ");
     for (int i = 0; i < n; ++i) {
         LOG_INF("| %-10.2f   ", dev_info_set[i].disk.write_rnd_bw);
     }
     LOG_INF("\n");
 
-    LOG_INF("| GPU Metal                    ");
+    LOG_INF("| GPU Metal                      ");
     for (int i = 0; i < n; ++i) {
         LOG_INF("| %-10d   ", dev_info_set[i].gpu_support.metal);
     }
     LOG_INF("\n");
 
-    LOG_INF("| GPU CUDA                     ");
+    LOG_INF("| GPU CUDA                       ");
     for (int i = 0; i < n; ++i) {
         LOG_INF("| %-10d   ", dev_info_set[i].gpu_support.cuda);
     }
     LOG_INF("\n");
 
-    LOG_INF("| GPU Vulkan                   ");
+    LOG_INF("| GPU Vulkan                     ");
     for (int i = 0; i < n; ++i) {
         LOG_INF("| %-10d   ", dev_info_set[i].gpu_support.vulkan);
     }
     LOG_INF("\n");
 
-    LOG_INF("| GPU Kompute                  ");
+    LOG_INF("| GPU Kompute                    ");
     for (int i = 0; i < n; ++i) {
         LOG_INF("| %-10d   ", dev_info_set[i].gpu_support.kompute);
     }
     LOG_INF("\n");
 
-    LOG_INF("| GPU BLAS                     ");
+    LOG_INF("| GPU BLAS                       ");
     for (int i = 0; i < n; ++i) {
         LOG_INF("| %-10d   ", dev_info_set[i].gpu_support.gpublas);
     }
     LOG_INF("\n");
 
-    LOG_INF("| BLAS                         ");
+    LOG_INF("| BLAS                           ");
     for (int i = 0; i < n; ++i) {
         LOG_INF("| %-10d   ", dev_info_set[i].gpu_support.blas);
     }
     LOG_INF("\n");
 
-    LOG_INF("| SYCL                         ");
+    LOG_INF("| SYCL                           ");
     for (int i = 0; i < n; ++i) {
         LOG_INF("| %-10d   ", dev_info_set[i].gpu_support.sycl);
     }
     LOG_INF("\n");
 
-    LOG_INF("| GPU Name                     ");
+    LOG_INF("| GPU Name                       ");
     for (int i = 0; i < n; ++i) {
         LOG_INF("| %-10.10s   ", dev_info_set[i].gpu_props.name);
     }
     LOG_INF("\n");
 
-    LOG_INF("| GPU Description              ");
+    LOG_INF("| GPU Description                ");
     for (int i = 0; i < n; ++i) {
         LOG_INF("| %-10.10s   ", dev_info_set[i].gpu_props.description);
     }
     LOG_INF("\n");
 
-    LOG_INF("| GPU Mem Free (GiB)           ");
+    LOG_INF("| GPU Mem Free (GiB)             ");
     for (int i = 0; i < n; ++i) {
         LOG_INF("| %-10.2f   ", dev_info_set[i].gpu_props.memory_free);
     }
     LOG_INF("\n");
 
-    LOG_INF("| GPU Mem Total (GiB)          ");
+    LOG_INF("| GPU Mem Total (GiB)            ");
     for (int i = 0; i < n; ++i) {
         LOG_INF("| %-10.2f   ", dev_info_set[i].gpu_props.memory_total);
     }
     LOG_INF("\n");
 
-    LOG_INF("| Metal VRAM Read BW (GB/s)    ");
+    LOG_INF("| Metal VRAM Read BW (GB/s)      ");
     for (int i = 0; i < n; ++i) {
         LOG_INF("| %-10.2f   ", dev_info_set[i].gpu_props.metal_read_vram_bw);
     }
     LOG_INF("\n");
 
-    LOG_INF("| Metal KVCache Copy Time(ms/l)");
+    LOG_INF("| Metal KVCache Copy Time(ms/l)  ");
     for (int i = 0; i < n; ++i) {
         LOG_INF("| %-10.2f   ", dev_info_set[i].gpu_props.metal_mem_cpy_delay);
     }
     LOG_INF("\n");
 
-    LOG_INF("| Metal flops (F32xF32, GFLOPS)");
+    LOG_INF("| Metal flops (F32xF32, GFLOPS)  ");
     for (int i = 0; i < n; ++i) {
         LOG_INF("| %-10.1f   ", dev_info_set[i].gpu_props.metal_flops_f32_f32);
     }
     LOG_INF("\n");
 
-    LOG_INF("| Metal flops (F16xF32, GFLOPS)");
+    LOG_INF("| Metal flops (F16xF32, GFLOPS)  ");
     for (int i = 0; i < n; ++i) {
         LOG_INF("| %-10.1f   ", dev_info_set[i].gpu_props.metal_flops_f16_f32);
     }
     LOG_INF("\n");
 
-    LOG_INF("| Metal flops (Q2KxF32, GFLOPS)");
+    LOG_INF("| Metal flops (Q2KxF32, GFLOPS)  ");
     for (int i = 0; i < n; ++i) {
         LOG_INF("| %-10.1f   ", dev_info_set[i].gpu_props.metal_flops_q2k_f32);
     }
     LOG_INF("\n");
 
-    LOG_INF("| Metal flops (Q4KxF32, GFLOPS)");
+    LOG_INF("| Metal flops (Q4KxF32, GFLOPS)  ");
     for (int i = 0; i < n; ++i) {
         LOG_INF("| %-10.1f   ", dev_info_set[i].gpu_props.metal_flops_q4k_f32);
     }
     LOG_INF("\n");
 
-    LOG_INF("| Metal flops (Q5KxF32, GFLOPS)");
+    LOG_INF("| Metal flops (Q5KxF32, GFLOPS)  ");
     for (int i = 0; i < n; ++i) {
         LOG_INF("| %-10.1f   ", dev_info_set[i].gpu_props.metal_flops_q5k_f32);
     }
     LOG_INF("\n");
 
-    LOG_INF("| Metal flops (Q6KxF32, GFLOPS)");
+    LOG_INF("| Metal flops (Q6KxF32, GFLOPS)  ");
     for (int i = 0; i < n; ++i) {
         LOG_INF("| %-10.1f   ", dev_info_set[i].gpu_props.metal_flops_q6k_f32);
     }
     LOG_INF("\n");
 
-    LOG_INF("| Metal flops (Q50xF32, GFLOPS)");
+    LOG_INF("| Metal flops (Q50xF32, GFLOPS)  ");
     for (int i = 0; i < n; ++i) {
         LOG_INF("| %-10.1f   ", dev_info_set[i].gpu_props.metal_flops_q50_f32);
     }
     LOG_INF("\n");
 
-    LOG_INF("| Metal flops (Q80xF32, GFLOPS)");
+    LOG_INF("| Metal flops (Q80xF32, GFLOPS)  ");
     for (int i = 0; i < n; ++i) {
         LOG_INF("| %-10.1f   ", dev_info_set[i].gpu_props.metal_flops_q80_f32);
     }
     LOG_INF("\n");
 
-    LOG_INF("| Metal flops (IQ1SxF32, GFLOPS)");
+    LOG_INF("| Metal flops (IQ1SxF32, GFLOPS) ");
     for (int i = 0; i < n; ++i) {
         LOG_INF("| %-10.1f   ", dev_info_set[i].gpu_props.metal_flops_iq1s_f32);
     }
@@ -1966,67 +1966,67 @@ void device_print_props(struct device_info * dev_info_set, int n, struct llama_m
     }
     LOG_INF("\n");
 
-    LOG_INF("| CUDA VRAM Read BW (GB/s)     ");
+    LOG_INF("| CUDA VRAM Read BW (GB/s)       ");
     for (int i = 0; i < n; ++i) {
         LOG_INF("| %-10.2f   ", dev_info_set[i].gpu_props.cuda_read_vram_bw);
     }
     LOG_INF("\n");
 
-    LOG_INF("| CUDA KVCache Copy Time (ms/l)");
+    LOG_INF("| CUDA KVCache Copy Time (ms/l)  ");
     for (int i = 0; i < n; ++i) {
         LOG_INF("| %-10.2f   ", dev_info_set[i].gpu_props.cuda_mem_cpy_delay);
     }
     LOG_INF("\n");
 
-    LOG_INF("| CUDA flops (F32xF32, GFLOPS) ");
+    LOG_INF("| CUDA flops (F32xF32, GFLOPS)   ");
     for (int i = 0; i < n; ++i) {
         LOG_INF("| %-10.1f   ", dev_info_set[i].gpu_props.cuda_flops_f32_f32);
     }
     LOG_INF("\n");
 
-    LOG_INF("| CUDA flops (F16xF32, GFLOPS) ");
+    LOG_INF("| CUDA flops (F16xF32, GFLOPS)   ");
     for (int i = 0; i < n; ++i) {
         LOG_INF("| %-10.1f   ", dev_info_set[i].gpu_props.cuda_flops_f16_f32);
     }
     LOG_INF("\n");
 
-    LOG_INF("| CUDA flops (Q2KxF32, GFLOPS) ");
+    LOG_INF("| CUDA flops (Q2KxF32, GFLOPS)   ");
     for (int i = 0; i < n; ++i) {
         LOG_INF("| %-10.1f   ", dev_info_set[i].gpu_props.cuda_flops_q2k_f32);
     }
     LOG_INF("\n");
 
-    LOG_INF("| CUDA flops (Q4KxF32, GFLOPS) ");
+    LOG_INF("| CUDA flops (Q4KxF32, GFLOPS)   ");
     for (int i = 0; i < n; ++i) {
         LOG_INF("| %-10.1f   ", dev_info_set[i].gpu_props.cuda_flops_q4k_f32);
     }
     LOG_INF("\n");
 
-    LOG_INF("| CUDA flops (Q5KxF32, GFLOPS) ");
+    LOG_INF("| CUDA flops (Q5KxF32, GFLOPS)   ");
     for (int i = 0; i < n; ++i) {
         LOG_INF("| %-10.1f   ", dev_info_set[i].gpu_props.cuda_flops_q5k_f32);
     }
     LOG_INF("\n");
 
-    LOG_INF("| CUDA flops (Q6KxF32, GFLOPS) ");
+    LOG_INF("| CUDA flops (Q6KxF32, GFLOPS)   ");
     for (int i = 0; i < n; ++i) {
         LOG_INF("| %-10.1f   ", dev_info_set[i].gpu_props.cuda_flops_q6k_f32);
     }
     LOG_INF("\n");
 
-    LOG_INF("| CUDA flops (Q50xF32, GFLOPS) ");
+    LOG_INF("| CUDA flops (Q50xF32, GFLOPS)   ");
     for (int i = 0; i < n; ++i) {
         LOG_INF("| %-10.1f   ", dev_info_set[i].gpu_props.cuda_flops_q50_f32);
     }
     LOG_INF("\n");
 
-    LOG_INF("| CUDA flops (Q80xF32, GFLOPS) ");
+    LOG_INF("| CUDA flops (Q80xF32, GFLOPS)   ");
     for (int i = 0; i < n; ++i) {
         LOG_INF("| %-10.1f   ", dev_info_set[i].gpu_props.cuda_flops_q80_f32);
     }
     LOG_INF("\n");
 
-    LOG_INF("| CUDA flops (IQ1SxF32, GFLOPS) ");
+    LOG_INF("| CUDA flops (IQ1SxF32, GFLOPS)  ");
     for (int i = 0; i < n; ++i) {
         LOG_INF("| %-10.1f   ", dev_info_set[i].gpu_props.cuda_flops_iq1s_f32);
     }
@@ -2038,39 +2038,39 @@ void device_print_props(struct device_info * dev_info_set, int n, struct llama_m
     }
     LOG_INF("\n");
 
-    LOG_INF("| Model flops (output F32xF32) ");
+    LOG_INF("| Model flops (output F32xF32)   ");
     LOG_INF("| %-10" PRId64 "   ", dev_info_set[0].model_flops.output_f32_f32);
     LOG_INF("\n");
 
-    LOG_INF("| Model flops (output F16xF32) ");
+    LOG_INF("| Model flops (output F16xF32)   ");
     LOG_INF("| %-10" PRId64 "   ", dev_info_set[0].model_flops.output_f16_f32);
     LOG_INF("\n");
 
-    LOG_INF("| Model flops (output Q2KxF32) ");
+    LOG_INF("| Model flops (output Q2KxF32)   ");
     LOG_INF("| %-10" PRId64 "   ", dev_info_set[0].model_flops.output_q2k_f32);
     LOG_INF("\n");
 
-    LOG_INF("| Model flops (output Q4KxF32) ");
+    LOG_INF("| Model flops (output Q4KxF32)   ");
     LOG_INF("| %-10" PRId64 "   ", dev_info_set[0].model_flops.output_q4k_f32);
     LOG_INF("\n");
 
-    LOG_INF("| Model flops (output Q5KxF32) ");
+    LOG_INF("| Model flops (output Q5KxF32)   ");
     LOG_INF("| %-10" PRId64 "   ", dev_info_set[0].model_flops.output_q5k_f32);
     LOG_INF("\n");
 
-    LOG_INF("| Model flops (output Q6KxF32) ");
+    LOG_INF("| Model flops (output Q6KxF32)   ");
     LOG_INF("| %-10" PRId64 "   ", dev_info_set[0].model_flops.output_q6k_f32);
     LOG_INF("\n");
     
-    LOG_INF("| Model flops (output Q50xF32) ");
+    LOG_INF("| Model flops (output Q50xF32)   ");
     LOG_INF("| %-10" PRId64 "   ", dev_info_set[0].model_flops.output_q50_f32);
     LOG_INF("\n");
 
-    LOG_INF("| Model flops (output Q80xF32) ");
+    LOG_INF("| Model flops (output Q80xF32)   ");
     LOG_INF("| %-10" PRId64 "   ", dev_info_set[0].model_flops.output_q80_f32);
     LOG_INF("\n");
 
-    LOG_INF("| Model flops (output IQ1SxF32) ");
+    LOG_INF("| Model flops (output IQ1SxF32)  ");
     LOG_INF("| %-10" PRId64 "   ", dev_info_set[0].model_flops.output_iq1s_f32);
     LOG_INF("\n");
 
@@ -2078,131 +2078,131 @@ void device_print_props(struct device_info * dev_info_set, int n, struct llama_m
     LOG_INF("| %-10" PRId64 "   ", dev_info_set[0].model_flops.output_iq4nl_f32);
     LOG_INF("\n");
 
-    LOG_INF("| Model flops (layer F32xF32)  ");
+    LOG_INF("| Model flops (layer F32xF32)    ");
     LOG_INF("| %-10" PRId64 "   ", dev_info_set[0].model_flops.layer_f32_f32);
     LOG_INF("\n");
 
-    LOG_INF("| Model flops (layer F16xF32)  ");
+    LOG_INF("| Model flops (layer F16xF32)    ");
     LOG_INF("| %-10" PRId64 "   ", dev_info_set[0].model_flops.layer_f16_f32);
     LOG_INF("\n");
 
-    LOG_INF("| Model flops (layer Q2KxF32)  ");
+    LOG_INF("| Model flops (layer Q2KxF32)    ");
     LOG_INF("| %-10" PRId64 "   ", dev_info_set[0].model_flops.layer_q2k_f32);
     LOG_INF("\n");
 
-    LOG_INF("| Model flops (layer Q4KxF32)  ");
+    LOG_INF("| Model flops (layer Q4KxF32)    ");
     LOG_INF("| %-10" PRId64 "   ", dev_info_set[0].model_flops.layer_q4k_f32);
     LOG_INF("\n");
 
-    LOG_INF("| Model flops (layer Q5KxF32)  ");
+    LOG_INF("| Model flops (layer Q5KxF32)    ");
     LOG_INF("| %-10" PRId64 "   ", dev_info_set[0].model_flops.layer_q5k_f32);
     LOG_INF("\n");
 
-    LOG_INF("| Model flops (layer Q6KxF32)  ");
+    LOG_INF("| Model flops (layer Q6KxF32)    ");
     LOG_INF("| %-10" PRId64 "   ", dev_info_set[0].model_flops.layer_q6k_f32);
     LOG_INF("\n");
 
-    LOG_INF("| Model flops (layer Q50xF32)  ");
+    LOG_INF("| Model flops (layer Q50xF32)    ");
     LOG_INF("| %-10" PRId64 "   ", dev_info_set[0].model_flops.layer_q50_f32);
     LOG_INF("\n");
 
-    LOG_INF("| Model flops (layer Q80xF32)  ");
+    LOG_INF("| Model flops (layer Q80xF32)    ");
     LOG_INF("| %-10" PRId64 "   ", dev_info_set[0].model_flops.layer_q80_f32);
     LOG_INF("\n");
 
-    LOG_INF("| Model flops (layer IQ1SxF32) ");
+    LOG_INF("| Model flops (layer IQ1SxF32)   ");
     LOG_INF("| %-10" PRId64 "   ", dev_info_set[0].model_flops.layer_iq1s_f32);
     LOG_INF("\n");
 
-    LOG_INF("| Model flops (layer IQ4NLxF32) ");
+    LOG_INF("| Model flops (layer IQ4NLxF32)  ");
     LOG_INF("| %-10" PRId64 "   ", dev_info_set[0].model_flops.layer_iq4nl_f32);
     LOG_INF("\n");
 
-    LOG_INF("| Model params (input F32)     ");
+    LOG_INF("| Model params (input F32)       ");
     LOG_INF("| %-10" PRId64 "   ", dev_info_set[0].model_params.input_f32);
     LOG_INF("\n");
 
-    LOG_INF("| Model params (input F16)     ");
+    LOG_INF("| Model params (input F16)       ");
     LOG_INF("| %-10" PRId64 "   ", dev_info_set[0].model_params.input_f16);
     LOG_INF("\n");
 
-    LOG_INF("| Model params (input Q2K)     ");
+    LOG_INF("| Model params (input Q2K)       ");
     LOG_INF("| %-10" PRId64 "   ", dev_info_set[0].model_params.input_q2k);
     LOG_INF("\n");
 
-    LOG_INF("| Model params (input Q4K)     ");
+    LOG_INF("| Model params (input Q4K)       ");
     LOG_INF("| %-10" PRId64 "   ", dev_info_set[0].model_params.input_q4k);
     LOG_INF("\n");
 
-    LOG_INF("| Model params (input Q5K)     ");
+    LOG_INF("| Model params (input Q5K)       ");
     LOG_INF("| %-10" PRId64 "   ", dev_info_set[0].model_params.input_q5k);
     LOG_INF("\n");
 
-    LOG_INF("| Model params (input Q6K)     ");
+    LOG_INF("| Model params (input Q6K)       ");
     LOG_INF("| %-10" PRId64 "   ", dev_info_set[0].model_params.input_q6k);
     LOG_INF("\n");
 
-    LOG_INF("| Model params (input Q50)     ");
+    LOG_INF("| Model params (input Q50)       ");
     LOG_INF("| %-10" PRId64 "   ", dev_info_set[0].model_params.input_q50);
     LOG_INF("\n");
 
-    LOG_INF("| Model params (input Q80)     ");
+    LOG_INF("| Model params (input Q80)       ");
     LOG_INF("| %-10" PRId64 "   ", dev_info_set[0].model_params.input_q80);
     LOG_INF("\n");
 
-    LOG_INF("| Model params (input IQ1S)    ");
+    LOG_INF("| Model params (input IQ1S)      ");
     LOG_INF("| %-10" PRId64 "   ", dev_info_set[0].model_params.input_iq1s);
     LOG_INF("\n");
 
-    LOG_INF("| Model params (input IQ4NL)   ");
+    LOG_INF("| Model params (input IQ4NL)     ");
     LOG_INF("| %-10" PRId64 "   ", dev_info_set[0].model_params.input_iq4nl);
     LOG_INF("\n");
 
-    LOG_INF("| Model params (layer F32)     ");
+    LOG_INF("| Model params (layer F32)       ");
     LOG_INF("| %-10" PRId64 "   ", dev_info_set[0].model_params.layer_f32);
     LOG_INF("\n");
 
-    LOG_INF("| Model params (layer F16)     ");
+    LOG_INF("| Model params (layer F16)       ");
     LOG_INF("| %-10" PRId64 "   ", dev_info_set[0].model_params.layer_f16);
     LOG_INF("\n");
 
-    LOG_INF("| Model params (layer Q2K)     ");
+    LOG_INF("| Model params (layer Q2K)       ");
     LOG_INF("| %-10" PRId64 "   ", dev_info_set[0].model_params.layer_q2k);
     LOG_INF("\n");
 
-    LOG_INF("| Model params (layer Q4K)     ");
+    LOG_INF("| Model params (layer Q4K)       ");
     LOG_INF("| %-10" PRId64 "   ", dev_info_set[0].model_params.layer_q4k);
     LOG_INF("\n");
 
-    LOG_INF("| Model params (layer Q5K)     ");
+    LOG_INF("| Model params (layer Q5K)       ");
     LOG_INF("| %-10" PRId64 "   ", dev_info_set[0].model_params.layer_q5k);
     LOG_INF("\n");
 
-    LOG_INF("| Model params (layer Q6K)     ");
+    LOG_INF("| Model params (layer Q6K)       ");
     LOG_INF("| %-10" PRId64 "   ", dev_info_set[0].model_params.layer_q6k);
     LOG_INF("\n");
 
-    LOG_INF("| Model params (layer Q50)     ");
+    LOG_INF("| Model params (layer Q50)       ");
     LOG_INF("| %-10" PRId64 "   ", dev_info_set[0].model_params.layer_q50);
     LOG_INF("\n");
 
-    LOG_INF("| Model params (layer Q80)     ");
+    LOG_INF("| Model params (layer Q80)       ");
     LOG_INF("| %-10" PRId64 "   ", dev_info_set[0].model_params.layer_q80);
     LOG_INF("\n");
 
-    LOG_INF("| Model params (layer IQ1S)    ");
+    LOG_INF("| Model params (layer IQ1S)      ");
     LOG_INF("| %-10" PRId64 "   ", dev_info_set[0].model_params.layer_iq1s);
     LOG_INF("\n");
 
-    LOG_INF("| Model params (layer IQ4NL)   ");
+    LOG_INF("| Model params (layer IQ4NL)     ");
     LOG_INF("| %-10" PRId64 "   ", dev_info_set[0].model_params.layer_iq4nl);
     LOG_INF("\n");                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           
 
-    LOG_INF("| Model params (output F32)    ");
+    LOG_INF("| Model params (output F32)      ");
     LOG_INF("| %-10" PRId64 "   ", dev_info_set[0].model_params.output_f32);
     LOG_INF("\n");
 
-    LOG_INF("| Model params (output F16)    ");
+    LOG_INF("| Model params (output F16)      ");
     LOG_INF("| %-10" PRId64 "   ", dev_info_set[0].model_params.output_f16);
     LOG_INF("\n");
 
@@ -2210,43 +2210,43 @@ void device_print_props(struct device_info * dev_info_set, int n, struct llama_m
     LOG_INF("| %-10" PRId64 "   ", dev_info_set[0].model_params.output_q2k);
     LOG_INF("\n");
 
-    LOG_INF("| Model params (output Q4K)    ");
+    LOG_INF("| Model params (output Q4K)      ");
     LOG_INF("| %-10" PRId64 "   ", dev_info_set[0].model_params.output_q4k);
     LOG_INF("\n");
 
-    LOG_INF("| Model params (output Q5K)    ");
+    LOG_INF("| Model params (output Q5K)      ");
     LOG_INF("| %-10" PRId64 "   ", dev_info_set[0].model_params.output_q5k);
     LOG_INF("\n");
 
-    LOG_INF("| Model params (output Q6K)    ");
+    LOG_INF("| Model params (output Q6K)      ");
     LOG_INF("| %-10" PRId64 "   ", dev_info_set[0].model_params.output_q6k);
     LOG_INF("\n");
 
-    LOG_INF("| Model params (output Q50)    ");
+    LOG_INF("| Model params (output Q50)      ");
     LOG_INF("| %-10" PRId64 "   ", dev_info_set[0].model_params.output_q50);
     LOG_INF("\n");
 
-    LOG_INF("| Model params (output Q80)    ");
+    LOG_INF("| Model params (output Q80)      ");
     LOG_INF("| %-10" PRId64 "   ", dev_info_set[0].model_params.output_q80);
     LOG_INF("\n");
 
-    LOG_INF("| Model params (output IQ1S)   ");
+    LOG_INF("| Model params (output IQ1S)     ");
     LOG_INF("| %-10" PRId64 "   ", dev_info_set[0].model_params.output_iq1s);
     LOG_INF("\n");    
 
-    LOG_INF("| Model params (output IQ4NL)   ");
+    LOG_INF("| Model params (output IQ4NL)     ");
     LOG_INF("| %-10" PRId64 "   ", dev_info_set[0].model_params.output_iq4nl);
     LOG_INF("\n");  
 
-    LOG_INF("| Model bytes  (input)         ");
+    LOG_INF("| Model bytes  (input)           ");
     LOG_INF("| %-10" PRId64 "   ", dev_info_set[0].model_bytes.nb_input);
     LOG_INF("\n");
 
-    LOG_INF("| Model bytes  (layer)         ");
+    LOG_INF("| Model bytes  (layer)           ");
     LOG_INF("| %-10" PRId64 "   ", dev_info_set[0].model_bytes.nb_layer);
     LOG_INF("\n");
 
-    LOG_INF("| Model bytes  (output)        ");
+    LOG_INF("| Model bytes  (output)          ");
     LOG_INF("| %-10" PRId64 "   ", dev_info_set[0].model_bytes.nb_output);
     LOG_INF("\n");
 

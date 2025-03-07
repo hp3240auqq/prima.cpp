@@ -3572,7 +3572,7 @@ static bool is_dtype_exist(struct model_params * n_params, enum ggml_type dtype)
         case GGML_TYPE_Q8_0:
             return n_params->layer_q80 > 0   || n_params->output_q80   > 0;
         case GGML_TYPE_IQ1_S:
-            return n_params->layer_iq1s > 0  || n_params->output_iq1s  > 0;
+            return n_params->layer_iq1s  > 0 || n_params->output_iq1s  > 0;
         case GGML_TYPE_IQ4_NL:
             return n_params->layer_iq4nl > 0 || n_params->output_iq4nl > 0;
         default:
