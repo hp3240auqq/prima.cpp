@@ -15,16 +15,18 @@ struct cpu_props {
     const char * name;
     const char * description;
     uint32_t     cores;
-    float        flops_f32_f32; // in GFLOPS
-    float        flops_f16_f32; // in GFLOPS
-    float        flops_q2k_f32; // in GFLOPS
-    float        flops_q4k_f32; // in GFLOPS
-    float        flops_q5k_f32; // in GFLOPS
-    float        flops_q6k_f32; // in GFLOPS
-    float        flops_q50_f32; // in GFLOPS    
-    float        flops_q80_f32; // in GFLOPS
-    float        flops_iq1s_f32; // in GFLOPS
-    float        flops_iq4nl_f32; // in GFLOPS
+    float        flops_f32_f32;     // in GFLOPS
+    float        flops_f16_f32;     // in GFLOPS
+    float        flops_q2k_f32;     // in GFLOPS
+    float        flops_q4k_f32;     // in GFLOPS
+    float        flops_q5k_f32;     // in GFLOPS
+    float        flops_q6k_f32;     // in GFLOPS
+    float        flops_iq2xxs_f32;  // in GFLOPS
+    float        flops_q50_f32;     // in GFLOPS    
+    float        flops_q80_f32;     // in GFLOPS
+    float        flops_iq1s_f32;    // in GFLOPS
+    float        flops_iq4nl_f32;   // in GFLOPS
+    float        flops_iq1m_f32;    // in GFLOPS
 
     cpu_props()
         : name            (""), 
@@ -36,10 +38,12 @@ struct cpu_props {
           flops_q4k_f32   (0.0f),
           flops_q5k_f32   (0.0f),
           flops_q6k_f32   (0.0f),
+          flops_iq2xxs_f32(0.0f),
           flops_q50_f32   (0.0f),
           flops_q80_f32   (0.0f),
           flops_iq1s_f32  (0.0f), 
-          flops_iq4nl_f32 (0.0f)
+          flops_iq4nl_f32 (0.0f),
+          flops_iq1m_f32  (0.0f)
     {}
 };
 
@@ -84,32 +88,36 @@ struct gpu_support {
 struct gpu_props {
     const char * name;
     const char * description;
-    float        memory_free;         // in GiB
-    float        memory_total;        // in GiB
-    float        metal_read_vram_bw;  // in GB/s
-    float        metal_flops_f32_f32; // in GFLOPS
-    float        metal_flops_f16_f32; // in GFLOPS
-    float        metal_flops_q2k_f32; // in GFLOPS
-    float        metal_flops_q4k_f32; // in GFLOPS
-    float        metal_flops_q5k_f32; // in GFLOPS
-    float        metal_flops_q6k_f32; // in GFLOPS
-    float        metal_flops_q50_f32; // in GFLOPS
-    float        metal_flops_q80_f32; // in GFLOPS
-    float        metal_flops_iq1s_f32; // in GFLOPS
-    float        metal_flops_iq4nl_f32; // in GFLOPS
-    float        metal_mem_cpy_delay; // in ms
-    float        cuda_read_vram_bw;   // in GB/s
-    float        cuda_flops_f32_f32;  // in GFLOPS
-    float        cuda_flops_f16_f32;  // in GFLOPS
-    float        cuda_flops_q2k_f32;  // in GFLOPS
-    float        cuda_flops_q4k_f32;  // in GFLOPS
-    float        cuda_flops_q5k_f32;  // in GFLOPS
-    float        cuda_flops_q6k_f32;  // in GFLOPS
-    float        cuda_flops_q50_f32;  // in GFLOPS
-    float        cuda_flops_q80_f32;  // in GFLOPS
-    float        cuda_flops_iq1s_f32; // in GFLOPS
-    float        cuda_flops_iq4nl_f32; // in GFLOPS
-    float        cuda_mem_cpy_delay;  // in ms
+    float        memory_free;               // in GiB
+    float        memory_total;              // in GiB
+    float        metal_read_vram_bw;        // in GB/s
+    float        metal_flops_f32_f32;       // in GFLOPS
+    float        metal_flops_f16_f32;       // in GFLOPS
+    float        metal_flops_q2k_f32;       // in GFLOPS
+    float        metal_flops_q4k_f32;     // in GFLOPS
+    float        metal_flops_q5k_f32;     // in GFLOPS
+    float        metal_flops_q6k_f32;     // in GFLOPS
+    float        metal_flops_iq2xxs_f32;  // in GFLOPS
+    float        metal_flops_q50_f32;     // in GFLOPS
+    float        metal_flops_q80_f32;     // in GFLOPS
+    float        metal_flops_iq1s_f32;    // in GFLOPS
+    float        metal_flops_iq4nl_f32;   // in GFLOPS
+    float        metal_flops_iq1m_f32;    // in GFLOPS
+    float        metal_mem_cpy_delay;     // in ms
+    float        cuda_read_vram_bw;       // in GB/s
+    float        cuda_flops_f32_f32;      // in GFLOPS
+    float        cuda_flops_f16_f32;      // in GFLOPS
+    float        cuda_flops_q2k_f32;      // in GFLOPS
+    float        cuda_flops_q4k_f32;      // in GFLOPS
+    float        cuda_flops_q5k_f32;      // in GFLOPS
+    float        cuda_flops_q6k_f32;      // in GFLOPS
+    float        cuda_flops_iq2xxs_f32;   // in GFLOPS
+    float        cuda_flops_q50_f32;      // in GFLOPS
+    float        cuda_flops_q80_f32;      // in GFLOPS
+    float        cuda_flops_iq1s_f32;     // in GFLOPS
+    float        cuda_flops_iq4nl_f32;    // in GFLOPS
+    float        cuda_flops_iq1m_f32;     // in GFLOPS
+    float        cuda_mem_cpy_delay;      // in ms
 
     gpu_props() : 
         name                    (""), 
@@ -123,10 +131,12 @@ struct gpu_props {
         metal_flops_q4k_f32     (0.0f),
         metal_flops_q5k_f32     (0.0f),
         metal_flops_q6k_f32     (0.0f),
+        metal_flops_iq2xxs_f32  (0.0f),
         metal_flops_q50_f32     (0.0f),
         metal_flops_q80_f32     (0.0f),
         metal_flops_iq1s_f32    (0.0f),
         metal_flops_iq4nl_f32   (0.0f),
+        metal_flops_iq1m_f32    (0.0f),
         metal_mem_cpy_delay     (0.0f),
         cuda_read_vram_bw       (0.0f),
         cuda_flops_f32_f32      (0.0f), 
@@ -135,10 +145,12 @@ struct gpu_props {
         cuda_flops_q4k_f32      (0.0f),
         cuda_flops_q5k_f32      (0.0f),
         cuda_flops_q6k_f32      (0.0f),
+        cuda_flops_iq2xxs_f32   (0.0f),
         cuda_flops_q50_f32      (0.0f),
         cuda_flops_q80_f32      (0.0f),
         cuda_flops_iq1s_f32     (0.0f),
         cuda_flops_iq4nl_f32    (0.0f),
+        cuda_flops_iq1m_f32     (0.0f),
         cuda_mem_cpy_delay      (0.0f) {}
 };
 
@@ -150,43 +162,52 @@ struct model_flops {
     int64_t output_q4k_f32;
     int64_t output_q5k_f32;
     int64_t output_q6k_f32;
+    int64_t output_iq2xxs_f32;
     int64_t output_q50_f32;
     int64_t output_q80_f32;
     int64_t output_iq1s_f32;
     int64_t output_iq4nl_f32;
+    int64_t output_iq1m_f32;
     int64_t layer_f32_f32;
     int64_t layer_f16_f32;
     int64_t layer_q2k_f32;
     int64_t layer_q4k_f32;
     int64_t layer_q5k_f32;
     int64_t layer_q6k_f32;
+    int64_t layer_iq2xxs_f32;
     int64_t layer_q50_f32;
     int64_t layer_q80_f32;
     int64_t layer_iq1s_f32;
     int64_t layer_iq4nl_f32;
+    int64_t layer_iq1m_f32;
 
     model_flops() : 
-        inp_embd_ms(0.0f),
-        output_f32_f32(0), 
-        output_f16_f32(0),
-        output_q2k_f32(0),
-        output_q4k_f32(0),
-        output_q5k_f32(0),
-        output_q6k_f32(0), 
-        output_q50_f32(0),
-        output_q80_f32(0),
-        output_iq1s_f32(0),
-        output_iq4nl_f32(0),
-        layer_f32_f32 (0),
-        layer_f16_f32 (0),
-        layer_q2k_f32 (0),
-        layer_q4k_f32 (0),
-        layer_q5k_f32 (0),
-        layer_q6k_f32 (0),
-        layer_q50_f32 (0),
-        layer_q80_f32 (0),
-        layer_iq1s_f32 (0),
-        layer_iq4nl_f32 (0) {}
+        inp_embd_ms        (0.0f),
+        output_f32_f32     (0), 
+        output_f16_f32     (0),
+        output_q2k_f32     (0),
+        output_q4k_f32     (0),
+        output_q5k_f32     (0),
+        output_q6k_f32     (0), 
+        output_iq2xxs_f32  (0),
+        output_q50_f32     (0),
+        output_q80_f32     (0),
+        output_iq1s_f32    (0),
+        output_iq4nl_f32   (0),
+        output_iq1m_f32    (0),
+        layer_f32_f32      (0),
+        layer_f16_f32      (0),
+        layer_q2k_f32      (0),
+        layer_q4k_f32      (0),
+        layer_q5k_f32      (0),
+        layer_q6k_f32      (0),
+        layer_iq2xxs_f32   (0),
+        layer_q50_f32      (0),
+        layer_q80_f32      (0),
+        layer_iq1s_f32     (0),
+        layer_iq4nl_f32    (0), 
+        layer_iq1m_f32     (0)
+        {}
 };
 
 struct model_params {
@@ -196,62 +217,75 @@ struct model_params {
     int64_t input_q4k;
     int64_t input_q5k;
     int64_t input_q6k;
+    int64_t input_iq2xxs;
     int64_t input_q50;
     int64_t input_q80;
     int64_t input_iq1s;
     int64_t input_iq4nl;
+    int64_t input_iq1m;
     int64_t output_f32;
     int64_t output_f16;
     int64_t output_q2k;
     int64_t output_q4k;
     int64_t output_q5k;
     int64_t output_q6k;
+    int64_t output_iq2xxs;
     int64_t output_q50;
     int64_t output_q80;
     int64_t output_iq1s;
     int64_t output_iq4nl;
+    int64_t output_iq1m;
     int64_t layer_f32;
     int64_t layer_f16;
     int64_t layer_q2k;
     int64_t layer_q4k;
     int64_t layer_q5k;
     int64_t layer_q6k;
+    int64_t layer_iq2xxs;
     int64_t layer_q50;
     int64_t layer_q80;
     int64_t layer_iq1s;
     int64_t layer_iq4nl;
+    int64_t layer_iq1m;
 
     model_params() :
-        input_f32 (0),
-        input_f16 (0),
-        input_q2k (0),
-        input_q4k (0),
-        input_q5k (0),
-        input_q6k (0),
-        input_q50 (0),
-        input_q80 (0),
-        input_iq1s(0),
-        input_iq4nl(0),
-        output_f32(0),
-        output_f16(0),
-        output_q2k(0),
-        output_q4k(0),
-        output_q5k(0),
-        output_q6k(0),
-        output_q50(0),
-        output_q80(0),
-        output_iq1s(0),
-        output_iq4nl(0),
-        layer_f32 (0),
-        layer_f16 (0),
-        layer_q2k (0),
-        layer_q4k (0),
-        layer_q5k (0),
-        layer_q6k (0),
-        layer_q50 (0),
-        layer_q80 (0),
-        layer_iq1s (0),
-        layer_iq4nl (0) {}
+        input_f32       (0),
+        input_f16       (0),
+        input_q2k       (0),
+        input_q4k       (0),
+        input_q5k       (0),
+        input_q6k       (0),
+        input_iq2xxs    (0),
+        input_q50       (0),
+        input_q80       (0),
+        input_iq1s      (0),
+        input_iq4nl     (0),
+        input_iq1m      (0),
+        output_f32      (0),
+        output_f16      (0),
+        output_q2k      (0),
+        output_q4k      (0),
+        output_q5k      (0),
+        output_q6k      (0),
+        output_iq2xxs   (0),
+        output_q50      (0),
+        output_q80      (0),
+        output_iq1s     (0),
+        output_iq4nl    (0),
+        output_iq1m     (0),
+        layer_f32       (0),
+        layer_f16       (0),
+        layer_q2k       (0),
+        layer_q4k       (0),
+        layer_q5k       (0),
+        layer_q6k       (0),
+        layer_iq2xxs    (0),
+        layer_q50       (0),
+        layer_q80       (0),
+        layer_iq1s      (0),
+        layer_iq4nl     (0), 
+        layer_iq1m      (0)
+        {}
 };
 
 struct model_bytes {
