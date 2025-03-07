@@ -1810,7 +1810,7 @@ void device_print_props(struct device_info * dev_info_set, int n, struct llama_m
     }
     LOG_INF("\n");
 
-    LOG_INF("| Disk Write Seq Speed (GB/s)   ");
+    LOG_INF("| Disk Write Seq Speed (GB/s)    ");
     for (int i = 0; i < n; ++i) {
         LOG_INF("| %-10.2f   ", dev_info_set[i].disk.write_seq_bw);
     }
@@ -2206,7 +2206,7 @@ void device_print_props(struct device_info * dev_info_set, int n, struct llama_m
     LOG_INF("| %-10" PRId64 "   ", dev_info_set[0].model_params.output_f16);
     LOG_INF("\n");
 
-    LOG_INF("| Model params (output Q2K)    ");
+    LOG_INF("| Model params (output Q2K)      ");
     LOG_INF("| %-10" PRId64 "   ", dev_info_set[0].model_params.output_q2k);
     LOG_INF("\n");
 
@@ -2234,7 +2234,7 @@ void device_print_props(struct device_info * dev_info_set, int n, struct llama_m
     LOG_INF("| %-10" PRId64 "   ", dev_info_set[0].model_params.output_iq1s);
     LOG_INF("\n");    
 
-    LOG_INF("| Model params (output IQ4NL)     ");
+    LOG_INF("| Model params (output IQ4NL)    ");
     LOG_INF("| %-10" PRId64 "   ", dev_info_set[0].model_params.output_iq4nl);
     LOG_INF("\n");  
 
