@@ -188,6 +188,9 @@ static float device_flops(struct llama_model * model, enum ggml_type src0t, enum
     };
     struct ggml_context * ctx = ggml_init(params);
 
+    if(n_embd < ggml_blck_size(src0t)){
+        n_embd = 2 * ggml_blck_size(src0t);
+    }
     struct ggml_tensor * tensor_a = ggml_new_tensor_2d(ctx, src0t, n_embd, n_embd);
     struct ggml_tensor * tensor_b = ggml_new_tensor_2d(ctx, src1t, n_embd, n_embd);
 
@@ -208,10 +211,12 @@ static float device_flops(struct llama_model * model, enum ggml_type src0t, enum
         ctx_cgraph = ggml_init(params0);
 
         gf = ggml_new_graph(ctx_cgraph);
+        
         cur = ggml_mul_mat(ctx_cgraph, tensor_a, tensor_b);
         for (int i = 0; i < n_repeat - 1; i++) {
             cur = ggml_mul_mat(ctx_cgraph, tensor_a, cur);
         }
+
         ggml_build_forward_expand(gf, cur);
     }
 
@@ -1713,6 +1718,7 @@ void device_print_props(struct device_info * dev_info_set, int n, struct llama_m
     for (int i = 0; i < n; ++i) {
         LOG_INF("| %-10.1f   ", dev_info_set[i].cpu_props.flops_q2k_f32);
     }
+    LOG_INF("\n");
 
     LOG_INF("| CPU flops (Q4K x F32, GFLOPS)");
     for (int i = 0; i < n; ++i) {
