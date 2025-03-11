@@ -2574,6 +2574,7 @@ struct llama_cparams {
     uint32_t  rank;
     uint32_t  n_layer_window[32];
     bool      prefetch;
+    bool      force;
     uint32_t  n_ctx;           // context size used during inference
     uint32_t  n_batch;
     uint32_t  n_ubatch;
@@ -20343,6 +20344,7 @@ struct llama_context * llama_new_context_with_model(
     ctx->next_node_ip    = params.next_node_ip;
     ctx->cparams.n_world = params.n_world;
     ctx->cparams.rank    = params.rank;
+    ctx->cparams.force   = params.force;
     return ctx;
 }
 
