@@ -737,6 +737,20 @@ gpt_params_context gpt_params_parser_init(gpt_params & params, llama_example ex,
             params.gpu_mem = value; // in GiB
         }
     ).set_env("LLAMA_ARG_CUDA_MEM"));
+    add_opt(llama_arg(
+        {"-k", "--n-cycles"}, "N",
+        format("number of cycles to output one token (default: %d)", params.n_cycles),
+        [](gpt_params & params, int value) {
+            params.n_cycles = value;
+        }
+    ).set_env("LLAMA_ARG_K"));
+    add_opt(llama_arg(
+        {"--force"},
+        format("force to start prefetching after computation (default: %s)", params.force ? "true" : "false"),
+        [](gpt_params & params) {
+            params.force = true;
+        }
+    ).set_env("LLAMA_ARG_FORCE"));
 // #ifdef GGML_USE_METAL
 //     // warn: if the output layer weights are not kept in metal shared memory, its mmap-ed weight data
 //     // could be released by the OS and reloaded repeatedly, which causes additional disk I/O latency.

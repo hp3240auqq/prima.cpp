@@ -149,7 +149,9 @@ struct gpt_params {
     std::string next_node_ip      = "localhost"; // ip address of my next node
     bool    prefetch              = false; // prefetch layer weights
     bool    keep_out_in_metal     =  true; // whether to keep output weights in metal memory, true by default
+    bool    force                 = false; // force to start prefetching after computation
     int32_t gpu_mem               = 999.0; // gpu memory to use, in GiB
+    int32_t n_cycles              =     0; // number of cycles to output one token
     int32_t n_predict             =    -1; // new tokens to predict
     int32_t n_ctx                 =     0; // context size
     int32_t n_batch               =  2048; // logical batch size for prompt processing (must be >=32 to use BLAS)

@@ -17892,7 +17892,7 @@ static float is_graph_loaded(struct ggml_cgraph * cgraph) {
     return float(n_loaded) / float(n_total) * 100.0f;
 }
 
-static void manage_graph_tensors(struct ggml_cgraph * cgraph, int advice) {
+static void manage_graph_tensors(struct ggml_cgraph * cgraph, int advice, bool force) {
     long page_size = sysconf(_SC_PAGESIZE);
 
     struct Segment {
@@ -17949,7 +17949,7 @@ static void manage_graph_tensors(struct ggml_cgraph * cgraph, int advice) {
         size_t len = std::max(segment.end - segment.start, static_cast<size_t>(page_size));
         posix_madvise(reinterpret_cast<void *>(segment.start), len, advice); // hint to load into memory
         // force to prefetch data, disabled by default
-        if (advice == POSIX_MADV_WILLNEED && false) {
+        if (advice == POSIX_MADV_WILLNEED && force) {
             volatile char * ptr = reinterpret_cast<volatile char *>(segment.start);
             for (size_t off = 0; off < len; off += prefetch_dense * page_size) {
                 for (size_t i = 0; i < prefetch_dense; i++) {
@@ -18230,9 +18230,9 @@ static int llama_decode_internal(
                 timer(manage_graph_tensors);
                 
                 int next_gf_id = (i + 1) % gf.size();
-                manage_graph_tensors(gf[next_gf_id], POSIX_MADV_WILLNEED);
+                manage_graph_tensors(gf[next_gf_id], POSIX_MADV_WILLNEED, cparams.force);
                 if (my_rank == 0 && (is_last_l || (next_gf_id == (int)gf.size() - 1))) {
-                    manage_graph_tensors(gf[0], POSIX_MADV_WILLNEED);
+                    manage_graph_tensors(gf[0], POSIX_MADV_WILLNEED, cparams.force);
                 }
             }
         }
@@ -19955,7 +19955,9 @@ struct llama_context_params llama_context_default_params() {
         /*.rank                        =*/ 0,
         /*.n_layer_window              =*/ {32},
         /*.n_gpu_layers                =*/ 0,
+        /*.n_cycles                    =*/ 0,
         /*.prefetch                    =*/ false,
+        /*.force                       =*/ false,
         /*.keep_out_in_metal           =*/ true,
         /*.master_ip                   =*/ nullptr,
         /*.next_node_ip                =*/ nullptr,
