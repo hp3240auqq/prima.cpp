@@ -183,9 +183,11 @@ After downloading, run the following command to launch the inference task (if ru
 To run on more home devices, first connect them to the same local Wi-Fi. For example, assume we have 4 devices with IP addresses and ranks as follows:
 
 - Rank 0: 192.168.1.2 (act as the head device, which initiates the request)
-- Rank 1: 192.168.1.3 (worker device)
-- Rank 2: 192.168.1.4 (worker device)
+- Rank 1: 192.168.1.3 (worker device with 8 GiB VRAM)
+- Rank 2: 192.168.1.4 (worker device with 11 GiB VRAM)
 - Rank 3: 192.168.1.5 (worker device)
+
+These devices communicate in a ring structure and they can run multiple rounds to predict one token.
 
 ```mermaid
 graph LR;
@@ -195,6 +197,80 @@ graph LR;
     Rank3 --> Rank0;
 ```
 
-> These devices are physically fully connected as they all connect to the same Wi-Fi, but logically, they follow a ring communication topology.
+> **NOTE:** This ring communication is a communication overlay, not the physical topology. These devices are physically fully connected because they all connect to the same Wi-Fi.
 
 > If possible, disable the firewall to prevent the ports needed (e.g., 9000, 10000) been blocked.
+
+
+Take QwQ-32B as an example, run the following commands on the devices to launch distributed inference:
+
+```shell
+# on head device without a GPU, rank 0:
+./llama-cli -m download/qwq-32b-q4_k_m.gguf -c 1024 -n 256 -p "what is edge AI?" --world 4 --rank 0 --master 192.168.1.2 --next 192.168.1.3 --prefetch
+
+# on worker device with 8 GiB VRAM, rank 1:
+./llama-cli -m download/qwq-32b-q4_k_m.gguf -c 1024 --world 4 --rank 1 --master 192.168.1.2 --next 192.168.1.4 --prefetch --gpu-mem 8
+
+# on worker device with 11 GiB VRAM, rank 2:
+./llama-cli -m download/qwq-32b-q4_k_m.gguf -c 1024 --world 4 --rank 2 --master 192.168.1.2 --next 192.168.1.5 --prefetch --gpu-mem 11
+
+# on worker device without a GPU, rank 3:
+./llama-cli -m download/qwq-32b-q4_k_m.gguf -c 1024 --world 4 --rank 3 --master 192.168.1.2 --next 192.168.1.2 --prefetch
+```
+
+Once started, prima.cpp will profile each device and decide how much workload to assign, e.g., how many model layers each device should handle, and how many of them should run on GPU (if available).
+
+## FAQ
+
+**1. How can I manually set the workload for each device?**
+
+By default, prima.cpp automatically profiles devices and assigns workloads. However, if you want to manually control the layer distribution, you can use the `-lw` (or `--layer-window`, `--n-layer-window`) and `-ngl` options:
+
+```shell
+# on head device without a GPU, rank 0, use the option "-lw":
+./llama-cli -m download/qwq-32b-q4_k_m.gguf -c 1024 -n 256 -p "what is edge AI?" --world 4 --rank 0 --master 192.168.1.2 --next 192.168.1.3 --prefetch -lw "16,16,16,16"
+
+# on worker device with 8 GiB VRAM, rank 1, use the option "-ngl":
+./llama-cli -m download/qwq-32b-q4_k_m.gguf -c 1024 --world 4 --rank 1 --master 192.168.1.2 --next 192.168.1.4 --prefetch -ngl 16
+
+# on worker device with 11 GiB VRAM, rank 2, use the option "-ngl":
+./llama-cli -m download/qwq-32b-q4_k_m.gguf -c 1024 --world 4 --rank 2 --master 192.168.1.2 --next 192.168.1.5 --prefetch -ngl 16
+
+# on worker device without a GPU, rank 3:
+./llama-cli -m download/qwq-32b-q4_k_m.gguf -c 1024 --world 4 --rank 3 --master 192.168.1.2 --next 192.168.1.2 --prefetch
+```
+
+- `-lw` sets the total model layers each device should handle. The format is a comma-separated list, one value per device, in rank order. You can also set `"8,8,8,8"`, `"4,4,4,4"`, `"16,16,24,8"`.
+- `-ngl` sets how many of those model layers should run on the GPU. 
+
+> Example: if `-lw "16,16,16,16"` is passed to the head device, then each of the 4 devices will handle 16 model layers. A worker with `-ngl 8` (if a GPU is available) will run 8/16 layers on the GPU.
+
+**2. How to run in chat mode like in llama.cpp?**
+
+To enable chat (conversation) mode, simply add the `-cnv` flag on the head device:
+
+```shell
+# on head device, rank 0, use the option "-cnv":
+./llama-cli ... --rank 0 -cnv
+```
+
+To quit the chat mode, input `quit` or `exit`.
+
+**3. How to force prefetching after computing?**
+
+By default, prima.cpp only advises the OS to prefetch upcoming layer weights. The actual prefetching is then scheduled and handled by the OS, which may introduce some uncertainty. To explicitly trigger prefetching right after computing, you can use the `--force` flag on each device:
+
+```shell
+# on each device, use the option "--force":
+./llama-cli ... --prefetch --force
+```
+
+This enables more aggressive overlap but also introduce extra memory access latency. Use `--force` only after testing, as its effect depends on your hardware and OS behavior.
+
+## Acknowledgment
+Our prima.cpp (aka piped-ring llama.cpp) is an optimized distributed implementation built upon [llama.cpp](https://github.com/ggml-org/llama.cpp) and the [GGUF/GGML](https://github.com/ggml-org/ggml) ecosystem, so we gratefully acknowledge the incredible work and open-source contributions from the llama.cpp community.
+
+## Cite US
+If you find this work helpful, please do not hesitate to cite us and send a star! 🤩
+
+Arxiv is coming!
