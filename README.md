@@ -90,9 +90,103 @@ Here are the models we have tested so far. You can also try more on Hugging Face
 - **DeepSeek R1-70B:** [DeepSeek-R1-Distill-Llama-70B-Q4_K_M.gguf](https://huggingface.co/unsloth/DeepSeek-R1-Distill-Llama-70B-GGUF)
 
 ## How to Use?
-todo.
+
 ### Prerequisites
 
-### Download, Compile and Run
+Before using this project, ensure you have the following dependencies installed:
+
+- gcc >= 9.4.0
+- make >= 4.2.1
+- cmake >= 3.16.3
+- fio >= 3.16 (used for disk speed test)
+- zmq >= 4.3.2 (used for cross-device communication)
+- HiGHS >= 1.9.0 (used for automatic workload distribution)
+- CUDA (optional, if you have a GPU)
+
+**Linux (e.g., Ubuntu):**
+
+```shell
+sudo apt update -y && sudo apt install -y gcc-9 make cmake fio git wget libzmq3-dev
+```
+
+For HiGHS, download and install from [source](https://github.com/ERGO-Code/HiGHS):
+
+```shell
+git clone https://github.com/ERGO-Code/HiGHS.git
+cd HiGHS
+mkdir build && cd build
+cmake ..
+make -j$(nproc)
+sudo make install
+```
+
+**macOS:**
+
+```shell
+brew install gcc make cmake fio git wget highs zeromq
+```
+
+### Build, Download, and Test
+
+First, clone our repo from [Github](https://github.com/Lizonghang/prima.cpp):
+
+```shell
+git clone https://github.com/Lizonghang/prima.cpp.git
+cd prima.cpp
+```
+
+Then, run the following command to build the project:
+
+```shell
+# If you are on the device with rank 0, USE_HIGHS=1 must be added:
+make USE_HIGHS=1 -j$(nproc)
+
+# If you have CUDA installed, add GGML_CUDA=1:
+make GGML_CUDA=1 -j$(nproc)  
+
+# For macOS with very large models, disable Metal might be better:
+make LLAMA_NO_METAL=1 -j$(nproc)  
+
+# To enable debug mode, add LLAMA_DEBUG=1:
+make LLAMA_DEBUG=1 -j$(nproc) 
+
+# Otherwise, just use:
+make -j$(nproc) 
+```
+
+To test if it works, we download a GGUF model file from Hugging Face (e.g., [qwq-32b-q4_k_m.gguf](https://huggingface.co/Qwen/QwQ-32B-GGUF)):
+
+```shell
+mkdir download  # You can put it in any other path, but try to put it on an SSD if possible.
+wget https://huggingface.co/Qwen/QwQ-32B-GGUF/resolve/main/qwq-32b-q4_k_m.gguf -P download/
+```
 
 > **Note:** Put this project and model files on SSD, if SSD and HDD coexist.
+
+After downloading, run the following command to launch the inference task (if running on a single device, prima.cpp degrades to llama.cpp):
+
+```shell
+./llama-cli -m download/qwq-32b-q4_k_m.gguf -c 1024 -p "what is edge AI?" -n 256 -ngl 30
+```
+
+> Adjust `-ngl` according to your VRAM capacity. Here, the VRAM is 11 GiB, so setting `-ngl` to a maximum of 30 will not cause GPU to OOM. If there is no GPU, just ignore it. For other parameters, please refer to [llama.cpp](https://github.com/ggml-org/llama.cpp).
+
+### Run on Multiple Devices
+To run on more home devices, first connect them to the same local Wi-Fi. For example, assume we have 4 devices with IP addresses and ranks as follows:
+
+- Rank 0: 192.168.1.2 (act as the head device, which initiates the request)
+- Rank 1: 192.168.1.3 (worker device)
+- Rank 2: 192.168.1.4 (worker device)
+- Rank 3: 192.168.1.5 (worker device)
+
+```mermaid
+graph LR;
+    Rank0["Rank 0 (192.168.1.2)"] --> Rank1["Rank 1 (192.168.1.3)"];
+    Rank1 --> Rank2["Rank 2 (192.168.1.4)"];
+    Rank2 --> Rank3["Rank 3 (192.168.1.5)"];
+    Rank3 --> Rank0;
+```
+
+> These devices are physically fully connected as they all connect to the same Wi-Fi, but logically, they follow a ring communication topology.
+
+> If possible, disable the firewall to prevent the ports needed (e.g., 9000, 10000) been blocked.
