@@ -9,9 +9,9 @@ Worried about OOM or your device stucking? Never again! prima.cpp keeps its **me
 
 How about speed? prima.cpp is built on [llama.cpp](https://github.com/ggerganov/llama.cpp), but it’s **15x faster!** 🚀 On my poor devices, QwQ-32B generates 11 tokens per second, and Llama 3-70B generates 1.5 tokens per second. That's about the same speed as audiobook apps, from slow to fast speaking. We plan to power a **Home Siri** soon, then we can have private chats without privacy concerns.
 
-https://github.com/Lizonghang/prima.cpp/raw/main/figures/qwq%2032b.mp4
+https://github.com/user-attachments/assets/9549290e-a56f-46e1-9549-74250c1e0f7e
 
-https://github.com/Lizonghang/prima.cpp/raw/main/figures/qwq%2032b.mp4
+https://github.com/user-attachments/assets/c048f0b2-3cdf-4a3f-a5c5-a9705edfca1e
 
 And, if your devices are more powerful, you could unlock even more possibilities, like running LLM agents right in your home! If you do, we’d love to hear about it, just share your cluster setup and token throughput with us!
 
