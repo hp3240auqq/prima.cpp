@@ -1012,7 +1012,7 @@ static bool assign_layers_to_device(
     };
 
     // get valid factors
-    std::vector<int> valid_k = cparams.n_cycles > 0 ? std::vector<int>{cparams.n_cycles} : find_factors(n_layer);
+    std::vector<int> valid_k = cparams.n_cycles > 0 ? std::vector<int>{static_cast<int>(cparams.n_cycles)} : find_factors(n_layer);
 
     // assign devices to sets M1, M2, M3, and M4
     // M1: devices running on macOS without Metal, and with insufficient memory
