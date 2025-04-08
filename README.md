@@ -7,7 +7,8 @@ prima.cpp is a magic trick that lets you **run 70B-level LLMs on your everyday d
 
 Worried about OOM or your device stucking? Never again! prima.cpp keeps its **memory pressure below 10%**, you can run very large models while enjoying Tiktok (if you don't mind the inference speed).
 
-How about speed? prima.cpp is built on [llama.cpp](https://github.com/ggerganov/llama.cpp), but it’s **15x faster!** 🚀 On my poor devices, QwQ-32B generates 11 tokens per second, and Llama 3-70B generates 1.5 tokens per second. That's about the same speed as audiobook apps, from slow to fast speaking. We plan to power a **Home Siri** soon, then we can have private chats without privacy concerns.
+## 🚀 Performance
+How about speed? Built upon [llama.cpp](https://github.com/ggerganov/llama.cpp), but it’s **15x faster!** 🚀 On my poor devices, QwQ-32B generates 11 tokens per second, and Llama 3-70B generates 1.5 tokens per second. That's about the same speed as audiobook apps, from slow to fast speaking. We plan to power a **Home Siri** soon, then we can have private chats without privacy concerns.
 
 **prima.cpp vs llama.cpp on QwQ 32B:**
 
@@ -60,7 +61,7 @@ And, if your devices are more powerful, you could unlock even more possibilities
 
 > In current implementation, each device is assigned at least one model layer. For example, this leads to a 1:1:29:1 split for Llama 3-8B, which makes prima.cpp less efficient. In future updates, we will have a 0:0:32:0 split and idle devices removed, then llama.cpp would become a special case of prima.cpp when serving small models.
 
-## Key Features
+## 🔑 Key Features
 
 - **Run larger models with low memory pressure:** Use mmap to lazily load model weights, and the OS would free page cache on demand, then you can run models of any size with a low memory pressure.
 - **Faster speed on small-scale, heterogeneous and cheap home clusters:** 
@@ -71,7 +72,7 @@ And, if your devices are more powerful, you could unlock even more possibilities
 - **Support Models:** We now support hot models like the **Llama, Qwen (and QwQ), and DeepSeek series**. More will be added in future updates.
 - **Cross-Platform:** The cluster can consist of devices with different OSs, including macOS, Linux, Android, HarmonyOS, etc. Now, Android and HarmonyOS devices require Termux, and Windows support will be added in future update.
 
-## Models
+## ✅ Supported Models
 Here are the models we have tested so far. You can also try more on Hugging Face!
 
 ### Llama
@@ -97,7 +98,7 @@ Here are the models we have tested so far. You can also try more on Hugging Face
 - **DeepSeek R1-32B:** [deepseek-ai.DeepSeek-R1-Distill-Qwen-32B.Q4_K_M.gguf](https://huggingface.co/DevQuasar/deepseek-ai.DeepSeek-R1-Distill-Qwen-32B-GGUF)
 - **DeepSeek R1-70B:** [DeepSeek-R1-Distill-Llama-70B-Q4_K_M.gguf](https://huggingface.co/unsloth/DeepSeek-R1-Distill-Llama-70B-GGUF)
 
-## How to Use?
+## ⚙️ How to Use?
 
 ### Prerequisites
 
@@ -220,7 +221,51 @@ Take QwQ-32B as an example, run the following commands on the devices to launch 
 
 Once started, prima.cpp will profile each device and decide how much workload to assign, e.g., how many model layers each device should handle, and how many of them should run on GPU (if available).
 
-## FAQ
+### (Optional) Run with Prebuilt Docker Image
+Assume we have a host machine with at least 32 CPU cores, 32 GiB RAM, and 32 GiB VRAM. We simulate 4 homogeneous nodes using Docker containers, with each node allocated 8 CPU cores, 8 GiB RAM, and 8 GiB VRAM. Follow the below steps to get started:
+
+1. Pull our prebuilt Docker image (e.g., [`prima.cpp:1.0.0-cuda`](https://hub.docker.com/repository/docker/lizonghango00o1/prima.cpp/general)) and run 4 containers:
+
+```shell
+sudo docker run -dit --name prima-v1 --memory=8gb --memory-swap=8gb --cpus 8 --cpuset-cpus="0-7"   --network host --gpus all prima.cpp:1.0.0-cuda
+sudo docker run -dit --name prima-v2 --memory=8gb --memory-swap=8gb --cpus 8 --cpuset-cpus="8-15"  --network host --gpus all prima.cpp:1.0.0-cuda
+sudo docker run -dit --name prima-v3 --memory=8gb --memory-swap=8gb --cpus 8 --cpuset-cpus="16-23" --network host --gpus all prima.cpp:1.0.0-cuda
+sudo docker run -dit --name prima-v4 --memory=8gb --memory-swap=8gb --cpus 8 --cpuset-cpus="24-31" --network host --gpus all prima.cpp:1.0.0-cuda
+```
+
+> If your host machine does not have a GPU, ignore the `--gpus all` option.
+
+2. Download the model file [`qwq-32b-q4_k_m.gguf`](https://huggingface.co/Qwen/QwQ-32B-GGUF) and copy it into each container:
+
+```shell
+cd prima.cpp/download
+sudo docker cp qwq-32b-q4_k_m.gguf prima-v1:/root/prima.cpp/download/
+sudo docker cp qwq-32b-q4_k_m.gguf prima-v2:/root/prima.cpp/download/
+sudo docker cp qwq-32b-q4_k_m.gguf prima-v3:/root/prima.cpp/download/
+sudo docker cp qwq-32b-q4_k_m.gguf prima-v4:/root/prima.cpp/download/
+```
+
+3. (Optional) Enter each container, rebuild prima.cpp if your host machine does not have a GPU:
+
+```shell
+cd /root/prima.cpp && make clean
+make -j$(nproc)  # If not rank 0
+make USE_HIGHS=1 -j$(nproc)  # If rank 0
+``` 
+
+4. Enter each container and launch the distributed inference:
+
+```shell
+cd /root/prima.cpp
+(prima-v1) ./llama-cli -m download/qwq-32b-q4_k_m.gguf -c 1024 -n 256 -p "what is edge AI?" --world 4 --rank 0 --prefetch --gpu-mem 8
+(prima-v2) ./llama-cli -m download/qwq-32b-q4_k_m.gguf -c 1024 --world 4 --rank 1 --prefetch --gpu-mem 8
+(prima-v3) ./llama-cli -m download/qwq-32b-q4_k_m.gguf -c 1024 --world 4 --rank 2 --prefetch --gpu-mem 8
+(prima-v4) ./llama-cli -m download/qwq-32b-q4_k_m.gguf -c 1024 --world 4 --rank 3 --prefetch --gpu-mem 8
+``` 
+
+> If your host machine does not have a GPU, ignore the `--gpu-mem` option.
+
+## ❓ FAQ
 
 **1. How can I manually set the workload for each device?**
 
@@ -251,7 +296,7 @@ To enable chat (conversation) mode, simply add the `-cnv` flag on the head devic
 
 ```shell
 # on head device, rank 0, use the option "-cnv":
-./llama-cli ... --rank 0 -cnv
+./llama-cli ... --rank 0 -p "You are an AI assistant" -cnv
 ```
 
 To quit the chat mode, input `quit` or `exit`.
@@ -267,10 +312,14 @@ By default, prima.cpp only advises the OS to prefetch upcoming layer weights. Th
 
 This enables more aggressive overlap but also introduce extra memory access latency. Use `--force` only after testing, as its effect depends on your hardware and OS behavior.
 
-## Acknowledgment
-Our prima.cpp (aka piped-ring llama.cpp) is an optimized distributed implementation built upon [llama.cpp](https://github.com/ggml-org/llama.cpp) and the [GGUF/GGML](https://github.com/ggml-org/ggml) ecosystem, so we gratefully acknowledge the incredible work and open-source contributions from the llama.cpp community.
+**4. Does it support Windows?**
 
-## Cite US
+Not yet—but it's on the roadmap. Currently, prima.cpp can run on Linux, macOS, Android and HarmonyOS (via Termux). You can mix heterogeneous devices in the cluster.
+
+## ❤️ Acknowledgment
+This project builds upon the incredible work from the open-source community, especially [ggml, gguf](https://github.com/ggml-org/ggml), and [llama.cpp](https://github.com/ggml-org/llama.cpp). We gratefully acknowledge their contributions.
+
+## 📚 Cite Us
 If you find this work helpful, please do not hesitate to cite us and send a star! 🤩
 
 Arxiv is coming!
