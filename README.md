@@ -12,7 +12,7 @@ How about speed? Built upon [llama.cpp](https://github.com/ggerganov/llama.cpp),
 
 **prima.cpp vs llama.cpp on QwQ 32B:**
 
-https://github.com/user-attachments/assets/c048f0b2-3cdf-4a3f-a5c5-a9705edfca1e
+https://github.com/user-attachments/assets/9fa3e57f-3f6b-49f3-800e-df9d758a60c6
 
 **prima.cpp vs llama.cpp on DeepSeek R1 70B:**
 
