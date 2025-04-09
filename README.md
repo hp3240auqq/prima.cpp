@@ -137,16 +137,11 @@ brew install gcc make cmake fio git wget highs zeromq
 
 ### Build, Download, and Test
 
-First, clone our repo from [Github](https://github.com/Lizonghang/prima.cpp):
+First, clone this repo and build the project:
 
 ```shell
-git clone https://github.com/Lizonghang/prima.cpp.git
 cd prima.cpp
-```
 
-Then, run the following command to build the project:
-
-```shell
 # If you are on the device with rank 0, USE_HIGHS=1 must be added:
 make USE_HIGHS=1 -j$(nproc)
 
