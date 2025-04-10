@@ -59,6 +59,8 @@ And, if your devices are more powerful, you could unlock even more possibilities
 | DeepSeek-R1-Distill-Llama-70B    | 10978 ms      | OOM           | -          | **724 ms**    |
 | Qwen-2.5-72B                     | 12227 ms      | OOM           | -          | **867 ms**    |
 
+> As video recording consumes some RAM, prima.cpp proactively reduces memory usage, resulting in slightly higher latency in the video compared to the table.
+
 > In current implementation, each device is assigned at least one model layer. For example, this leads to a 1:1:29:1 split for Llama 3-8B, which makes prima.cpp less efficient. In future updates, we will have a 0:0:32:0 split and idle devices removed, then llama.cpp would become a special case of prima.cpp when serving small models.
 
 ## 🔑 Key Features
