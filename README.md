@@ -319,4 +319,14 @@ This project builds upon the incredible work from the open-source community, esp
 ## 📚 Cite Us
 If you find this work helpful, please do not hesitate to cite us and send a star! 🤩
 
-Arxiv is coming!
+```bibtex
+@misc{li2025primacpp,
+    title={PRIMA.CPP: Speeding Up 70B-Scale LLM Inference on Low-Resource Everyday Home Clusters}, 
+    author={Zonghang Li and Tao Li and Wenjiao Feng and Mohsen Guizani and Hongfang Yu},
+    year={2025},
+    eprint={2504.08791},
+    archivePrefix={arXiv},
+    primaryClass={cs.DC},
+    url={https://arxiv.org/abs/2504.08791}, 
+}
+```
