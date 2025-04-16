@@ -70,7 +70,7 @@ And, if your devices are more powerful, you could unlock even more possibilities
 - - **GPU & CPU Offloading:** If a device has a GPU, you can use both GPU and CPU for inference. For example, when VRAM is full, we can offload some model layers to RAM.
 - - **Piped-ring parallelism with prefetching:** Prefetch upcoming layer weights to overlap disk loading latency and use advanced piped-ring parallelism to prevent the "prefetch-release" effect. This new parallelism improves pipeline parallelism by using a ring structure and allows devices to run multiple cycles to predict a new token.
 - - **Heterogeneity-aware workload distribution:** A scheduler is designed to optimize workload distribution based on each device's computing power, disk speed, memory, and OS (the OS will affect the disk speed and the memory management strategy). It decides how many model layers a device should handle and how many should run on GPU (if available). 
-- - **Quantization:** We now support Q4K and IQ1 quantization (GGUF format) and are exploring a Q4K-IQ1 hybrid for a better balance between performance and speed.
+- - **Quantization:** We now support Q4K, Q6K, Q80 and IQ1 quantization (GGUF format) and are exploring a Q4K-IQ1 hybrid for a better balance between performance and speed.
 - **Support Models:** We now support hot models like the **Llama, Qwen (and QwQ), and DeepSeek series**. More will be added in future updates.
 - **Cross-Platform:** The cluster can consist of devices with different OSs, including macOS, Linux, Android, HarmonyOS, etc. Now, Android and HarmonyOS devices require Termux, and Windows support will be added in future update.
 
@@ -78,27 +78,27 @@ And, if your devices are more powerful, you could unlock even more possibilities
 Here are the models we have tested so far. You can also try more on Hugging Face!
 
 ### Llama
-- **Llama 3-8B:** [Meta-Llama-3-8B-Instruct-Q4_K_M.gguf](https://huggingface.co/bartowski/Meta-Llama-3-8B-Instruct-GGUF)
-- **Llama 3-14B:** [Llama-3-14B-Instruct-v1-Q4_K_M.gguf](https://huggingface.co/RDson/Llama-3-14B-Instruct-v1-GGUF)
-- **Llama 1-30B:** [upstage-llama-30b-instruct-2048.Q4_K_S.gguf](https://huggingface.co/TheBloke/upstage-llama-30b-instruct-2048-GGUF)
-- **Llama 3-45B:** [Llama-3-pruned-45B-Drobeta-Turnu-Severin-Q4_K_S.gguf](https://huggingface.co/Mihaiii/Llama-3-pruned-45B-Drobeta-Turnu-Severin)
-- **Llama 3-60B:** [nyun-llama3-60B.Q4_K_S.gguf](https://huggingface.co/mradermacher/nyun-llama3-60B-GGUF)
-- **Llama 1-65B:** [llama-65b.Q4_K_S.gguf](https://huggingface.co/TheBloke/LLaMA-65B-GGUF)
-- **Llama 3-70B:** [Meta-Llama-3-70B-Instruct-Q4_K_S.gguf](https://huggingface.co/bartowski/Meta-Llama-3-70B-Instruct-GGUF)
+- **Llama 3-8B (Q4K, Q6K, Q80):** [Meta-Llama-3-8B-Instruct](https://huggingface.co/bartowski/Meta-Llama-3-8B-Instruct-GGUF)
+- **Llama 3-14B (Q4K, Q6K, Q80):** [Llama-3-14B-Instruct-v1](https://huggingface.co/RDson/Llama-3-14B-Instruct-v1-GGUF)
+- **Llama 1-30B (Q4K, Q6K, Q80):** [upstage-llama-30b-instruct-2048](https://huggingface.co/TheBloke/upstage-llama-30b-instruct-2048-GGUF)
+- **Llama 3-45B (Q4K, Q6K, Q80):** [Llama-3-pruned-45B-Drobeta-Turnu-Severin](https://huggingface.co/mradermacher/Llama-3-pruned-45B-Drobeta-Turnu-Severin-GGUF)
+- **Llama 3-60B (Q4K, Q6K, Q80):** [nyun-llama3-60B](https://huggingface.co/mradermacher/nyun-llama3-60B-GGUF)
+- **Llama 1-65B (Q4K, Q6K, Q80):** [llama-65b](https://huggingface.co/TheBloke/LLaMA-65B-GGUF)
+- **Llama 3-70B (Q4K, Q6K, Q80):** [Meta-Llama-3-70B-Instruct](https://huggingface.co/bartowski/Meta-Llama-3-70B-Instruct-GGUF)
 
 ### Qwen 2.5 / QwQ
-- **Qwen 2.5-7B:** [Qwen2.5-7B-Instruct-Q4_K_M.gguf](https://huggingface.co/Qwen/Qwen2.5-7B-Instruct-GGUF)
-- **Qwen 2.5-14B:** [Qwen2.5-14B-Instruct-Q4_K_M.gguf](https://huggingface.co/Qwen/Qwen2.5-14B-Instruct-GGUF)
-- **Qwen 2.5-32B:** [Qwen2.5-32B-Instruct-Q4_K_M.gguf](https://huggingface.co/Qwen/Qwen2.5-32B-Instruct-GGUF)
-- **Qwen 2.5-72B:** [Qwen2.5-72B-Instruct-Q4_K_M.gguf](https://huggingface.co/Qwen/Qwen2.5-72B-Instruct-GGUF)
-- **QwQ-32B:** [qwq-32b-q4_k_m.gguf](https://huggingface.co/Qwen/QwQ-32B-GGUF)
+- **Qwen 2.5-7B (Q4K, Q6K, Q80):** [Qwen2.5-7B-Instruct](https://huggingface.co/Qwen/Qwen2.5-7B-Instruct-GGUF)
+- **Qwen 2.5-14B (Q4K, Q6K, Q80):** [Qwen2.5-14B-Instruct](https://huggingface.co/Qwen/Qwen2.5-14B-Instruct-GGUF)
+- **Qwen 2.5-32B (Q4K, Q6K, Q80):** [Qwen2.5-32B-Instruct](https://huggingface.co/Qwen/Qwen2.5-32B-Instruct-GGUF)
+- **Qwen 2.5-72B (Q4K, Q6K, Q80):** [Qwen2.5-72B-Instruct](https://huggingface.co/Qwen/Qwen2.5-72B-Instruct-GGUF)
+- **QwQ-32B (Q4K, Q6K, Q80):** [qwq-32b](https://huggingface.co/Qwen/QwQ-32B-GGUF)
 
 ### DeepSeek
-- **DeepSeek R1-7B:** [deepseek-ai.DeepSeek-R1-Distill-Qwen-7B.Q4_K_M.gguf](https://huggingface.co/DevQuasar/deepseek-ai.DeepSeek-R1-Distill-Qwen-7B-GGUF)
-- **DeepSeek R1-8B:** [deepseek-ai.DeepSeek-R1-Distill-Llama-8B.Q4_K_M.gguf](https://huggingface.co/DevQuasar/deepseek-ai.DeepSeek-R1-Distill-Llama-8B-GGUF)
-- **DeepSeek R1-14B:** [deepseek-ai.DeepSeek-R1-Distill-Qwen-14B.Q4_K_M.gguf](https://huggingface.co/DevQuasar/deepseek-ai.DeepSeek-R1-Distill-Qwen-14B-GGUF)
-- **DeepSeek R1-32B:** [deepseek-ai.DeepSeek-R1-Distill-Qwen-32B.Q4_K_M.gguf](https://huggingface.co/DevQuasar/deepseek-ai.DeepSeek-R1-Distill-Qwen-32B-GGUF)
-- **DeepSeek R1-70B:** [DeepSeek-R1-Distill-Llama-70B-Q4_K_M.gguf](https://huggingface.co/unsloth/DeepSeek-R1-Distill-Llama-70B-GGUF)
+- **DeepSeek R1-7B (Q4K, Q6K, Q80):** [deepseek-ai.DeepSeek-R1-Distill-Qwen-7B](https://huggingface.co/DevQuasar/deepseek-ai.DeepSeek-R1-Distill-Qwen-7B-GGUF)
+- **DeepSeek R1-8B (Q4K, Q6K, Q80):** [deepseek-ai.DeepSeek-R1-Distill-Llama-8B](https://huggingface.co/DevQuasar/deepseek-ai.DeepSeek-R1-Distill-Llama-8B-GGUF)
+- **DeepSeek R1-14B (Q4K, Q6K, Q80):** [deepseek-ai.DeepSeek-R1-Distill-Qwen-14B](https://huggingface.co/DevQuasar/deepseek-ai.DeepSeek-R1-Distill-Qwen-14B-GGUF)
+- **DeepSeek R1-32B (Q4K, Q6K, Q80):** [deepseek-ai.DeepSeek-R1-Distill-Qwen-32B](https://huggingface.co/DevQuasar/deepseek-ai.DeepSeek-R1-Distill-Qwen-32B-GGUF)
+- **DeepSeek R1-70B (Q4K, Q6K, Q80):** [DeepSeek-R1-Distill-Llama-70B](https://huggingface.co/unsloth/DeepSeek-R1-Distill-Llama-70B-GGUF)
 
 ## ⚙️ How to Use?
 
@@ -221,13 +221,13 @@ Once started, prima.cpp will profile each device and decide how much workload to
 ### (Optional) Run with Prebuilt Docker Image
 Assume we have a host machine with at least 32 CPU cores, 32 GiB RAM, and 32 GiB VRAM. We simulate 4 homogeneous nodes using Docker containers, with each node allocated 8 CPU cores, 8 GiB RAM, and 8 GiB VRAM. Follow the below steps to get started:
 
-1. Pull our prebuilt Docker image (e.g., [`prima.cpp:1.0.0-cuda`](https://hub.docker.com/repository/docker/lizonghango00o1/prima.cpp/general)) and run 4 containers:
+1. Pull our prebuilt Docker image (e.g., [`prima.cpp:1.0.1-cuda`](https://hub.docker.com/repository/docker/lizonghango00o1/prima.cpp/general)) and run 4 containers:
 
 ```shell
-sudo docker run -dit --name prima-v1 --memory=8gb --memory-swap=8gb --cpus 8 --cpuset-cpus="0-7"   --network host --gpus all prima.cpp:1.0.0-cuda
-sudo docker run -dit --name prima-v2 --memory=8gb --memory-swap=8gb --cpus 8 --cpuset-cpus="8-15"  --network host --gpus all prima.cpp:1.0.0-cuda
-sudo docker run -dit --name prima-v3 --memory=8gb --memory-swap=8gb --cpus 8 --cpuset-cpus="16-23" --network host --gpus all prima.cpp:1.0.0-cuda
-sudo docker run -dit --name prima-v4 --memory=8gb --memory-swap=8gb --cpus 8 --cpuset-cpus="24-31" --network host --gpus all prima.cpp:1.0.0-cuda
+sudo docker run -dit --name prima-v1 --memory=8gb --memory-swap=8gb --cpus 8 --cpuset-cpus="0-7"   --network host --gpus all prima.cpp:1.0.1-cuda
+sudo docker run -dit --name prima-v2 --memory=8gb --memory-swap=8gb --cpus 8 --cpuset-cpus="8-15"  --network host --gpus all prima.cpp:1.0.1-cuda
+sudo docker run -dit --name prima-v3 --memory=8gb --memory-swap=8gb --cpus 8 --cpuset-cpus="16-23" --network host --gpus all prima.cpp:1.0.1-cuda
+sudo docker run -dit --name prima-v4 --memory=8gb --memory-swap=8gb --cpus 8 --cpuset-cpus="24-31" --network host --gpus all prima.cpp:1.0.1-cuda
 ```
 
 > If your host machine does not have a GPU, ignore the `--gpus all` option.
@@ -312,6 +312,10 @@ This enables more aggressive overlap but also introduce extra memory access late
 **4. Does it support Windows?**
 
 Not yet—but it's on the roadmap. Currently, prima.cpp can run on Linux, macOS, Android and HarmonyOS (via Termux). You can mix heterogeneous devices in the cluster.
+
+**5. Does it support Vulkan or AMD GPUs?**
+
+Not yet. Now prima.cpp supports only CUDA-based GPUs. Vulkan is in our roadmap, and AMD GPUs will be supported once we have that device.
 
 ## ❤️ Acknowledgment
 This project builds upon the incredible work from the open-source community, especially [ggml, gguf](https://github.com/ggml-org/ggml), and [llama.cpp](https://github.com/ggml-org/llama.cpp). We gratefully acknowledge their contributions.
