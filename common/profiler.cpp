@@ -370,7 +370,7 @@ float device_inp_embd_delay(struct llama_model * model, enum ggml_type src0t, in
         case GGML_TYPE_Q6_K:
         case GGML_TYPE_Q8_K:
         case GGML_TYPE_Q8_0:
-            QK_K = 256;
+            QK_K = ggml_blck_size(src0t);
             matrix_B = malloc((embd_size / QK_K) * ggml_type_size(src0t));
             break;
         default:
