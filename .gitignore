@@ -67,6 +67,7 @@ autogen-*.md
 
 /main
 /server
+/profile-tool
 
 # CI
 
