@@ -326,7 +326,7 @@ If you find this work helpful, please do not hesitate to cite us and send a star
 ```bibtex
 @misc{li2025primacpp,
     title={PRIMA.CPP: Speeding Up 70B-Scale LLM Inference on Low-Resource Everyday Home Clusters}, 
-    author={Zonghang Li and Tao Li and Wenjiao Feng and Mohsen Guizani and Hongfang Yu},
+    author={Zonghang Li and Tao Li and Wenjiao Feng and Mohsen Guizani and Hongfang Yu and Qirong Ho and Wei Xiang},
     year={2025},
     eprint={2504.08791},
     archivePrefix={arXiv},
