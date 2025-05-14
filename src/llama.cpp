@@ -20262,13 +20262,13 @@ int llama_send_device_info(struct llama_context * ctx, struct device_info * dev_
     return 0;
 }
 
-LLAMA_API int llama_bcast_startup_args(llama_context *ctx, uint32_t rank, startup_args *args) {
+int llama_bcast_startup_args(llama_context * ctx, uint32_t rank, startup_args * args) {
     int32_t n_world = ctx->cparams.n_world;
     if (n_world == 1) {
         return 0;
     }
     GGML_ASSERT(ctx != nullptr && ctx->send_socket != nullptr);
-    if (rank==0){
+    if (rank == 0){
         // send
         try {
             std::vector<zmq::message_t> send_msgs;
@@ -20289,7 +20289,7 @@ LLAMA_API int llama_bcast_startup_args(llama_context *ctx, uint32_t rank, startu
         GGML_ASSERT(recv_msgs[1].size() == sizeof(bool));
         bool should_profile = *static_cast<bool*>(recv_msgs[1].data());
         args->should_profile = should_profile;
-        if (rank != n_world-1){
+        if ((int)rank != (int)n_world - 1){
             // send
             try {
                 zmq::send_multipart(*ctx->send_socket, recv_msgs);
