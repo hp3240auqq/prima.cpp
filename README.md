@@ -262,6 +262,35 @@ cd /root/prima.cpp
 
 > If your host machine does not have a GPU, ignore the `--gpu-mem` option.
 
+### Run in Server Mode
+You can run prima.cpp in server mode, by launching `llama-server` on the rank 0 device (with `--host` and `--port` specified) and `llama-cli` on the others. Here is an example with 2 devices:
+
+```shell
+# On rank 0, run:
+./llama-server -m download/qwq-32b-q4_k_m.gguf -c 1024 --world 2 --rank 0 --master 192.168.1.2 --next 192.168.1.3 --prefetch --host 127.0.0.1 --port 8080
+
+# On rank 1, run:
+./llama-cli -m download/qwq-32b-q4_k_m.gguf -c 1024 --world 2 --rank 1 --master 192.168.1.2 --next 192.168.1.2 --prefetch
+```
+
+After that, you can interact with the rank 0 device by calling the Chat Completion API:
+
+```shell
+curl http://127.0.0.1:8080/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "qwq-32b",
+    "messages": [
+      {"role": "user", "content": "what is edge AI?"}
+    ],
+    "max_tokens": 200,
+    "temperature": 0.7,
+    "stream": true
+  }'
+```
+
+You can also use third-party GUI clients like [AnythingLLM](https://anythingllm.com/) and set the API endpoint from prima.cpp, by default, `http://localhost:8080/v1`.
+
 ## ❓ FAQ
 
 **1. How can I manually set the workload for each device?**
