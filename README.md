@@ -287,7 +287,15 @@ By default, prima.cpp automatically profiles devices and assigns workloads. Howe
 
 > Example: if `-lw "16,16,16,16"` is passed to the head device, then each of the 4 devices will handle 16 model layers. A worker with `-ngl 8` (if a GPU is available) will run 8/16 layers on the GPU.
 
-**2. How to run in chat mode like in llama.cpp?**
+**2. How to manually profile my device?**
+
+If `-lw` is set, prima.cpp skips profiling and runs directly with the user-defined `-lw` and `-ngl`. If you wish to profile a device manually, run `profile-tool` on that device.
+
+```shell
+./profile-tool -m download/qwq-32b-q4_k_m.gguf 
+```
+
+**3. How to run in chat mode like in llama.cpp?**
 
 To enable chat (conversation) mode, simply add the `-cnv` flag on the head device:
 
@@ -298,7 +306,7 @@ To enable chat (conversation) mode, simply add the `-cnv` flag on the head devic
 
 To quit the chat mode, input `quit` or `exit`.
 
-**3. How to force prefetching after computing?**
+**4. How to force prefetching after computing?**
 
 By default, prima.cpp only advises the OS to prefetch upcoming layer weights. The actual prefetching is then scheduled and handled by the OS, which may introduce some uncertainty. To explicitly trigger prefetching right after computing, you can use the `--force` flag on each device:
 
@@ -309,11 +317,11 @@ By default, prima.cpp only advises the OS to prefetch upcoming layer weights. Th
 
 This enables more aggressive overlap but also introduce extra memory access latency. Use `--force` only after testing, as its effect depends on your hardware and OS behavior.
 
-**4. Does it support Windows?**
+**5. Does it support Windows?**
 
 Not yet—but it's on the roadmap. Currently, prima.cpp can run on Linux, macOS, Android and HarmonyOS (via Termux). You can mix heterogeneous devices in the cluster.
 
-**5. Does it support Vulkan or AMD GPUs?**
+**6. Does it support Vulkan or AMD GPUs?**
 
 Not yet. Now prima.cpp supports only CUDA-based GPUs. Vulkan is in our roadmap, and AMD GPUs will be supported once we have that device.
 
