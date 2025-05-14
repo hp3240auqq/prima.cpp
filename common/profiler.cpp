@@ -913,7 +913,7 @@ ioengine=%s
 direct=1
 time_based=1
 runtime=1
-size=4G
+size=1G
 group_reporting=1
 iodepth=1
 
