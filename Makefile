@@ -1,5 +1,9 @@
 # Define the default target now so that it is always the first target
-BUILD_TARGETS = llama-cli profile-tool
+BUILD_TARGETS = \
+	llama-server \
+	llama-cli \
+	profile-tool
+
 # BUILD_TARGETS = \
 # 	libllava.a \
 # 	llama-baby-llama \
@@ -268,7 +272,7 @@ MK_LDFLAGS  += -L/usr/local/lib -lzmq
 
 ifeq ($(UNAME_S),Darwin)
     MK_CPPFLAGS += -isystem /opt/homebrew/include
-    MK_LDFLAGS  += -L/opt/homebrew/lib -lzmq
+    MK_LDFLAGS  += -L/opt/homebrew/lib
 endif
 
 ifeq ($(USE_HIGHS),1)

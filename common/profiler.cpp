@@ -350,7 +350,6 @@ float device_inp_embd_delay(struct llama_model * model, enum ggml_type src0t, in
         return 0.0f;
     }
 
-    size_t QK_K = 0; 
     switch (src0t) {
         case GGML_TYPE_F32: {
             matrix_B = malloc(embd_size * sizeof(float));
@@ -914,7 +913,7 @@ ioengine=%s
 direct=1
 time_based=1
 runtime=1
-size=4G
+size=1G
 group_reporting=1
 iodepth=1
 

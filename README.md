@@ -203,17 +203,17 @@ graph LR;
 Take QwQ-32B as an example, run the following commands on the devices to launch distributed inference:
 
 ```shell
-# on head device without a GPU, rank 0:
+# On head device without a GPU, rank 0:
 ./llama-cli -m download/qwq-32b-q4_k_m.gguf -c 1024 -n 256 -p "what is edge AI?" --world 4 --rank 0 --master 192.168.1.2 --next 192.168.1.3 --prefetch
 
-# on worker device with 8 GiB VRAM, rank 1:
-./llama-cli -m download/qwq-32b-q4_k_m.gguf -c 1024 --world 4 --rank 1 --master 192.168.1.2 --next 192.168.1.4 --prefetch --gpu-mem 8
+# On worker device with 8 GiB VRAM, rank 1:
+./llama-cli -m download/qwq-32b-q4_k_m.gguf --world 4 --rank 1 --master 192.168.1.2 --next 192.168.1.4 --prefetch --gpu-mem 8
 
-# on worker device with 11 GiB VRAM, rank 2:
-./llama-cli -m download/qwq-32b-q4_k_m.gguf -c 1024 --world 4 --rank 2 --master 192.168.1.2 --next 192.168.1.5 --prefetch --gpu-mem 11
+# On worker device with 11 GiB VRAM, rank 2:
+./llama-cli -m download/qwq-32b-q4_k_m.gguf --world 4 --rank 2 --master 192.168.1.2 --next 192.168.1.5 --prefetch --gpu-mem 11
 
-# on worker device without a GPU, rank 3:
-./llama-cli -m download/qwq-32b-q4_k_m.gguf -c 1024 --world 4 --rank 3 --master 192.168.1.2 --next 192.168.1.2 --prefetch
+# On worker device without a GPU, rank 3:
+./llama-cli -m download/qwq-32b-q4_k_m.gguf --world 4 --rank 3 --master 192.168.1.2 --next 192.168.1.2 --prefetch
 ```
 
 Once started, prima.cpp will profile each device and decide how much workload to assign, e.g., how many model layers each device should handle, and how many of them should run on GPU (if available).
@@ -262,6 +262,37 @@ cd /root/prima.cpp
 
 > If your host machine does not have a GPU, ignore the `--gpu-mem` option.
 
+> If you update to the latest code, non-rank 0 nodes can omit `-c 1024`.
+
+### Run in Server Mode
+You can run prima.cpp in server mode, by launching `llama-server` on the rank 0 device (with `--host` and `--port` specified) and `llama-cli` on the others. Here is an example with 2 devices:
+
+```shell
+# On rank 0, run:
+./llama-server -m download/qwq-32b-q4_k_m.gguf -c 1024 --world 2 --rank 0 --master 192.168.1.2 --next 192.168.1.3 --prefetch --host 127.0.0.1 --port 8080
+
+# On rank 1, run:
+./llama-cli -m download/qwq-32b-q4_k_m.gguf --world 2 --rank 1 --master 192.168.1.2 --next 192.168.1.2 --prefetch
+```
+
+After that, you can interact with the rank 0 device by calling the Chat Completion API:
+
+```shell
+curl http://127.0.0.1:8080/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "qwq-32b",
+    "messages": [
+      {"role": "user", "content": "what is edge AI?"}
+    ],
+    "max_tokens": 200,
+    "temperature": 0.7,
+    "stream": true
+  }'
+```
+
+You can also use third-party GUI clients like [AnythingLLM](https://anythingllm.com/) and set the API endpoint from prima.cpp, by default, `http://localhost:8080/v1`.
+
 ## ❓ FAQ
 
 **1. How can I manually set the workload for each device?**
@@ -273,13 +304,13 @@ By default, prima.cpp automatically profiles devices and assigns workloads. Howe
 ./llama-cli -m download/qwq-32b-q4_k_m.gguf -c 1024 -n 256 -p "what is edge AI?" --world 4 --rank 0 --master 192.168.1.2 --next 192.168.1.3 --prefetch -lw "16,16,16,16"
 
 # on worker device with 8 GiB VRAM, rank 1, use the option "-ngl":
-./llama-cli -m download/qwq-32b-q4_k_m.gguf -c 1024 --world 4 --rank 1 --master 192.168.1.2 --next 192.168.1.4 --prefetch -ngl 16
+./llama-cli -m download/qwq-32b-q4_k_m.gguf --world 4 --rank 1 --master 192.168.1.2 --next 192.168.1.4 --prefetch -ngl 16
 
 # on worker device with 11 GiB VRAM, rank 2, use the option "-ngl":
-./llama-cli -m download/qwq-32b-q4_k_m.gguf -c 1024 --world 4 --rank 2 --master 192.168.1.2 --next 192.168.1.5 --prefetch -ngl 16
+./llama-cli -m download/qwq-32b-q4_k_m.gguf --world 4 --rank 2 --master 192.168.1.2 --next 192.168.1.5 --prefetch -ngl 16
 
 # on worker device without a GPU, rank 3:
-./llama-cli -m download/qwq-32b-q4_k_m.gguf -c 1024 --world 4 --rank 3 --master 192.168.1.2 --next 192.168.1.2 --prefetch
+./llama-cli -m download/qwq-32b-q4_k_m.gguf --world 4 --rank 3 --master 192.168.1.2 --next 192.168.1.2 --prefetch
 ```
 
 - `-lw` sets the total model layers each device should handle. The format is a comma-separated list, one value per device, in rank order. You can also set `"8,8,8,8"`, `"4,4,4,4"`, `"16,16,24,8"`.
@@ -287,7 +318,15 @@ By default, prima.cpp automatically profiles devices and assigns workloads. Howe
 
 > Example: if `-lw "16,16,16,16"` is passed to the head device, then each of the 4 devices will handle 16 model layers. A worker with `-ngl 8` (if a GPU is available) will run 8/16 layers on the GPU.
 
-**2. How to run in chat mode like in llama.cpp?**
+**2. How to manually profile my device?**
+
+If `-lw` is set, prima.cpp skips profiling and runs directly with the user-defined `-lw` and `-ngl`. If you wish to profile a device manually, run `profile-tool` on that device.
+
+```shell
+./profile-tool -m download/qwq-32b-q4_k_m.gguf 
+```
+
+**3. How to run in chat mode like in llama.cpp?**
 
 To enable chat (conversation) mode, simply add the `-cnv` flag on the head device:
 
@@ -298,7 +337,7 @@ To enable chat (conversation) mode, simply add the `-cnv` flag on the head devic
 
 To quit the chat mode, input `quit` or `exit`.
 
-**3. How to force prefetching after computing?**
+**4. How to force prefetching after computing?**
 
 By default, prima.cpp only advises the OS to prefetch upcoming layer weights. The actual prefetching is then scheduled and handled by the OS, which may introduce some uncertainty. To explicitly trigger prefetching right after computing, you can use the `--force` flag on each device:
 
@@ -309,11 +348,11 @@ By default, prima.cpp only advises the OS to prefetch upcoming layer weights. Th
 
 This enables more aggressive overlap but also introduce extra memory access latency. Use `--force` only after testing, as its effect depends on your hardware and OS behavior.
 
-**4. Does it support Windows?**
+**5. Does it support Windows?**
 
 Not yet—but it's on the roadmap. Currently, prima.cpp can run on Linux, macOS, Android and HarmonyOS (via Termux). You can mix heterogeneous devices in the cluster.
 
-**5. Does it support Vulkan or AMD GPUs?**
+**6. Does it support Vulkan or AMD GPUs?**
 
 Not yet. Now prima.cpp supports only CUDA-based GPUs. Vulkan is in our roadmap, and AMD GPUs will be supported once we have that device.
 
@@ -326,7 +365,7 @@ If you find this work helpful, please do not hesitate to cite us and send a star
 ```bibtex
 @misc{li2025primacpp,
     title={PRIMA.CPP: Speeding Up 70B-Scale LLM Inference on Low-Resource Everyday Home Clusters}, 
-    author={Zonghang Li and Tao Li and Wenjiao Feng and Mohsen Guizani and Hongfang Yu},
+    author={Zonghang Li and Tao Li and Wenjiao Feng and Mohsen Guizani and Hongfang Yu and Qirong Ho and Wei Xiang},
     year={2025},
     eprint={2504.08791},
     archivePrefix={arXiv},

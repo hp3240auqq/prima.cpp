@@ -351,6 +351,9 @@ int main(int argc, char ** argv) {
 
         // remove any "future" tokens that we might have inherited from the previous session
         llama_kv_cache_seq_rm(ctx, -1, n_matching_session_tokens, -1);
+        if (my_rank == 0) {
+            llama_send_kv_cache_seq_rm(ctx, -1, n_matching_session_tokens, -1);
+        }
     }
 
     LOG_DBG("recalculate the cached logits (check): embd_inp.size() %zu, n_matching_session_tokens %zu, embd_inp.size() %zu, session_tokens.size() %zu\n",
@@ -595,6 +598,11 @@ int main(int argc, char ** argv) {
 
                         llama_kv_cache_seq_rm (ctx, 0, params.n_keep            , params.n_keep + n_discard);
                         llama_kv_cache_seq_add(ctx, 0, params.n_keep + n_discard, n_past, -n_discard);
+
+                        if (my_rank == 0) {
+                            llama_send_kv_cache_seq_rm (ctx, 0, params.n_keep            , params.n_keep + n_discard);
+                            llama_send_kv_cache_seq_add(ctx, 0, params.n_keep + n_discard, n_past, -n_discard);
+                        }
 
                         n_past -= n_discard;
 
