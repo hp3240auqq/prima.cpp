@@ -1593,6 +1593,11 @@ struct llama_init_result llama_init_from_gpt_params(gpt_params & params) {
         cparams.n_layer_window[0] = n_layers;
         mparams.n_layer_window[0] = n_layers;
         llama_context_n_layer_window(lctx)[0] = n_layers;
+
+#if defined(GGML_USE_METAL) || defined(GGML_USE_CUDA)
+        params.n_gpu_layers = std::min((int32_t)n_layers, params.n_gpu_layers);
+#endif
+
     } else {
         uint32_t n_layer_window[32] = {0}, n_gpu_layers[32] = {0};
 
@@ -1603,10 +1608,18 @@ struct llama_init_result llama_init_from_gpt_params(gpt_params & params) {
         struct startup_args args;
         if (my_rank == 0){
             args.should_profile = auto_schedule;
+            args.n_ctx          = params.n_ctx;
         }
+
         llama_bcast_startup_args(lctx, my_rank, &args);
 
-        auto_schedule = args.should_profile;
+        if (my_rank > 0) {
+            // receive startup args
+            auto_schedule = args.should_profile;
+            params.n_ctx  = args.n_ctx;
+            cparams.n_ctx = args.n_ctx;
+        }
+
         // if n_world > 1 and need auto schdule, then prifile
         if (auto_schedule){
             // get device profile
@@ -1658,6 +1671,11 @@ struct llama_init_result llama_init_from_gpt_params(gpt_params & params) {
             cparams.n_gpu_layers = n_gpu_layers[my_rank];
             mparams.n_gpu_layers = n_gpu_layers[my_rank];
             llama_model_set_n_gpu_layers(model, n_gpu_layers[my_rank]);
+        } else { // -ngl is set
+            params.n_gpu_layers  = std::min(params.n_gpu_layers, (int32_t)n_layer_window[my_rank]);
+            cparams.n_gpu_layers = params.n_gpu_layers;
+            mparams.n_gpu_layers = params.n_gpu_layers;
+            llama_model_set_n_gpu_layers(model, params.n_gpu_layers);
         }
     }
 
@@ -1727,7 +1745,7 @@ struct llama_init_result llama_init_from_gpt_params(gpt_params & params) {
     }
 
     if (params.warmup) {
-        LOG_WRN("%s: warming up the model with an empty run - please wait ... (--no-warmup to disable)\n", __func__);
+        LOG_WRN("%s: warming up the model with an empty run - please wait ...\n", __func__);
 
         const uint32_t my_rank = cparams.rank;
         std::vector<llama_token> tmp;

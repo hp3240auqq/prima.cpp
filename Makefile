@@ -272,7 +272,7 @@ MK_LDFLAGS  += -L/usr/local/lib -lzmq
 
 ifeq ($(UNAME_S),Darwin)
     MK_CPPFLAGS += -isystem /opt/homebrew/include
-    MK_LDFLAGS  += -L/opt/homebrew/lib -lzmq
+    MK_LDFLAGS  += -L/opt/homebrew/lib
 endif
 
 ifeq ($(USE_HIGHS),1)

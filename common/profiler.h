@@ -313,7 +313,8 @@ struct disk_props {
 };
 
 struct startup_args{
-    bool should_profile;
+    bool     should_profile;
+    uint32_t n_ctx;
 };
 
 struct device_info {

@@ -203,17 +203,17 @@ graph LR;
 Take QwQ-32B as an example, run the following commands on the devices to launch distributed inference:
 
 ```shell
-# on head device without a GPU, rank 0:
+# On head device without a GPU, rank 0:
 ./llama-cli -m download/qwq-32b-q4_k_m.gguf -c 1024 -n 256 -p "what is edge AI?" --world 4 --rank 0 --master 192.168.1.2 --next 192.168.1.3 --prefetch
 
-# on worker device with 8 GiB VRAM, rank 1:
-./llama-cli -m download/qwq-32b-q4_k_m.gguf -c 1024 --world 4 --rank 1 --master 192.168.1.2 --next 192.168.1.4 --prefetch --gpu-mem 8
+# On worker device with 8 GiB VRAM, rank 1:
+./llama-cli -m download/qwq-32b-q4_k_m.gguf --world 4 --rank 1 --master 192.168.1.2 --next 192.168.1.4 --prefetch --gpu-mem 8
 
-# on worker device with 11 GiB VRAM, rank 2:
-./llama-cli -m download/qwq-32b-q4_k_m.gguf -c 1024 --world 4 --rank 2 --master 192.168.1.2 --next 192.168.1.5 --prefetch --gpu-mem 11
+# On worker device with 11 GiB VRAM, rank 2:
+./llama-cli -m download/qwq-32b-q4_k_m.gguf --world 4 --rank 2 --master 192.168.1.2 --next 192.168.1.5 --prefetch --gpu-mem 11
 
-# on worker device without a GPU, rank 3:
-./llama-cli -m download/qwq-32b-q4_k_m.gguf -c 1024 --world 4 --rank 3 --master 192.168.1.2 --next 192.168.1.2 --prefetch
+# On worker device without a GPU, rank 3:
+./llama-cli -m download/qwq-32b-q4_k_m.gguf --world 4 --rank 3 --master 192.168.1.2 --next 192.168.1.2 --prefetch
 ```
 
 Once started, prima.cpp will profile each device and decide how much workload to assign, e.g., how many model layers each device should handle, and how many of them should run on GPU (if available).
@@ -262,6 +262,8 @@ cd /root/prima.cpp
 
 > If your host machine does not have a GPU, ignore the `--gpu-mem` option.
 
+> If you update to the latest code, non-rank 0 nodes can omit `-c 1024`.
+
 ### Run in Server Mode
 You can run prima.cpp in server mode, by launching `llama-server` on the rank 0 device (with `--host` and `--port` specified) and `llama-cli` on the others. Here is an example with 2 devices:
 
@@ -270,7 +272,7 @@ You can run prima.cpp in server mode, by launching `llama-server` on the rank 0 
 ./llama-server -m download/qwq-32b-q4_k_m.gguf -c 1024 --world 2 --rank 0 --master 192.168.1.2 --next 192.168.1.3 --prefetch --host 127.0.0.1 --port 8080
 
 # On rank 1, run:
-./llama-cli -m download/qwq-32b-q4_k_m.gguf -c 1024 --world 2 --rank 1 --master 192.168.1.2 --next 192.168.1.2 --prefetch
+./llama-cli -m download/qwq-32b-q4_k_m.gguf --world 2 --rank 1 --master 192.168.1.2 --next 192.168.1.2 --prefetch
 ```
 
 After that, you can interact with the rank 0 device by calling the Chat Completion API:
@@ -302,13 +304,13 @@ By default, prima.cpp automatically profiles devices and assigns workloads. Howe
 ./llama-cli -m download/qwq-32b-q4_k_m.gguf -c 1024 -n 256 -p "what is edge AI?" --world 4 --rank 0 --master 192.168.1.2 --next 192.168.1.3 --prefetch -lw "16,16,16,16"
 
 # on worker device with 8 GiB VRAM, rank 1, use the option "-ngl":
-./llama-cli -m download/qwq-32b-q4_k_m.gguf -c 1024 --world 4 --rank 1 --master 192.168.1.2 --next 192.168.1.4 --prefetch -ngl 16
+./llama-cli -m download/qwq-32b-q4_k_m.gguf --world 4 --rank 1 --master 192.168.1.2 --next 192.168.1.4 --prefetch -ngl 16
 
 # on worker device with 11 GiB VRAM, rank 2, use the option "-ngl":
-./llama-cli -m download/qwq-32b-q4_k_m.gguf -c 1024 --world 4 --rank 2 --master 192.168.1.2 --next 192.168.1.5 --prefetch -ngl 16
+./llama-cli -m download/qwq-32b-q4_k_m.gguf --world 4 --rank 2 --master 192.168.1.2 --next 192.168.1.5 --prefetch -ngl 16
 
 # on worker device without a GPU, rank 3:
-./llama-cli -m download/qwq-32b-q4_k_m.gguf -c 1024 --world 4 --rank 3 --master 192.168.1.2 --next 192.168.1.2 --prefetch
+./llama-cli -m download/qwq-32b-q4_k_m.gguf --world 4 --rank 3 --master 192.168.1.2 --next 192.168.1.2 --prefetch
 ```
 
 - `-lw` sets the total model layers each device should handle. The format is a comma-separated list, one value per device, in rank order. You can also set `"8,8,8,8"`, `"4,4,4,4"`, `"16,16,24,8"`.
