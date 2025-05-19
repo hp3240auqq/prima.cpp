@@ -17788,6 +17788,8 @@ struct input_tensors {
 struct sync_meta {
     int32_t n_tokens           = 0;
     llama_pos * pos            = nullptr;
+    llama_pos all_pos_0;
+    llama_pos all_pos_1;
     uint32_t n_ctx             = 0;
 
     // signal to clear the kv cache
@@ -17834,6 +17836,12 @@ static void llama_send_meta(zmq::socket_t & socket, struct sync_meta * meta) {
             send_msgs.emplace_back("pos", strlen("pos"));
             send_msgs.emplace_back(meta->pos, meta->n_ctx * sizeof(llama_pos));
         }
+
+        send_msgs.emplace_back("all_pos_0", strlen("all_pos_0"));
+        send_msgs.emplace_back(&(meta->all_pos_0), sizeof(meta->all_pos_0));
+
+        send_msgs.emplace_back("all_pos_1", strlen("all_pos_1"));
+        send_msgs.emplace_back(&(meta->all_pos_1), sizeof(meta->all_pos_1));
 
         zmq::send_multipart(socket, send_msgs);
     } catch (const zmq::error_t& e) {
@@ -17906,6 +17914,16 @@ static int llama_recv_meta(zmq::socket_t & socket, struct sync_meta * meta) {
         if (key == "pos") {
             meta->pos = (llama_pos *) malloc(meta->n_ctx * sizeof(llama_pos));
             std::memcpy(meta->pos, data_msg.data(), meta->n_ctx * sizeof(llama_pos));
+        }
+
+        if (key == "all_pos_0") {
+            GGML_ASSERT(data_msg.size() == sizeof(meta->all_pos_0));
+            std::memcpy(&(meta->all_pos_0), data_msg.data(), sizeof(meta->all_pos_0));
+        }
+
+        if (key == "all_pos_1") {
+            GGML_ASSERT(data_msg.size() == sizeof(meta->all_pos_1));
+            std::memcpy(&(meta->all_pos_1), data_msg.data(), sizeof(meta->all_pos_1));
         }
     }
     return 0;
@@ -18185,6 +18203,8 @@ static int llama_decode_internal(
                 batch_all.pos = (llama_pos *) malloc(cparams.n_ctx * sizeof(llama_pos));
                 std::memcpy(batch_all.pos, meta.pos, cparams.n_ctx * sizeof(llama_pos));
             }
+            batch_all.all_pos_0 = meta.all_pos_0;
+            batch_all.all_pos_1 = meta.all_pos_1;
         }
 
         if (kv_cache_op(meta.clear_kv_cache,
@@ -18229,8 +18249,10 @@ static int llama_decode_internal(
     }
 
     if (!is_last_dev) {
-        meta.n_tokens = batch_all.n_tokens;
-        meta.pos      = batch_all.pos;
+        meta.n_tokens  = batch_all.n_tokens;
+        meta.pos       = batch_all.pos;
+        meta.all_pos_0 = batch_all.all_pos_0;
+        meta.all_pos_1 = batch_all.all_pos_1;
         llama_send_meta(*lctx.send_socket, &meta);
     } 
     
