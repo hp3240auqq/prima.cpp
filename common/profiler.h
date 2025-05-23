@@ -346,6 +346,18 @@ struct device_info {
         model_bytes() {}
 };
 
+struct TopoRebuildHelperInfo{
+    struct device_info dev_info;
+    char               is_fowarder;
+    
+    TopoRebuildHelperInfo():
+        dev_info(),
+        is_fowarder(0){}
+    
+    void   deserialize(const char * buffer);
+    size_t serialize(char ** buffer) const;
+};
+
 enum profiler_backend_type {
     PROFILER_BACKEND_TYPE_CPU   = 0,
     PROFILER_BACKEND_TYPE_METAL = 1,
@@ -389,6 +401,6 @@ int      device_has_blas   (void);
 int      device_has_sycl   (void);
 
 size_t   serialize  (const struct device_info * dev_info, char ** buffer);
-void     deserialize(const char * buffer, struct device_info * dev_info);
+size_t   deserialize(const char * buffer, struct device_info * dev_info);
 
 #endif // PROFILER_H

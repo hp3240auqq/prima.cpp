@@ -1717,6 +1717,8 @@ struct llama_init_result llama_init_from_gpt_params(gpt_params & params) {
         }
 
         // sychronize device profile to the master node
+        NodeType node_type;
+        char is_fowarder[32] = {0};
         if (my_rank == 0) {
             if (auto_schedule) {
                 std::vector<device_info> dev_info_set(n_world);
@@ -1743,14 +1745,14 @@ struct llama_init_result llama_init_from_gpt_params(gpt_params & params) {
             if (auto_schedule){
                 llama_send_device_info(lctx, &dev_info);
                 llama_recv_layer_setup(lctx, n_layer_window, n_gpu_layers);
-                llama_rebuild_topo    (lctx, n_layer_window, nullptr);
+                llama_rebuild_topo    (lctx, n_layer_window, nullptr, &node_type, is_fowarder);
             } else {
                 llama_recv_layer_setup(lctx, n_layer_window, n_gpu_layers);
             }
         }
 
         // if this is a weak device, then exit
-        if (n_layer_window[my_rank] <= 0) {
+        if (node_type == NodeType::NODE_TYPE_EXIT) {
             LOG_INF("No layer is assigned to me, exit.\n");
             llama_free(lctx);
             llama_free_model(model);
@@ -1762,7 +1764,7 @@ struct llama_init_result llama_init_from_gpt_params(gpt_params & params) {
         std::vector<uint32_t> n_layer_window_temp = {n_layer_window[0]}, n_gpu_layers_temp = {n_gpu_layers[0]};
 
         for (uint32_t i = 1; i < n_world; i++) {
-            if (n_layer_window[i] <= 0) {
+            if (n_layer_window[i] <= 0 && is_fowarder[i] == 0) {
                 continue;
             }
             if (i <= my_rank) {
@@ -1794,7 +1796,14 @@ struct llama_init_result llama_init_from_gpt_params(gpt_params & params) {
         n_world         = update_n_world;
 
         llama_update_context_with_rankworld(lctx, update_rank, update_n_world);
-        
+                
+        if(node_type == NodeType::NODE_TYPE_EXIT){
+            //just foward
+            while (true) {
+                llama_foward_messages(lctx);
+            }
+        }
+
         // update n_layer_window and n_gpu_layers
         std::copy(std::begin(n_layer_window), std::end(n_layer_window), params.n_layer_window);
         std::copy(std::begin(n_layer_window), std::end(n_layer_window), cparams.n_layer_window);
