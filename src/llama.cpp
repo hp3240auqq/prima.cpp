@@ -18211,7 +18211,7 @@ static int llama_decode_internal(
                     [&]{ llama_kv_cache_clear       (&lctx); },
                     [&]{ llama_send_kv_cache_clear  (&lctx); },
                     is_last_dev)) {
-            LLAMA_LOG_INFO("%s: received signal kv_cache_clear\n", __func__);
+            LLAMA_LOG_DEBUG("%s: received signal kv_cache_clear\n", __func__);
             return -1;
         }
 
@@ -18219,7 +18219,7 @@ static int llama_decode_internal(
                     [&]{ llama_kv_cache_seq_rm      (&lctx, meta.rm_seq_id, meta.rm_p0, meta.rm_p1); },
                     [&]{ llama_send_kv_cache_seq_rm (&lctx, meta.rm_seq_id, meta.rm_p0, meta.rm_p1); },
                     is_last_dev)) {
-            LLAMA_LOG_INFO("%s: received signal kv_cache_seq_rm\n", __func__);
+            LLAMA_LOG_DEBUG("%s: received signal kv_cache_seq_rm\n", __func__);
             return -1;
         }
 
@@ -18227,7 +18227,7 @@ static int llama_decode_internal(
                     [&]{ llama_kv_cache_seq_add     (&lctx, meta.add_seq_id, meta.add_p0, meta.add_p1, meta.add_delta); },
                     [&]{ llama_send_kv_cache_seq_add(&lctx, meta.add_seq_id, meta.add_p0, meta.add_p1, meta.add_delta); },
                     is_last_dev)) {
-            LLAMA_LOG_INFO("%s: received signal kv_cache_seq_add\n", __func__);
+            LLAMA_LOG_DEBUG("%s: received signal kv_cache_seq_add\n", __func__);
             return -1;
         }
 
@@ -18235,7 +18235,7 @@ static int llama_decode_internal(
                     [&]{ llama_kv_cache_seq_cp      (&lctx, meta.cp_src_seq_id, meta.cp_dst_seq_id, meta.cp_p0, meta.cp_p1); },
                     [&]{ llama_send_kv_cache_seq_cp (&lctx, meta.cp_src_seq_id, meta.cp_dst_seq_id, meta.cp_p0, meta.cp_p1); },
                     is_last_dev)) {
-            LLAMA_LOG_INFO("%s: received signal kv_cache_seq_cp\n", __func__);
+            LLAMA_LOG_DEBUG("%s: received signal kv_cache_seq_cp\n", __func__);
             return -1;
         }
 
@@ -18243,7 +18243,7 @@ static int llama_decode_internal(
                     [&]{ llama_kv_cache_seq_div     (&lctx, meta.div_seq_id, meta.div_p0, meta.div_p1, meta.div_factor); },
                     [&]{ llama_send_kv_cache_seq_div(&lctx, meta.div_seq_id, meta.div_p0, meta.div_p1, meta.div_factor); },
                     is_last_dev)) {
-            LLAMA_LOG_INFO("%s: received signal kv_cache_seq_div\n", __func__);
+            LLAMA_LOG_DEBUG("%s: received signal kv_cache_seq_div\n", __func__);
             return -1;
         }
     }

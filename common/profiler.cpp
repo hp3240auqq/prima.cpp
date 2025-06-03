@@ -439,7 +439,7 @@ float device_inp_embd_delay(struct llama_model * model, enum ggml_type src0t, in
     }
 
     // warm-up
-    // ggml_backend_graph_compute(backend, gf);
+    ggml_backend_graph_compute(backend, gf);
 
     const int64_t t_start = ggml_time_us();
     ggml_backend_graph_compute(backend, gf);
@@ -1287,6 +1287,9 @@ static float device_mem_copy(struct llama_model * model, enum profiler_backend_t
     if (ggml_backend_is_cpu(backend)) {
         ggml_backend_cpu_set_n_threads(backend, n_threads);
     }
+
+    // warm-up 
+    ggml_backend_graph_compute(backend, gf);
 
     const int64_t t_start = ggml_time_us();
     ggml_backend_graph_compute(backend, gf);
