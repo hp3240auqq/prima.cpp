@@ -847,8 +847,7 @@ static std::string vec_to_str(const std::vector<T> & vec) {
 }
 
 static bool assign_layers_to_device(
-                                uint32_t   n_world, 
-                                uint32_t   my_rank, 
+                                uint32_t   n_world,
                        const device_info * dev_info_set, 
                                 uint32_t * n_layer_window, 
                                 uint32_t * n_gpu_layers,
@@ -857,15 +856,8 @@ static bool assign_layers_to_device(
                                    float   min_disk_read_speed = 0.1f) { // minimum disk I/O speed: 100 MB/s
     GGML_ASSERT(dev_info_set != nullptr);
     GGML_ASSERT(n_layer_window != nullptr);
-    GGML_ASSERT(my_rank == 0);
 
-    // if only 1 device, it is assigned all layers
     const uint32_t n_layer = llama_model_n_layers(model);
-    if (n_world == 1) {
-        n_layer_window[0] = n_layer;
-        return true;
-    }
-
     std::vector<int>   w(n_world, 0);
     std::vector<int>   n(n_world, 0);
     std::vector<float> mem_budget(n_world, 0.0f);
@@ -1102,7 +1094,6 @@ static bool assign_layers_to_device(
     };
     (void)print_matrix;
 
-    double final_objective = 1.0e30;
     std::vector<double> final_solution;
     int final_k = -1;
 
@@ -1442,7 +1433,6 @@ static bool assign_layers_to_device(
 
         // update the global best solution
         final_k = best_k;
-        final_objective = best_objective;
         final_solution = best_solution;
 
         if (solution_unchanged) break;
@@ -1461,8 +1451,7 @@ static bool assign_layers_to_device(
         LOG_INF("  - N Layer Window : %d\n", w[m]);
         LOG_INF("  - N GPU Layers   : %d\n", n[m]);
     }
-    // LOG_INF("\nEstimated Latency: %.3f ms\n", final_objective);
-    // LOG_INF("------------------------------------------");
+    LOG_INF("\n");
 
     // copy value from w and n to n_layer_window and n_gpu_layers, respectively
     std::copy(w.begin(), w.end(), n_layer_window);
@@ -1522,58 +1511,67 @@ static bool assign_layers_to_device(
     return true;
 }
 
-static bool tune_layer_allocation(
-                                uint32_t   n_world, 
-                                uint32_t   my_rank, 
+static bool assign_layers_and_select_devices(
+                                uint32_t   n_world,
                 std::vector<device_info>   dev_infos,
                                 uint32_t * n_layer_window, 
                                 uint32_t * n_gpu_layers,
                       struct llama_model * model,
-       const struct llama_context_params   cparams,
-                                   float   min_disk_read_speed = 0.1f) {
+       const struct llama_context_params   cparams) {
     memset(n_layer_window, 0, n_world * sizeof(uint32_t));
-    memset(n_gpu_layers, 0, n_world * sizeof(uint32_t));
+    memset(n_gpu_layers,   0, n_world * sizeof(uint32_t));
+
     std::vector<device_info> dev_infos_temp = dev_infos;
-    std::vector<uint32_t> n_layer_windows_temp;
-    std::vector<uint32_t> n_gpu_layers_temp;
-    while(n_world > 0) {
+    std::vector<uint32_t> n_layer_windows_temp, n_gpu_layers_temp;
+    
+    while (n_world > 0) {
         std::vector<device_info> dev_infos_ = dev_infos_temp;
-        std::vector<uint32_t> n_layer_windows_(n_world, 0);
-        std::vector<uint32_t> n_gpu_layers_(n_world, 0);
-        if (!assign_layers_to_device(n_world, my_rank, dev_infos_.data(), 
+        std::vector<uint32_t> n_layer_windows_(n_world, 0), n_gpu_layers_(n_world, 0);
+        
+        if (!assign_layers_to_device(n_world, dev_infos_.data(), 
                                      n_layer_windows_.data(), n_gpu_layers_.data(), model, cparams)) {
             return false;
         }
+
         dev_infos_temp.clear();
         n_layer_windows_temp.clear();
         n_gpu_layers_temp.clear();
-        for(uint32_t i=0; i<n_world; i++) {
-            if (n_layer_windows_[i] > 1 || i==0 ) {
+
+        for (uint32_t i = 0; i < n_world; i++) {
+            if (n_layer_windows_[i] > 1 || i == 0 ) {
                 dev_infos_temp.push_back(dev_infos_[i]);
                 n_layer_windows_temp.push_back(n_layer_windows_[i]);
                 n_gpu_layers_temp.push_back(n_gpu_layers_[i]);
+            } else {
+                // remove this device
+                LOG_INF("Remove device %s (rank %d) with only %d layer assigned.\n", 
+                        dev_infos_[i].device_name, dev_infos_[i].rank, n_layer_windows_[i]);
             }
         }
+
         if(dev_infos_temp.size() == n_world) {
             // no device be removed
             break;
         }
 
         n_world = dev_infos_temp.size();
+
+        LOG_INF("Reassign layers to the remaining %d device(s).\n\n", n_world);
     }
-    uint32_t i =0 , j =0;
-    while(j < n_world) {
-        if(dev_infos[i].rank == dev_infos_temp[j].rank){
+
+    uint32_t i = 0 , j = 0;
+    while (j < n_world) {
+        if (dev_infos[i].rank == dev_infos_temp[j].rank) {
             n_layer_window[i] = n_layer_windows_temp[j];
-            n_gpu_layers[i] = n_gpu_layers_temp[j];
+            n_gpu_layers[i]   = n_gpu_layers_temp[j];
             j++;
-            i++;
         } else {
             n_layer_window[i] = 0;
             n_gpu_layers[i] = 0;
-            i++;
         }
+        i++;
     }
+
     return true;
 }
 
@@ -1698,16 +1696,14 @@ struct llama_init_result llama_init_from_gpt_params(gpt_params & params) {
                 llama_gather_device_info(lctx, dev_info_set.data());
                 device_print_props(dev_info_set.data(), n_world, model, cparams);
 
-                // automatically determine n_layer_window and n_gpu_layers
-                if (!tune_layer_allocation(n_world, my_rank, dev_info_set, n_layer_window, n_gpu_layers, model, cparams)) {
+                // assign layers to devices and remove weak devices
+                if (!assign_layers_and_select_devices(n_world, dev_info_set, n_layer_window, n_gpu_layers, model, cparams)) {
                     LOG_ERR("%s: Invalid allocation by HiGHS solver\n", __func__);
                     llama_free(lctx);
                     llama_free_model(model);
                     return iparams;
                 }
                 llama_bcast_layer_setup(lctx, n_layer_window, n_gpu_layers);
-
-                //rebuild topo
                 llama_rebuild_topo(lctx, n_layer_window, dev_info_set.data());
             } else {
                 // use the user-defined n_layer_window
@@ -1718,51 +1714,58 @@ struct llama_init_result llama_init_from_gpt_params(gpt_params & params) {
             if (auto_schedule){
                 llama_send_device_info(lctx, &dev_info);
                 llama_recv_layer_setup(lctx, n_layer_window, n_gpu_layers);
-                // rebuild topo
-                llama_rebuild_topo(lctx,n_layer_window, nullptr);
-            }else{
+                llama_rebuild_topo    (lctx, n_layer_window, nullptr);
+            } else {
                 llama_recv_layer_setup(lctx, n_layer_window, n_gpu_layers);
             }
         }
-        if(n_layer_window[my_rank]<=0){
-            LOG_INF("%s: info: rank %d has no layers to run, skipping\n", __func__, my_rank);
+
+        // if this is a weak device, then exit
+        if (n_layer_window[my_rank] <= 0) {
+            LOG_INF("No layer is assigned to me, exit.\n");
             llama_free(lctx);
             llama_free_model(model);
             exit(0);
         }
 
-        //update rank and n_world for consistency
-        uint32_t update_rank = 0;
-        uint32_t update_n_world = 1;
-        std::vector<uint32_t> n_layer_window_temp = {n_layer_window[0]};
-        std::vector<uint32_t> n_gpu_layers_temp = {n_gpu_layers[0]};
-        for(uint32_t i=1; i<n_world; i++) {
-            if(n_layer_window[i] <= 0 ){
+        // update my rank and n_world
+        uint32_t update_rank = 0, update_n_world = 1;
+        std::vector<uint32_t> n_layer_window_temp = {n_layer_window[0]}, n_gpu_layers_temp = {n_gpu_layers[0]};
+
+        for (uint32_t i = 1; i < n_world; i++) {
+            if (n_layer_window[i] <= 0) {
                 continue;
             }
-            if(i <= my_rank){
+            if (i <= my_rank) {
                 update_rank++;
             }
             update_n_world++;
             n_layer_window_temp.push_back(n_layer_window[i]);
             n_gpu_layers_temp.push_back(n_gpu_layers[i]);
         }
-        memset(n_layer_window, 0, n_world * sizeof(uint32_t));
-        memset(n_gpu_layers, 0, n_world * sizeof(uint32_t));
-        for (uint32_t i=0; i<update_n_world; i++) {
-            n_layer_window[i] = n_layer_window_temp[i];
-            n_gpu_layers[i] = n_gpu_layers_temp[i];
-        }
-        llama_update_context_with_rankworld(lctx, update_rank, update_n_world);
-        cparams.rank = update_rank;
-        cparams.n_world = update_n_world;
-        mparams.rank = update_rank;
-        mparams.n_world = update_n_world;
-        params.rank = update_rank;
-        params.n_world = update_n_world;
-        my_rank = update_rank;
-        n_world = update_n_world;
 
+        memset(n_layer_window, 0, n_world * sizeof(uint32_t));
+        memset(n_gpu_layers,   0, n_world * sizeof(uint32_t));
+
+        for (uint32_t i = 0; i < update_n_world; i++) {
+            n_layer_window[i] = n_layer_window_temp[i];
+            n_gpu_layers[i]   = n_gpu_layers_temp[i];
+        }
+
+        // update my rank
+        cparams.rank = update_rank;
+        mparams.rank = update_rank;
+        params.rank  = update_rank;
+        my_rank      = update_rank;
+
+        // update n_world
+        cparams.n_world = update_n_world;
+        mparams.n_world = update_n_world;
+        params.n_world  = update_n_world;
+        n_world         = update_n_world;
+
+        llama_update_context_with_rankworld(lctx, update_rank, update_n_world);
+        
         // update n_layer_window and n_gpu_layers
         std::copy(std::begin(n_layer_window), std::end(n_layer_window), params.n_layer_window);
         std::copy(std::begin(n_layer_window), std::end(n_layer_window), cparams.n_layer_window);

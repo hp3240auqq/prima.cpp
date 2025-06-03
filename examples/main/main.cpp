@@ -200,7 +200,8 @@ int main(int argc, char ** argv) {
     // load the model and apply lora adapter, if any
     LOG_INF("%s: load the model and apply lora adapter, if any\n", __func__);
     llama_init_result llama_init = llama_init_from_gpt_params(params);
-    // update
+
+    // update my rank and world size if any devices removed
     my_rank = params.rank;
     n_world = params.n_world;
 

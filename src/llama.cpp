@@ -3674,76 +3674,76 @@ void llama_profile_device(
 #endif
 
     if (is_dtype_exist(n_params, GGML_TYPE_F32)) {
-        dev_info->cpu_props.flops_f32_f32       = device_cpu_flops  (model, GGML_TYPE_F32,  GGML_TYPE_F32, n_threads);
-        dev_info->gpu_props.metal_flops_f32_f32 = device_metal_flops(model, GGML_TYPE_F32,  GGML_TYPE_F32);
-        dev_info->gpu_props.cuda_flops_f32_f32  = device_cuda_flops (model, GGML_TYPE_F32,  GGML_TYPE_F32);
+        dev_info->cpu_props.flops_f32_f32         = device_cpu_flops  (model, GGML_TYPE_F32,  GGML_TYPE_F32, n_threads);
+        dev_info->gpu_props.metal_flops_f32_f32   = device_metal_flops(model, GGML_TYPE_F32,  GGML_TYPE_F32);
+        dev_info->gpu_props.cuda_flops_f32_f32    = device_cuda_flops (model, GGML_TYPE_F32,  GGML_TYPE_F32);
     }
 
     if (is_dtype_exist(n_params, GGML_TYPE_F16)) {
-        dev_info->cpu_props.flops_f16_f32       = device_cpu_flops  (model, GGML_TYPE_F16,  GGML_TYPE_F32, n_threads);
-        dev_info->gpu_props.metal_flops_f16_f32 = device_metal_flops(model, GGML_TYPE_F16,  GGML_TYPE_F32);
-        dev_info->gpu_props.cuda_flops_f16_f32  = device_cuda_flops (model, GGML_TYPE_F16,  GGML_TYPE_F32);
+        dev_info->cpu_props.flops_f16_f32         = device_cpu_flops  (model, GGML_TYPE_F16,  GGML_TYPE_F32, n_threads);
+        dev_info->gpu_props.metal_flops_f16_f32   = device_metal_flops(model, GGML_TYPE_F16,  GGML_TYPE_F32);
+        dev_info->gpu_props.cuda_flops_f16_f32    = device_cuda_flops (model, GGML_TYPE_F16,  GGML_TYPE_F32);
     }
 
     if (is_dtype_exist(n_params, GGML_TYPE_Q2_K)) {
-        dev_info->cpu_props.flops_q2k_f32       = device_cpu_flops  (model, GGML_TYPE_Q2_K, GGML_TYPE_F32, n_threads);
-        dev_info->gpu_props.metal_flops_q2k_f32 = device_metal_flops(model, GGML_TYPE_Q2_K, GGML_TYPE_F32);
-        dev_info->gpu_props.cuda_flops_q2k_f32  = device_cuda_flops (model, GGML_TYPE_Q2_K, GGML_TYPE_F32);
+        dev_info->cpu_props.flops_q2k_f32         = device_cpu_flops  (model, GGML_TYPE_Q2_K, GGML_TYPE_F32, n_threads);
+        dev_info->gpu_props.metal_flops_q2k_f32   = device_metal_flops(model, GGML_TYPE_Q2_K, GGML_TYPE_F32);
+        dev_info->gpu_props.cuda_flops_q2k_f32    = device_cuda_flops (model, GGML_TYPE_Q2_K, GGML_TYPE_F32);
     }
 
     if (is_dtype_exist(n_params, GGML_TYPE_Q4_K)) {
-        dev_info->cpu_props.flops_q4k_f32       = device_cpu_flops  (model, GGML_TYPE_Q4_K, GGML_TYPE_F32, n_threads);
-        dev_info->gpu_props.metal_flops_q4k_f32 = device_metal_flops(model, GGML_TYPE_Q4_K, GGML_TYPE_F32);
-        dev_info->gpu_props.cuda_flops_q4k_f32  = device_cuda_flops (model, GGML_TYPE_Q4_K, GGML_TYPE_F32);
+        dev_info->cpu_props.flops_q4k_f32         = device_cpu_flops  (model, GGML_TYPE_Q4_K, GGML_TYPE_F32, n_threads);
+        dev_info->gpu_props.metal_flops_q4k_f32   = device_metal_flops(model, GGML_TYPE_Q4_K, GGML_TYPE_F32);
+        dev_info->gpu_props.cuda_flops_q4k_f32    = device_cuda_flops (model, GGML_TYPE_Q4_K, GGML_TYPE_F32);
     }
 
     if (is_dtype_exist(n_params, GGML_TYPE_Q5_K)) {
-        dev_info->cpu_props.flops_q5k_f32       = device_cpu_flops  (model, GGML_TYPE_Q5_K, GGML_TYPE_F32, n_threads);
-        dev_info->gpu_props.metal_flops_q5k_f32 = device_metal_flops(model, GGML_TYPE_Q5_K, GGML_TYPE_F32);
-        dev_info->gpu_props.cuda_flops_q5k_f32  = device_cuda_flops (model, GGML_TYPE_Q5_K, GGML_TYPE_F32);
+        dev_info->cpu_props.flops_q5k_f32         = device_cpu_flops  (model, GGML_TYPE_Q5_K, GGML_TYPE_F32, n_threads);
+        dev_info->gpu_props.metal_flops_q5k_f32   = device_metal_flops(model, GGML_TYPE_Q5_K, GGML_TYPE_F32);
+        dev_info->gpu_props.cuda_flops_q5k_f32    = device_cuda_flops (model, GGML_TYPE_Q5_K, GGML_TYPE_F32);
     }
 
     if (is_dtype_exist(n_params, GGML_TYPE_Q6_K)) {
-        dev_info->cpu_props.flops_q6k_f32       = device_cpu_flops  (model, GGML_TYPE_Q6_K, GGML_TYPE_F32, n_threads);
-        dev_info->gpu_props.metal_flops_q6k_f32 = device_metal_flops(model, GGML_TYPE_Q6_K, GGML_TYPE_F32);
-        dev_info->gpu_props.cuda_flops_q6k_f32  = device_cuda_flops (model, GGML_TYPE_Q6_K, GGML_TYPE_F32);
+        dev_info->cpu_props.flops_q6k_f32         = device_cpu_flops  (model, GGML_TYPE_Q6_K, GGML_TYPE_F32, n_threads);
+        dev_info->gpu_props.metal_flops_q6k_f32   = device_metal_flops(model, GGML_TYPE_Q6_K, GGML_TYPE_F32);
+        dev_info->gpu_props.cuda_flops_q6k_f32    = device_cuda_flops (model, GGML_TYPE_Q6_K, GGML_TYPE_F32);
     }
 
     if (is_dtype_exist(n_params, GGML_TYPE_IQ2_XXS)) {
-        dev_info->cpu_props.flops_iq2xxs_f32    = device_cpu_flops  (model, GGML_TYPE_IQ2_XXS, GGML_TYPE_F32, n_threads);
+        dev_info->cpu_props.flops_iq2xxs_f32      = device_cpu_flops  (model, GGML_TYPE_IQ2_XXS, GGML_TYPE_F32, n_threads);
         dev_info->gpu_props.metal_flops_iq2xxs_f32= device_metal_flops(model, GGML_TYPE_IQ2_XXS, GGML_TYPE_F32);
         dev_info->gpu_props.cuda_flops_iq2xxs_f32 = device_cuda_flops (model, GGML_TYPE_IQ2_XXS, GGML_TYPE_F32);
     }
 
     if (is_dtype_exist(n_params, GGML_TYPE_Q5_0)) {
-        dev_info->cpu_props.flops_q50_f32       = device_cpu_flops  (model, GGML_TYPE_Q5_0, GGML_TYPE_F32, n_threads);
-        dev_info->gpu_props.metal_flops_q50_f32 = device_metal_flops(model, GGML_TYPE_Q5_0, GGML_TYPE_F32);
-        dev_info->gpu_props.cuda_flops_q50_f32  = device_cuda_flops (model, GGML_TYPE_Q5_0, GGML_TYPE_F32);
+        dev_info->cpu_props.flops_q50_f32         = device_cpu_flops  (model, GGML_TYPE_Q5_0, GGML_TYPE_F32, n_threads);
+        dev_info->gpu_props.metal_flops_q50_f32   = device_metal_flops(model, GGML_TYPE_Q5_0, GGML_TYPE_F32);
+        dev_info->gpu_props.cuda_flops_q50_f32    = device_cuda_flops (model, GGML_TYPE_Q5_0, GGML_TYPE_F32);
     }
 
 
     if (is_dtype_exist(n_params, GGML_TYPE_Q8_0)) {
-        dev_info->cpu_props.flops_q80_f32       = device_cpu_flops  (model, GGML_TYPE_Q8_0, GGML_TYPE_F32, n_threads);
-        dev_info->gpu_props.metal_flops_q80_f32 = device_metal_flops(model, GGML_TYPE_Q8_0, GGML_TYPE_F32);
-        dev_info->gpu_props.cuda_flops_q80_f32  = device_cuda_flops (model, GGML_TYPE_Q8_0, GGML_TYPE_F32);
+        dev_info->cpu_props.flops_q80_f32         = device_cpu_flops  (model, GGML_TYPE_Q8_0, GGML_TYPE_F32, n_threads);
+        dev_info->gpu_props.metal_flops_q80_f32   = device_metal_flops(model, GGML_TYPE_Q8_0, GGML_TYPE_F32);
+        dev_info->gpu_props.cuda_flops_q80_f32    = device_cuda_flops (model, GGML_TYPE_Q8_0, GGML_TYPE_F32);
     }
 
     if (is_dtype_exist(n_params, GGML_TYPE_IQ1_S)) {
-        dev_info->cpu_props.flops_iq1s_f32      = device_cpu_flops  (model, GGML_TYPE_IQ1_S, GGML_TYPE_F32, n_threads);
-        dev_info->gpu_props.metal_flops_iq1s_f32= device_metal_flops(model, GGML_TYPE_IQ1_S, GGML_TYPE_F32);
-        dev_info->gpu_props.cuda_flops_iq1s_f32 = device_cuda_flops (model, GGML_TYPE_IQ1_S, GGML_TYPE_F32);
+        dev_info->cpu_props.flops_iq1s_f32        = device_cpu_flops  (model, GGML_TYPE_IQ1_S, GGML_TYPE_F32, n_threads);
+        dev_info->gpu_props.metal_flops_iq1s_f32  = device_metal_flops(model, GGML_TYPE_IQ1_S, GGML_TYPE_F32);
+        dev_info->gpu_props.cuda_flops_iq1s_f32   = device_cuda_flops (model, GGML_TYPE_IQ1_S, GGML_TYPE_F32);
     }
 
     if (is_dtype_exist(n_params, GGML_TYPE_IQ4_NL)) {
-        dev_info->cpu_props.flops_iq4nl_f32     = device_cpu_flops   (model, GGML_TYPE_IQ4_NL, GGML_TYPE_F32, n_threads);
-        dev_info->gpu_props.metal_flops_iq4nl_f32= device_metal_flops(model, GGML_TYPE_IQ4_NL, GGML_TYPE_F32);
-        dev_info->gpu_props.cuda_flops_iq4nl_f32 = device_cuda_flops (model, GGML_TYPE_IQ4_NL, GGML_TYPE_F32);
+        dev_info->cpu_props.flops_iq4nl_f32       = device_cpu_flops   (model, GGML_TYPE_IQ4_NL, GGML_TYPE_F32, n_threads);
+        dev_info->gpu_props.metal_flops_iq4nl_f32 = device_metal_flops(model, GGML_TYPE_IQ4_NL, GGML_TYPE_F32);
+        dev_info->gpu_props.cuda_flops_iq4nl_f32  = device_cuda_flops (model, GGML_TYPE_IQ4_NL, GGML_TYPE_F32);
     }
 
     if (is_dtype_exist(n_params, GGML_TYPE_IQ1_M)) {
-        dev_info->cpu_props.flops_iq1m_f32      = device_cpu_flops  (model, GGML_TYPE_IQ1_M, GGML_TYPE_F32, n_threads);
-        dev_info->gpu_props.metal_flops_iq1m_f32= device_metal_flops(model, GGML_TYPE_IQ1_M, GGML_TYPE_F32);
-        dev_info->gpu_props.cuda_flops_iq1m_f32 = device_cuda_flops (model, GGML_TYPE_IQ1_M, GGML_TYPE_F32);
+        dev_info->cpu_props.flops_iq1m_f32        = device_cpu_flops  (model, GGML_TYPE_IQ1_M, GGML_TYPE_F32, n_threads);
+        dev_info->gpu_props.metal_flops_iq1m_f32  = device_metal_flops(model, GGML_TYPE_IQ1_M, GGML_TYPE_F32);
+        dev_info->gpu_props.cuda_flops_iq1m_f32   = device_cuda_flops (model, GGML_TYPE_IQ1_M, GGML_TYPE_F32);
     }
 }
 
@@ -7470,6 +7470,8 @@ static void llm_load_qwen2_tensors(
     const uint32_t     * n_layer_window,
     bool               * use_mmap_buffer,
     bool                 set_needed) {
+    (void)use_mmap_buffer; // unused in this function
+
     const auto tn = LLM_TN(model.arch);
 
     ggml_context * ctx_input        = nullptr;
@@ -7487,8 +7489,7 @@ static void llm_load_qwen2_tensors(
 
     const llama_hparams hparams = model.hparams;
     const int64_t n_embd        = hparams.n_embd;
-    const int64_t n_embd_gqa  = hparams.n_embd_v_gqa();
-    // const int64_t n_embd_gqa    = n_embd_v_gqa;
+    const int64_t n_embd_gqa    = hparams.n_embd_v_gqa();
     const int64_t n_ff          = hparams.n_ff();
     const int64_t n_vocab       = hparams.n_vocab;
     const int64_t n_layer       = hparams.n_layer;    
@@ -20525,14 +20526,12 @@ int llama_bcast_layer_setup(struct llama_context * ctx, uint32_t * n_layer_windo
     return 0;
 }
 
-LLAMA_API int llama_rebuild_topo(llama_context *ctx,
-                                 uint32_t *n_layer_window,
-                                 device_info *dev_info_set) {
+int llama_rebuild_topo(llama_context * ctx, uint32_t * n_layer_window, device_info * dev_info_set) {
     uint32_t n_world = ctx->cparams.n_world;
     uint32_t my_rank = ctx->cparams.rank;
-    device_info* dev_info_ptr = nullptr;
-    if (dev_info_set == nullptr){
-        // for rank!=0, recv all devices info
+    device_info * dev_info_ptr = nullptr;
+
+    if (dev_info_set == nullptr) {
         std::vector<zmq::message_t> msgs;
         if (!zmq::recv_multipart(*ctx->recv_socket, std::back_inserter(msgs))) {
             return -1;
@@ -20542,7 +20541,7 @@ LLAMA_API int llama_rebuild_topo(llama_context *ctx,
             deserialize((const char *)msgs[i].data(), &dev_info_ptr[i]);
         }
         GGML_ASSERT(msgs.size() == n_world);
-    }else{
+    } else {
         dev_info_ptr = dev_info_set;
     }
 
@@ -20550,7 +20549,7 @@ LLAMA_API int llama_rebuild_topo(llama_context *ctx,
 
     // notify next rank
     auto next_rank = (my_rank + 1) % n_world;
-    if(n_layer_window[next_rank] <= 0 && next_rank != 0){
+    if (n_layer_window[next_rank] <= 0 && next_rank != 0) {
         try {
             auto msgs = dev_infos_to_messages(dev_info_ptr, n_world);
             ctx->send_socket->set(zmq::sockopt::linger, 3500);
@@ -20564,22 +20563,23 @@ LLAMA_API int llama_rebuild_topo(llama_context *ctx,
         }
     }
 
-    // check myself's layer
-    zmq::socket_t* socket_to_close = nullptr;
-    if(n_layer_window[my_rank] > 0) {
+    zmq::socket_t * socket_to_close = nullptr;
+    if (n_layer_window[my_rank] > 0) {
         // reconstruct socket to the next valid rank
         std::string next_ip;
         auto current_rank = my_rank;
-        while(next_rank!=my_rank){
-            if(n_layer_window[next_rank] > 0){
+
+        while (next_rank != my_rank) {
+            if (n_layer_window[next_rank] > 0) {
                 next_ip = dev_info_ptr[current_rank].next_ip;
                 break;
             }
-            next_rank = (next_rank + 1) % n_world;
+            next_rank    = (next_rank    + 1) % n_world;
             current_rank = (current_rank + 1) % n_world;
         }
-        if(!next_ip.empty()){
-            if((my_rank+1)%n_world != next_rank){   
+
+        if (!next_ip.empty()) {
+            if ((my_rank + 1) % n_world != next_rank) {   
                 socket_to_close = ctx->send_socket;  
                 ctx->send_socket = new zmq::socket_t(*ctx->sock_context, zmq::socket_type::push);
                 std::string send_endp = "tcp://" + next_ip + ":" + std::to_string(map_rank_to_port(next_rank, ctx->data_port));
@@ -20587,7 +20587,8 @@ LLAMA_API int llama_rebuild_topo(llama_context *ctx,
                 ctx->next_node_ip = next_ip;
                 ctx->cparams.original_next_rank = next_rank;
             }
-            if(next_rank != 0){
+
+            if (next_rank != 0) {
                 try {
                     auto msgs = dev_infos_to_messages(dev_info_ptr, n_world);
                     zmq::send_multipart(*ctx->send_socket, msgs);
@@ -20599,18 +20600,21 @@ LLAMA_API int llama_rebuild_topo(llama_context *ctx,
                     return -1;
                 }
             }
-        }else{
+        } else {
             // only one node
             ctx->next_node_ip = "";
         }
     }
-    if(!dev_info_set){
+
+    if (!dev_info_set) {
         delete[] dev_info_ptr;
     }
+
     if(socket_to_close != nullptr){
         socket_to_close->close();
         delete socket_to_close;
     }
+
     return 0;
 }
 
@@ -20675,11 +20679,9 @@ void llama_free_sockets(struct llama_context * ctx, char ** msg) {
     }
 }
 
-void llama_update_context_with_rankworld(struct llama_context * ctx,
-                                                       uint32_t rank,
-                                              uint32_t n_world) {
-    if(ctx) {
-        ctx->cparams.rank = rank;
+void llama_update_context_with_rankworld(struct llama_context * ctx, uint32_t rank, uint32_t n_world) {
+    if (ctx) {
+        ctx->cparams.rank    = rank;
         ctx->cparams.n_world = n_world;
     }
 }
