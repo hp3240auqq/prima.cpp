@@ -48,6 +48,16 @@
 #include <dirent.h>
 
 
+static int gcd_int(int a, int b) {
+    while (b != 0) {
+        int t = b;
+        b = a % b;
+        a = t;
+    }
+    return a;
+}
+
+
 static size_t get_page_size() {
     size_t page_size = 0;
 
@@ -154,8 +164,25 @@ uint32_t device_cpu_cores() {
 
 static float device_flops(struct llama_model * model, enum ggml_type src0t, enum ggml_type src1t, enum profiler_backend_type btype, int n_threads) {
     int n_repeat = 1;
-    int n_embd = std::min(llama_n_embd(model), 4096);
-    if (btype == PROFILER_BACKEND_TYPE_CPU) n_embd /= 8; // simulate small tensor calculation on cpu
+    int n_embd   = std::min(llama_n_embd(model), 4096);
+
+    // simulate small tensor calculation on cpu
+    if (btype == PROFILER_BACKEND_TYPE_CPU) n_embd /= 8;
+
+    // ensure that the block sizes of the tensors are compatible
+    int bs0 = ggml_blck_size(src0t);
+    int bs1 = ggml_blck_size(src1t);
+    int gcd = gcd_int(bs0, bs1);
+    int lcm = bs0 / gcd * bs1;
+
+    if (n_embd % bs0 != 0 || n_embd % bs1 != 0) {
+        if (n_embd < lcm) {
+            n_embd = 2 * lcm;
+        } else {
+            n_embd = 2 * (n_embd / lcm) * lcm;
+        }
+    }
+
     std::vector<float> matrix_A(n_embd * n_embd, 1.0f); 
     std::vector<float> matrix_B(n_embd * n_embd, 1.0f / n_embd);
 
@@ -188,9 +215,6 @@ static float device_flops(struct llama_model * model, enum ggml_type src0t, enum
     };
     struct ggml_context * ctx = ggml_init(params);
 
-    if(n_embd < ggml_blck_size(src0t)){
-        n_embd = 2 * ggml_blck_size(src0t);
-    }
     struct ggml_tensor * tensor_a = ggml_new_tensor_2d(ctx, src0t, n_embd, n_embd);
     struct ggml_tensor * tensor_b = ggml_new_tensor_2d(ctx, src1t, n_embd, n_embd);
 
@@ -415,7 +439,7 @@ float device_inp_embd_delay(struct llama_model * model, enum ggml_type src0t, in
     }
 
     // warm-up
-    // ggml_backend_graph_compute(backend, gf);
+    ggml_backend_graph_compute(backend, gf);
 
     const int64_t t_start = ggml_time_us();
     ggml_backend_graph_compute(backend, gf);
@@ -1263,6 +1287,9 @@ static float device_mem_copy(struct llama_model * model, enum profiler_backend_t
     if (ggml_backend_is_cpu(backend)) {
         ggml_backend_cpu_set_n_threads(backend, n_threads);
     }
+
+    // warm-up 
+    ggml_backend_graph_compute(backend, gf);
 
     const int64_t t_start = ggml_time_us();
     ggml_backend_graph_compute(backend, gf);

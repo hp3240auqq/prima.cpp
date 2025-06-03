@@ -1643,6 +1643,7 @@ struct llama_init_result llama_init_from_gpt_params(gpt_params & params) {
 
     if (n_world == 1) {
         uint32_t n_layers = llama_model_n_layers(model);
+        
         // assign all layers to this device
         params.n_layer_window[0]  = n_layers;
         cparams.n_layer_window[0] = n_layers;
@@ -1651,6 +1652,8 @@ struct llama_init_result llama_init_from_gpt_params(gpt_params & params) {
 
 #if defined(GGML_USE_METAL) || defined(GGML_USE_CUDA)
         params.n_gpu_layers = std::min((int32_t)n_layers, params.n_gpu_layers);
+        cparams.n_gpu_layers = params.n_gpu_layers;
+        mparams.n_gpu_layers = params.n_gpu_layers;
 #endif
 
     } else {
