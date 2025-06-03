@@ -950,7 +950,8 @@ OBJ_LLAMA = \
 	src/llama-grammar.o \
 	src/llama-sampling.o \
 	src/unicode.o \
-	src/unicode-data.o
+	src/unicode-data.o \
+	src/network-utils.o \
 
 OBJ_COMMON = \
 	common/profiler.o \
@@ -1139,6 +1140,11 @@ src/unicode-data.o: \
 	src/unicode-data.cpp \
 	src/unicode-data.h
 	$(CXX) $(CXXFLAGS) -c $< -o $@
+	
+src/network-utils.o: \
+	src/network-utils.cpp \
+	src/network-utils.h
+	$(CXX) $(CXXFLAGS) -c $< -o $@
 
 src/llama.o: \
 	src/llama.cpp \
@@ -1147,6 +1153,7 @@ src/llama.o: \
 	src/llama-grammar.h \
 	src/llama-sampling.h \
 	src/unicode.h \
+	src/network-utils.h \
 	include/llama.h \
 	ggml/include/ggml-cuda.h \
 	ggml/include/ggml-metal.h \

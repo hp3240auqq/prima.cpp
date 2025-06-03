@@ -348,11 +348,11 @@ struct device_info {
 
 struct TopoRebuildHelperInfo{
     struct device_info dev_info;
-    char               is_fowarder;
+    char               is_forwarder;
     
     TopoRebuildHelperInfo():
         dev_info(),
-        is_fowarder(0){}
+        is_forwarder(0){}
     
     void   deserialize(const char * buffer);
     size_t serialize(char ** buffer) const;

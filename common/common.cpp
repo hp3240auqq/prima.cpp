@@ -1718,7 +1718,7 @@ struct llama_init_result llama_init_from_gpt_params(gpt_params & params) {
 
         // sychronize device profile to the master node
         NodeType node_type;
-        char is_fowarder[32] = {0};
+        char is_forwarder[32] = {0};
         if (my_rank == 0) {
             if (auto_schedule) {
                 std::vector<device_info> dev_info_set(n_world);
@@ -1735,7 +1735,7 @@ struct llama_init_result llama_init_from_gpt_params(gpt_params & params) {
                     return iparams;
                 }
                 llama_bcast_layer_setup(lctx, n_layer_window, n_gpu_layers);
-                llama_rebuild_topo(lctx, n_layer_window, dev_info_set.data());
+                llama_rebuild_topo(lctx, n_layer_window, dev_info_set.data(), &node_type, is_forwarder);
             } else {
                 // use the user-defined n_layer_window
                 std::copy(std::begin(params.n_layer_window), std::end(params.n_layer_window), n_layer_window);
@@ -1745,7 +1745,7 @@ struct llama_init_result llama_init_from_gpt_params(gpt_params & params) {
             if (auto_schedule){
                 llama_send_device_info(lctx, &dev_info);
                 llama_recv_layer_setup(lctx, n_layer_window, n_gpu_layers);
-                llama_rebuild_topo    (lctx, n_layer_window, nullptr, &node_type, is_fowarder);
+                llama_rebuild_topo    (lctx, n_layer_window, nullptr, &node_type, is_forwarder);
             } else {
                 llama_recv_layer_setup(lctx, n_layer_window, n_gpu_layers);
             }
@@ -1764,7 +1764,7 @@ struct llama_init_result llama_init_from_gpt_params(gpt_params & params) {
         std::vector<uint32_t> n_layer_window_temp = {n_layer_window[0]}, n_gpu_layers_temp = {n_gpu_layers[0]};
 
         for (uint32_t i = 1; i < n_world; i++) {
-            if (n_layer_window[i] <= 0 && is_fowarder[i] == 0) {
+            if (n_layer_window[i] <= 0 && is_forwarder[i] == 0) {
                 continue;
             }
             if (i <= my_rank) {
@@ -1797,10 +1797,10 @@ struct llama_init_result llama_init_from_gpt_params(gpt_params & params) {
 
         llama_update_context_with_rankworld(lctx, update_rank, update_n_world);
                 
-        if(node_type == NodeType::NODE_TYPE_EXIT){
+        if(node_type == NodeType::NODE_TYPE_FORWARDER){
             //just foward
             while (true) {
-                llama_foward_messages(lctx);
+                llama_forward_messages(lctx);
             }
         }
 

@@ -11,6 +11,7 @@
 #include "ggml-backend.h"
 
 #include "profiler.h"
+#include "network-utils.h"
 
 #ifdef GGML_USE_RPC
 #  include "ggml-rpc.h"
@@ -20431,34 +20432,22 @@ static uint32_t map_rank_to_port(uint32_t rank, uint32_t data_port) {
 static std::string try_connect(llama_context *ctx, uint32_t rank, TopoRebuildHelperInfo* infos, uint32_t n_world, zmq::socket_t** socket){
     auto prv_rank = (rank - 1 + n_world) % n_world;
     std::string ip = infos[prv_rank].dev_info.next_ip;
-    std::string send_endp = "tcp://" + ip + ":" + std::to_string(map_rank_to_port(rank, ctx->data_port));
+    auto port = map_rank_to_port(rank, ctx->data_port);
+    
+    if(!isPortOpen(ip, port)){
+        *socket = nullptr;
+        return "";
+    }
+    std::string send_endp = "tcp://" + ip + ":" + std::to_string(port);
     *socket = new zmq::socket_t(*ctx->sock_context, zmq::socket_type::push);
-    int events = 0;
     try {
-        (*socket)->set(zmq::sockopt::linger, 0);
-        (*socket)->set(zmq::sockopt::sndtimeo, 500);
-
         (*socket)->connect(send_endp);
-
-        std::this_thread::sleep_for(std::chrono::milliseconds(500));
-
-        size_t events_size = sizeof(events);
-        (*socket)->getsockopt(ZMQ_EVENTS, &events, &events_size);
-
     } catch (const zmq::error_t& e) {
         delete *socket;
         *socket = nullptr;
         return "";
     }
-
-    if((events & ZMQ_POLLOUT) != 0){
-        return ip;
-    }else{
-        delete *socket;
-        *socket = nullptr;
-        return "";
-    }
-    
+    return ip;
 }
 
 void llama_init_sockets(struct llama_context * ctx, uint32_t n_world, uint32_t my_rank) {
@@ -20639,7 +20628,7 @@ int llama_rebuild_topo(llama_context * ctx,
                             uint32_t * n_layer_window,
                          device_info * dev_info_set,
                             NodeType * node_type,
-                            char     * is_fowarder) {
+                            char     * is_forwarder) {
     uint32_t n_world = ctx->cparams.n_world;
     uint32_t my_rank = ctx->cparams.rank;
     TopoRebuildHelperInfo* topo_helper = new TopoRebuildHelperInfo[n_world];
@@ -20657,7 +20646,7 @@ int llama_rebuild_topo(llama_context * ctx,
     } else {
         for (size_t i = 0; i < n_world; i++) {
             topo_helper[i].dev_info = dev_info_set[i];
-            topo_helper[i].is_fowarder =  0;
+            topo_helper[i].is_forwarder =  0;
         }
     }
 
@@ -20666,7 +20655,7 @@ int llama_rebuild_topo(llama_context * ctx,
     auto next_rank = (my_rank + 1) % n_world;
     auto next_connect_rank = (my_rank + 1) % n_world;
     zmq::socket_t* socket_to_close = nullptr;
-    bool is_not_exit = n_layer_window[my_rank] > 0 || topo_helper[my_rank].is_fowarder == 1;
+    bool is_not_exit = n_layer_window[my_rank] > 0 || topo_helper[my_rank].is_forwarder == 1;
     if (is_not_exit){
         // reconstruct socket to the next valid rank
         auto current_rank = my_rank;
@@ -20692,13 +20681,13 @@ int llama_rebuild_topo(llama_context * ctx,
             for (int i = nodes.size() - 1; i > 0; --i) {
                 auto rank = nodes[i];
                 ip = try_connect(ctx, rank, topo_helper, n_world, &socket);
-                if(!ip.empty()){
-                    topo_helper[rank].is_fowarder = 1;
+                if (!ip.empty()) {
                     next_connect_rank = rank;
                     break;
                 }
             }
-            if(next_connect_rank != next_rank){
+            topo_helper[next_connect_rank].is_forwarder = 1;
+            if (next_connect_rank != next_rank) {
                 // reset socket
                 GGML_ASSERT(socket != nullptr);
                 GGML_ASSERT(!ip.empty());
@@ -20708,13 +20697,13 @@ int llama_rebuild_topo(llama_context * ctx,
                 ctx->cparams.original_next_rank = next_connect_rank;
             }
         }
-    }else if(n_layer_window[next_rank] <= 0 && topo_helper[my_rank].is_fowarder == 0){
+    }else if (n_layer_window[next_rank] <= 0 && topo_helper[next_rank].is_forwarder == 0) {
         socket_to_close = ctx->send_socket;
     }
 
     // notify next exiting node
     if (socket_to_close != nullptr) {
-        GGML_ASSERT(n_layer_window[next_rank] <= 0 && topo_helper[next_rank].is_fowarder == 0);
+        GGML_ASSERT(n_layer_window[next_rank] <= 0 && topo_helper[next_rank].is_forwarder == 0);
         try {
             auto msgs = topohelper_to_messages(topo_helper, n_world);
             socket_to_close->set(zmq::sockopt::linger, 3500);
@@ -20739,8 +20728,8 @@ int llama_rebuild_topo(llama_context * ctx,
     
     if(n_layer_window[my_rank] > 0){
         *node_type = NodeType::NODE_TYPE_WORKER;
-    }else if (topo_helper[my_rank].is_fowarder == 1){
-        *node_type = NodeType::NODE_TYPE_FOWARDER;
+    }else if (topo_helper[my_rank].is_forwarder == 1){
+        *node_type = NodeType::NODE_TYPE_FORWARDER;
     }else{
         *node_type = NodeType::NODE_TYPE_EXIT;
     }
@@ -20766,11 +20755,10 @@ int llama_rebuild_topo(llama_context * ctx,
         }
     }
     for(size_t i = 0; i < n_world; i++) {
-        is_fowarder[i] = topo_helper[i].is_fowarder;
+        is_forwarder[i] = topo_helper[i].is_forwarder;
     }
 
-
-    if(socket_to_close != nullptr){
+    if (socket_to_close != nullptr) {
         socket_to_close->close();
         delete socket_to_close;
     }
@@ -20778,9 +20766,9 @@ int llama_rebuild_topo(llama_context * ctx,
     return 0;
 }
 
-LLAMA_API int llama_foward_messages(llama_context *ctx) {
+int llama_forward_messages(llama_context *ctx) {
     zmq::message_t message;
-    bool more = true;
+    int more = true;
     
     while (more) {
         ctx->recv_socket->recv(message, zmq::recv_flags::none);

@@ -2833,7 +2833,7 @@ void TopoRebuildHelperInfo::deserialize(const char *buffer) {
         LOG_ERR("%s: failed to deserialize device info\n", __func__);
         return;
     }
-    memcpy(&is_fowarder, buffer + buffer_size, 1);
+    memcpy(&is_forwarder, buffer + buffer_size, 1);
 }
 
 size_t TopoRebuildHelperInfo::serialize(char **buffer) const{ 
@@ -2845,7 +2845,7 @@ size_t TopoRebuildHelperInfo::serialize(char **buffer) const{
         return 0;
     }
     memcpy(buffer_, *buffer, buffer_size);
-    memcpy(buffer_ + buffer_size, &is_fowarder, 1);
+    memcpy(buffer_ + buffer_size, &is_forwarder, 1);
     free(*buffer);
     *buffer = buffer_;
     return buffer_size + 1;

@@ -451,7 +451,7 @@ extern "C" {
     
     enum NodeType{
         NODE_TYPE_WORKER,
-        NODE_TYPE_FOWARDER,
+        NODE_TYPE_FORWARDER,
         NODE_TYPE_EXIT,
     };
 
@@ -463,10 +463,10 @@ extern "C" {
     LLAMA_API int  llama_bcast_layer_setup (struct llama_context * ctx, uint32_t * n_layer_window, uint32_t * n_gpu_layers);
     LLAMA_API int  llama_rebuild_topo      (struct llama_context * ctx, 
                                                         uint32_t * n_layer_window, 
-                                              struct device_info * dev_info_set, 
+                                              struct device_info * desv_info_set, 
                                                          NodeType* node_type,
-                                                         char    * is_fowarder);
-    LLAMA_API int  llama_foward_messages   (struct llama_context * ctx);
+                                                         char    * is_forwarder);
+    LLAMA_API int  llama_forward_messages   (struct llama_context * ctx);
     LLAMA_API int  llama_recv_layer_setup  (struct llama_context * ctx, uint32_t * n_layer_window, uint32_t * n_gpu_layers);
 
     LLAMA_API int llm_load_tensors(
