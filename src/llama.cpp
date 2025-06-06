@@ -18282,8 +18282,8 @@ static int llama_decode_internal(
             if (meta.seq_id != nullptr) {
                 batch_all.seq_id = (llama_seq_id **) malloc(cparams.n_ctx * sizeof(llama_seq_id *));
                 for (size_t i = 0; i < cparams.n_ctx; ++i) {
-                    batch_all.seq_id[i] = (llama_seq_id *) malloc(meta.n_seq_id[i] * sizeof(llama_seq_id));
-                    std::memcpy(batch_all.seq_id[i], meta.seq_id[i], meta.n_seq_id[i] * sizeof(llama_seq_id));
+                    batch_all.seq_id[i] = (llama_seq_id *) malloc(sizeof(llama_seq_id));
+                    batch_all.seq_id[i][0] = meta.seq_id[i][0];
                 }
             }
             if (meta.logits != nullptr) {
