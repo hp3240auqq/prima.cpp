@@ -2782,7 +2782,6 @@ struct llama_layer {
 // but has more metadata about sequences
 struct llama_ubatch {
     bool equal_seqs;
-    // TODO: whole_seqs for embeddings?
 
     uint32_t n_tokens; // total tokens (n_seq_tokens * n_seqs)
     uint32_t n_seq_tokens; // tokens per sequence
@@ -2796,6 +2795,9 @@ struct llama_ubatch {
     int32_t      *  n_seq_id; // [n_seqs]
     llama_seq_id ** seq_id;   // [n_seqs]
     int8_t       *  output;   // [n_tokens]
+
+    bool activate_input;
+    bool activate_output;
 };
 
 struct llama_kv_cell {
@@ -3040,7 +3042,7 @@ struct llama_sbatch {
         ubatch_token.resize(!has_embd ? n_ubatch : 0);
         ubatch_embd.resize(has_embd ? n_embd * n_ubatch : 0);
         ubatch_backend_embd.resize(n_embd * n_tokens);
-        ubatch_out_embd.resize(n_embd);
+        ubatch_out_embd.resize(n_embd * n_tokens);
         ubatch_pos.resize(n_ubatch);
         ubatch_n_seq_id.resize(n_ubatch);
         ubatch_seq_id.resize(n_ubatch);
@@ -3058,6 +3060,8 @@ struct llama_sbatch {
             /*n_seq_id     =*/ ubatch_n_seq_id.data(),
             /*seq_id       =*/ ubatch_seq_id.data(),
             /*output       =*/ ubatch_output.data(),
+            /*activate_input =*/ true,
+            /*activate_output =*/ false,
         };
         return ubatch;
     }
@@ -11104,7 +11108,6 @@ struct llm_build_context {
             if (il == n_layer - 1) {
                 // skip computing output for unused tokens
                 struct ggml_tensor * inp_out_ids = build_inp_out_ids();
-                n_tokens = n_outputs;
                 cur      = ggml_get_rows(ctx0,   cur, inp_out_ids);
                 inpSA    = ggml_get_rows(ctx0, inpSA, inp_out_ids);
             }
@@ -16978,7 +16981,7 @@ static std::vector<struct ggml_cgraph *> llama_build_graph(
 
     llm.init();
 
-    GGML_ASSERT((model.arch == LLM_ARCH_LLAMA || model.arch == LLM_ARCH_QWEN2) && "this model is currently not supported");
+    GGML_ASSERT((model.arch == LLM_ARCH_LLAMA || model.arch == LLM_ARCH_QWEN2) && "this model is currently not supported.\n");
 
     switch (model.arch) {
         case LLM_ARCH_LLAMA:
@@ -17261,31 +17264,32 @@ static void llama_set_inputs(llama_context & lctx, const llama_ubatch & batch) {
     const auto & cparams = lctx.cparams;
     const auto & kv_self = lctx.kv_self;
 
-    if (batch.token) {
+    if (batch.activate_input) {
         const int64_t n_tokens = batch.n_tokens;
 
-        ggml_backend_tensor_set(lctx.inp_tokens, batch.token, 0, n_tokens*ggml_element_size(lctx.inp_tokens));
-    }
+        if (batch.token) {
+            const int64_t size_ = n_tokens * ggml_element_size(lctx.inp_tokens);
+            ggml_backend_tensor_set(lctx.inp_tokens, batch.token, 0, size_);
+        }
 
-    if (batch.embd) {
-        const int64_t n_embd   = hparams.n_embd;
-        const int64_t n_tokens = batch.n_tokens;
-
-        ggml_backend_tensor_set(lctx.inp_embd, batch.embd, 0, n_tokens*n_embd*ggml_element_size(lctx.inp_embd));
-    }
-
-    if (batch.backend_embd && lctx.backend_embd && lctx.backend_embd->data != nullptr) {
+        if (batch.embd) {
+            const int64_t n_embd = hparams.n_embd;
+            const int64_t size_  = n_tokens * n_embd * ggml_element_size(lctx.inp_embd);
+            ggml_backend_tensor_set(lctx.inp_embd, batch.embd, 0, size_);
+        }
+    } else if (batch.activate_output) {
+        if (batch.out_embd && lctx.out_embd) {
+            const int64_t n_embd   = lctx.out_embd->ne[0];
+            const int64_t n_output = lctx.out_embd->ne[1];
+            const int64_t size_    = n_output * n_embd * ggml_element_size(lctx.out_embd);
+            ggml_backend_tensor_set(lctx.out_embd, batch.out_embd, 0, size_);
+        }
+    } else {
+        GGML_ASSERT(batch.backend_embd && lctx.backend_embd && lctx.backend_embd->data != nullptr);
         const int64_t n_embd   = lctx.backend_embd->ne[0];
         const int64_t n_tokens = lctx.backend_embd->ne[1];
-        
-        ggml_backend_tensor_set(lctx.backend_embd, batch.backend_embd, 0, n_tokens*n_embd*ggml_element_size(lctx.backend_embd));
-    }
-
-    if (batch.out_embd && lctx.out_embd) {
-        const int64_t n_embd   = lctx.out_embd->ne[0];
-        const int64_t n_output = lctx.out_embd->ne[1];
-
-        ggml_backend_tensor_set(lctx.out_embd, batch.out_embd, 0, n_output*n_embd*ggml_element_size(lctx.out_embd));
+        const int64_t size_    = n_tokens * n_embd * ggml_element_size(lctx.backend_embd);
+        ggml_backend_tensor_set(lctx.backend_embd, batch.backend_embd, 0, size_);
     }
 
     if (batch.pos && lctx.inp_pos) {
@@ -17971,6 +17975,7 @@ static void llama_recv_tensors(zmq::socket_t & socket, struct llama_ubatch * uba
     std::vector<zmq::message_t> recv_msgs;
     if (!zmq::recv_multipart(socket, std::back_inserter(recv_msgs))) {
         LLAMA_LOG_INFO("Failed to receive tensor data.\n");
+        return;
     }
 
     for (size_t i = 0; i < recv_msgs.size(); i += 3) {
@@ -18281,8 +18286,7 @@ static int llama_decode_internal(
         return -2;
     };
 
-    { // assume there is only one batch
-    // while (lctx.sbatch.n_tokens > 0) { // handle multiple batches
+    while (lctx.sbatch.n_tokens > 0) { // handle multiple batches
         llama_ubatch ubatch;
         if (kv_self.recurrent) {
             if (embd_pooled) {
@@ -18300,26 +18304,19 @@ static int llama_decode_internal(
 
         // count the outputs in this u_batch
         int32_t n_outputs_new = 0;
-        
-        if (my_rank == 0) {
-            if (n_outputs == n_tokens_all) {
-                n_outputs_new = n_tokens;
-            } else {
-                GGML_ASSERT(ubatch.output);
-                for (uint32_t i = 0; i < n_tokens; i++) {
-                    n_outputs_new += (int32_t) (ubatch.output[i] != 0);
-                }
-            }
+        if (n_outputs == n_tokens_all) {
+            n_outputs_new = n_tokens;
         } else {
-            n_outputs_new += 1;
+            GGML_ASSERT(ubatch.output);
+            for (uint32_t i = 0; i < n_tokens; i++) {
+                n_outputs_new += (int32_t) (ubatch.output[i] != 0);
+            }
         }
-
         // needs to happen before the graph is built
         lctx.n_outputs = n_outputs_new;
 
         int n_threads = n_tokens == 1 ? cparams.n_threads : cparams.n_threads_batch;
         ggml_threadpool_t threadpool = n_tokens == 1 ? lctx.threadpool : lctx.threadpool_batch;
-
         GGML_ASSERT(n_threads > 0);
 
         // non-causal masks do not use the KV cache
@@ -18394,11 +18391,11 @@ static int llama_decode_internal(
         GGML_ASSERT(my_rank == 0 || n_world > 1);
         
         for (size_t i = 0; i < (size_t)gf.size(); ++i) {
+            const bool is_out_embd = my_rank == 0 && i == (size_t)gf.size() - 1;
             sub_gf = gf[i];
 
             // receive data from other nodes
             if (n_world > 1 && !(my_rank == 0 && i == 0) && !(my_rank == 0 && is_last_l)) {
-                const bool is_out_embd = my_rank == 0 && i == (size_t)gf.size() - 1;
                 llama_recv_tensors(*lctx.recv_socket, &ubatch, is_out_embd);
             }
 
@@ -18407,6 +18404,10 @@ static int llama_decode_internal(
                 ggml_backend_sched_synchronize(lctx.sched[i - 1]);
             }
 
+            ubatch.activate_input  = (my_rank == 0 && i == 0);
+            ubatch.activate_output = (my_rank == 0 && is_out_embd);
+            GGML_ASSERT(!(ubatch.activate_input && ubatch.activate_output));
+            
             llama_set_inputs(lctx, ubatch);
 
             {   // compute graph
@@ -18442,13 +18443,13 @@ static int llama_decode_internal(
             GGML_ASSERT(buf_size <= ggml_nbytes(sub_gf_out));
             GGML_ASSERT(backend  != nullptr);
             ggml_backend_tensor_get_async(backend, sub_gf_out, embd_buf, 0, buf_size);
+            ggml_backend_sched_synchronize(lctx.sched[i]);
 
             // send the result to the next node or the master
             if (!(n_world == 1 || (my_rank == 0 && is_last_l))) {
                 struct input_tensors tensors = {sub_gf_out, lctx.inp_pos};
                 const bool is_to_master = my_rank != 0 && is_last_l;
                 zmq::socket_t * s = is_to_master ? lctx.master_socket : lctx.send_socket;
-                ggml_backend_sched_synchronize(lctx.sched[i]);
                 llama_send_tensors(*s, &ubatch, &tensors);
             }
 
@@ -19038,7 +19039,7 @@ static void llama_kv_cache_update_internal(struct llama_context & lctx) {
         uint32_t n_seqs = 1; // TODO: worst-case number of sequences
         uint32_t n_tokens = std::min(lctx.cparams.n_ctx, lctx.cparams.n_ubatch);
         llama_token token = llama_token_bos(&lctx.model); // not actually used by llama_build_graph, but required to choose between token and embedding inputs graph
-        llama_ubatch ubatch = { true, n_tokens, n_tokens / n_seqs, n_seqs, &token, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr};
+        llama_ubatch ubatch = { true, n_tokens, n_tokens / n_seqs, n_seqs, &token, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, true, false};
         std::vector<ggml_cgraph *> gf = llama_build_graph(lctx, ubatch, true);
         GGML_ASSERT(lctx.sched.size() == gf.size());
 
@@ -21115,7 +21116,7 @@ void * llama_context_setup_backend(
             uint32_t n_seqs     = 1; // TODO: worst-case number of sequences
             uint32_t n_tokens   = std::min(cparams.n_ctx, cparams.n_ubatch);
             llama_token token   = llama_token_bos(&ctx->model); // not actually used by llama_build_graph, but required to choose between token and embedding inputs graph
-            llama_ubatch ubatch = { true, n_tokens, n_tokens / n_seqs, n_seqs, &token, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr};
+            llama_ubatch ubatch = { true, n_tokens, n_tokens / n_seqs, n_seqs, &token, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, true, false};
             std::vector<ggml_cgraph *> gf = llama_build_graph(*ctx, ubatch, true);
 
             GGML_ASSERT(gf.size() <= MAX_SCHEDULERS && "Number of subgraphs exceeds the maximum number of schedulers\n");
