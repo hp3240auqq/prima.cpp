@@ -364,6 +364,16 @@ Not yet. Now prima.cpp supports only CUDA-based GPUs. Vulkan is in our roadmap, 
 
 No worries, this is expected. Prima.cpp found that this device was too slow, and dropping it could speed up inference, so it was removed.
 
+**8. How to cancel a running task?**
+
+Besides closing the HTTP/SSE connection, prima.cpp offers a handy `/v1/cancel` endpoint to cancel a running task by its `task_id`.
+
+```shell
+curl -X POST http://localhost:8080/v1/cancel \
+     -H "Content-Type: application/json" \
+     -d '{"task_id": 0}'
+```
+
 ## ❤️ Acknowledgment
 This project builds upon the incredible work from the open-source community, especially [ggml, gguf](https://github.com/ggml-org/ggml), and [llama.cpp](https://github.com/ggml-org/llama.cpp). We gratefully acknowledge their contributions.
 

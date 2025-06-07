@@ -1532,11 +1532,22 @@ struct server_context {
         cancel_tasks.reserve(id_tasks.size());
         for (const auto & id_task : id_tasks) {
             SRV_WRN("cancel task, id_task = %d\n", id_task);
-
+            
+            // create a cancel task for id_task
             server_task task;
             task.type      = SERVER_TASK_TYPE_CANCEL;
             task.id_target = id_task;
             cancel_tasks.push_back(task);
+
+            // notify the results queue that the task is cancelled
+            server_task_result cancel_res;
+            cancel_res.id    = id_task;
+            cancel_res.stop  = true;      
+            cancel_res.error = false;     
+            cancel_res.data  = {{"cancelled", true}};
+            queue_results.send(cancel_res);
+
+            // remove the task from the waiting queue
             queue_results.remove_waiting_task_id(id_task);
         }
         // push to beginning of the queue, so it has highest priority
@@ -2632,6 +2643,25 @@ int main(int argc, char ** argv) {
         res_ok(res, health);
     };
 
+    const auto handle_cancel_tasks = [&](const httplib::Request & req, httplib::Response & res) {
+        json request_data = json::parse(req.body);
+        if (!request_data.contains("task_id") || !request_data["task_id"].is_number_integer()) {
+            res.status = 400;
+            res_error(res, format_error_response(
+                "Invalid request: 'task_id' field is required and must be integer",
+                ERROR_TYPE_INVALID_REQUEST
+            ));
+            return;
+        }
+        int task_id = request_data["task_id"].get<int>();
+        ctx_server.cancel_tasks({task_id});
+        json reply = {
+            {"task_id", task_id},
+            {"status", "cancelled"}
+        };
+        res_ok(res, reply);
+    };
+
     const auto handle_slots = [&](const httplib::Request & req, httplib::Response & res) {
         if (!params.endpoint_slots) {
             res_error(res, format_error_response("This server does not support slots endpoint. Start it without `--no-slots`", ERROR_TYPE_NOT_SUPPORTED));
@@ -3324,6 +3354,8 @@ int main(int argc, char ** argv) {
     // Save & load slots
     svr->Get ("/slots",               handle_slots);
     svr->Post("/slots/:id_slot",      handle_slots_action);
+    // Stop tasks
+    svr->Post("/v1/cancel",           handle_cancel_tasks);
 
     //
     // Start the server
