@@ -20776,9 +20776,13 @@ int llama_rebuild_topo(llama_context * ctx,
 int llama_forward_messages(llama_context *ctx) {
     zmq::message_t message;
     int more = true;
-    
+    int timeout_ms = 10;
+    ctx->recv_socket->setsockopt(ZMQ_RCVTIMEO, &timeout_ms, sizeof(timeout_ms));
     while (more) {
-        ctx->recv_socket->recv(message, zmq::recv_flags::none);
+        auto recv_result = ctx->recv_socket->recv(message, zmq::recv_flags::none);
+        if (!recv_result) {
+            return -1;
+        }
         size_t more_size = sizeof(more);
         ctx->recv_socket->getsockopt(ZMQ_RCVMORE, &more, &more_size);
         

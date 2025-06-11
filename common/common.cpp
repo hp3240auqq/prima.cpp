@@ -28,6 +28,7 @@
 #include <unordered_set>
 #include <vector>
 #include <thread>
+#include <atomic>
 
 #if defined(__APPLE__) && defined(__MACH__)
 #include <sys/types.h>
@@ -1806,10 +1807,20 @@ struct llama_init_result llama_init_from_gpt_params(gpt_params & params) {
         llama_update_context_with_rankworld(lctx, update_rank, update_n_world, worker_rank, n_worker);
                 
         if(node_type == NodeType::NODE_TYPE_FORWARDER){
-            //just foward
-            while (true) {
-                llama_forward_messages(lctx);
-            }
+            //just forward
+            std::atomic<bool> should_exit{false};
+            auto t = std::thread([lctx, &should_exit]() {
+                while(!should_exit) {
+                    llama_forward_messages(lctx);
+                }
+            });
+            char * stop_signal = nullptr;
+            llama_free_sockets(lctx, &stop_signal); // this will block until receive stop signal
+
+            should_exit = true;
+            t.join();
+
+            exit(0);
         }
 
         // update n_layer_window and n_gpu_layers
