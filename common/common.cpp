@@ -1761,6 +1761,7 @@ struct llama_init_result llama_init_from_gpt_params(gpt_params & params) {
 
         // update my rank and n_world
         uint32_t update_rank = 0, update_n_world = 1;
+        uint32_t worker_rank = 0, n_worker       = 1;
         std::vector<uint32_t> n_layer_window_temp = {n_layer_window[0]}, n_gpu_layers_temp = {n_gpu_layers[0]};
 
         for (uint32_t i = 1; i < n_world; i++) {
@@ -1773,6 +1774,13 @@ struct llama_init_result llama_init_from_gpt_params(gpt_params & params) {
             update_n_world++;
             n_layer_window_temp.push_back(n_layer_window[i]);
             n_gpu_layers_temp.push_back(n_gpu_layers[i]);
+
+            if (n_layer_window[i] > 0) {
+                if (i <= my_rank) {
+                    worker_rank++;
+                }
+                n_worker++;
+            }
         }
 
         memset(n_layer_window, 0, n_world * sizeof(uint32_t));
@@ -1795,7 +1803,7 @@ struct llama_init_result llama_init_from_gpt_params(gpt_params & params) {
         params.n_world  = update_n_world;
         n_world         = update_n_world;
 
-        llama_update_context_with_rankworld(lctx, update_rank, update_n_world);
+        llama_update_context_with_rankworld(lctx, update_rank, update_n_world, worker_rank, n_worker);
                 
         if(node_type == NodeType::NODE_TYPE_FORWARDER){
             //just foward

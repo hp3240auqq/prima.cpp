@@ -477,7 +477,9 @@ extern "C" {
     LLAMA_API void llama_update_context_with_rankworld(
                    struct llama_context * ctx, 
                                uint32_t   rank, 
-                               uint32_t   n_world);
+                               uint32_t   n_world,
+                               uint32_t   worker_rank,
+                               uint32_t   n_worker);
     
     LLAMA_API struct llama_context * llama_new_context_with_model(
                      struct llama_model * model,
