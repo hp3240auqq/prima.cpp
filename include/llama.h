@@ -957,7 +957,8 @@ extern "C" {
     // < 0 - error
     LLAMA_API int32_t llama_decode(
             struct llama_context * ctx,
-              struct llama_batch   batch);
+              struct llama_batch   batch,
+                            bool   server_mode = false);
 
     // Set the number of threads used for decoding
     // n_threads is the number of threads used for generation (single token)

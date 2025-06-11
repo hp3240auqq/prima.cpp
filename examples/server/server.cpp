@@ -1059,13 +1059,9 @@ struct server_context {
     }
 
     void kv_cache_clear() {
-        SRV_DBG("%s", "clearing KV cache\n");
-
-        // clear the entire KV cache
+        SRV_DBG("%s", "clearing all KV cache\n");
         llama_kv_cache_clear(ctx);
-
         llama_send_kv_cache_clear(ctx);
-
         clean_kv_cache = false;
     }
 
@@ -1090,7 +1086,7 @@ struct server_context {
                     llama_batch_add(batch, system_tokens[i + j], i + j, { 0 }, false);
                 }
 
-                if (llama_decode(ctx, batch) != 0) {
+                if (llama_decode(ctx, batch, true) != 0) {
                     SRV_ERR("%s", "llama_decode() failed\n");
                     return;
                 }
@@ -2311,7 +2307,7 @@ struct server_context {
                 0, 0, 0, // unused
             };
 
-            const int ret = llama_decode(ctx, batch_view);
+            const int ret = llama_decode(ctx, batch_view, true);
             metrics.on_decoded(slots);
 
             if (ret != 0) {
