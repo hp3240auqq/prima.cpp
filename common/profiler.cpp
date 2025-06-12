@@ -2621,7 +2621,7 @@ size_t serialize(const struct device_info * dev_info, char ** buffer) {
     return total_size;
 }
 
-void deserialize(const char * buffer, struct device_info * dev_info) {
+size_t deserialize(const char * buffer, struct device_info * dev_info) {
     const char * ptr = buffer;
 
     // rank
@@ -2821,6 +2821,32 @@ void deserialize(const char * buffer, struct device_info * dev_info) {
     ptr += sizeof(float);
 
     memcpy(&dev_info->gpu_props.cuda_mem_cpy_delay, ptr, sizeof(float));
+    ptr += sizeof(float);
 
     // no need to synchronize model flops and model params
+    return ptr - buffer;
+}
+
+void TopoRebuildHelperInfo::deserialize(const char *buffer) {
+    size_t buffer_size = ::deserialize(buffer, &dev_info);
+    if (buffer_size == 0) {
+        LOG_ERR("%s: failed to deserialize device info\n", __func__);
+        return;
+    }
+    memcpy(&is_forwarder, buffer + buffer_size, 1);
+}
+
+size_t TopoRebuildHelperInfo::serialize(char **buffer) const{ 
+    size_t buffer_size = ::serialize(&dev_info, buffer);
+    char* buffer_ = (char*)malloc(buffer_size+1);
+    if (buffer_ == NULL) {
+        LOG_ERR("%s: failed to allocate %zu bytes for device info serialization\n", 
+                __func__, buffer_size);
+        return 0;
+    }
+    memcpy(buffer_, *buffer, buffer_size);
+    memcpy(buffer_ + buffer_size, &is_forwarder, 1);
+    free(*buffer);
+    *buffer = buffer_;
+    return buffer_size + 1;
 }
