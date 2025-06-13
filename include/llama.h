@@ -759,6 +759,11 @@ extern "C" {
     LLAMA_API void llama_kv_cache_seq_keep(
             struct llama_context * ctx,
                     llama_seq_id   seq_id);
+    
+    // Notify other nodes to keep only the specified sequence in their KV cache
+    LLAMA_API void llama_send_kv_cache_seq_keep(
+            struct llama_context * ctx,
+                    llama_seq_id   seq_id);
 
     // Adds relative position "delta" to all tokens that belong to the specified sequence and have positions in [p0, p1)
     // If the KV cache is RoPEd, the KV data is updated accordingly:
