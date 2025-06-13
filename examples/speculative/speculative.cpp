@@ -628,6 +628,9 @@ int main(int argc, char ** argv) {
     LOG_INF("target:\n\n");
     gpt_perf_print(ctx_tgt, smpl);
 
+    char * stop_signal = nullptr;
+    llama_free_sockets(ctx_tgt, &stop_signal);
+
     gpt_sampler_free(smpl);
     for (int s = 0; s < n_seq_dft; ++s) {
         gpt_sampler_free(drafts[s].smpl);
