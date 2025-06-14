@@ -1421,8 +1421,9 @@ static bool assign_layers_to_device(
                 if (n_m < static_cast<uint32_t>(std::floor(W * vec_z_gpu[m]))) {
                     // if there is still free GPU memory
                     has_free_gpu_memory = true;
-                } else if (w_m > n_m) {
-                    // if the GPU is overloaded
+                }
+                if (w_m > n_m) {
+                    // if layers are offloaded to CPU
                     has_gpu_overload = true;
                 }
             } else if (!in_set(m, M4)) {
