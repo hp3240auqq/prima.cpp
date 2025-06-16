@@ -1247,6 +1247,10 @@ static bool assign_layers_to_device(
                     return cost * k;
                 }
             );
+            // apply higher priority to the head device, here 0.99 is a heuristic value
+            // to ensure that small models in homogeneous clusters result in 32:0 partitioning,
+            // rather than 1:31.
+            model.lp_.col_cost_[0] *= 0.99;
 
             // define the variable bounds
             model.lp_.col_lower_ = std::vector<double>(n_world * 2, 0.0);

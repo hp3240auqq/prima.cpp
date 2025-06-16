@@ -70,8 +70,9 @@ int main(int argc, char ** argv) {
     gpt_params params_draft   = params;
     params_draft.model        = params_draft.model_draft;
     params_draft.n_gpu_layers = params_draft.n_gpu_layers_draft;
-    params_draft.n_world      = 1;  // do not split the draft model across devices
-    params_draft.rank         = 0;  // always load the draft model on the head device
+    params_draft.n_world      = 1;    // do not split the draft model across devices
+    params_draft.rank         = 0;    // always load the draft model on the head device
+    params_draft.use_mlock    = true; // always use mlock for the draft model
     std::fill_n(params_draft.n_layer_window, params.n_world, 0);
 
     if (params_draft.draft_cpuparams.n_threads > 0) {
