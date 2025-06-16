@@ -34,26 +34,26 @@ And, if your devices are more powerful, you could unlock even more possibilities
 
 > Device D4 runs inside a Termux-simulated Linux. Device D1 reads disk data in random mode and D2~D4 read in sequential mode.
 
-**Table 2:** Token latency for Llama models (w/o device selection).
+**Table 2:** Token latency for Llama models (with device selection).
 | **Model**      | **llama.cpp** | **exo**   | **dllama** | **prima.cpp** |
-|-----------------|---------------|-----------|------------|---------------|
-| Llama 3-8B     | **15 ms**     | 263 ms    | 459 ms     | 54 ms         |
-| Llama 3-14B    | **20 ms**     | -         | -          | 65 ms         |
+|----------------|---------------|-----------|------------|---------------|
+| Llama 3-8B     | 15 ms         | 263 ms    | 459 ms     | **15 ms**     |
+| Llama 3-14B    | 20 ms         | -         | -          | **20 ms**     |
 | Llama 1-30B    | 202 ms        | -         | -          | **72 ms**     |
 | Llama 3-45B    | 328 ms        | -         | -          | **233 ms**    |
 | Llama 3-60B    | 7965 ms       | -         | -          | **468 ms**    |
 | Llama 1-65B    | 8807 ms       | -         | -          | **569 ms**    |
 | Llama 3-70B    | 10120 ms      | OOM       | OOM        | **674 ms**    |
 
-**Table 3:** Token latency for Qwen 2.5, QwQ, and DeepSeek R1 models (w/o device selection).
+**Table 3:** Token latency for Qwen 2.5, QwQ, and DeepSeek R1 models (with device selection).
 
 | **Model**                        | **llama.cpp** | **exo**       | **dllama** | **prima.cpp** |
 |-----------------------------------|---------------|---------------|------------|---------------|
-| Qwen-2.5-7B                      | **14 ms**     | 86 ms         | -          | 44 ms         |
-| DeepSeek-R1-Distill-Qwen-7B      | **14 ms**     | 68 ms       | -          | 52 ms         |
-| DeepSeek-R1-Distill-Llama-8B     | **14 ms**     | 77 ms       | 435 ms     | 59 ms         |
-| Qwen-2.5-14B                     | **23 ms**     | 31710 ms  | -          | 65 ms         |
-| DeepSeek-R1-Distill-Qwen-14B     | **24 ms**     | 23475 ms  | -          | 76 ms         |
+| Qwen-2.5-7B                      | 14 ms     | 86 ms         | -          | **14 ms**         |
+| DeepSeek-R1-Distill-Qwen-7B      | 14 ms     | 68 ms       | -          | **14 ms**         |
+| DeepSeek-R1-Distill-Llama-8B     | 14 ms     | 77 ms       | 435 ms     | **14 ms**         |
+| Qwen-2.5-14B                     | 23 ms     | 31710 ms  | -          | **23 ms**         |
+| DeepSeek-R1-Distill-Qwen-14B     | 24 ms     | 23475 ms  | -          | **24 ms**         |
 | Qwen-2.5-32B and QwQ-32B         | 224 ms        | OOM           | -          | **89 ms**     |
 | DeepSeek-R1-Distill-Qwen-32B     | 232 ms        | OOM           | -          | **93 ms**     |
 | DeepSeek-R1-Distill-Llama-70B    | 10978 ms      | OOM           | -          | **724 ms**    |
@@ -61,9 +61,9 @@ And, if your devices are more powerful, you could unlock even more possibilities
 
 > As video recording consumes some RAM, prima.cpp proactively reduces memory usage, resulting in slightly higher latency in the video compared to the table.
 
-> In the old version (w/o device selection), each device is assigned at least one model layer. This would lead to a 1:1:29:1 split for Llama 3-8B, which makes prima.cpp slower than llama.cpp.
+> ~~In the old version (w/o device selection), each device is assigned at least one model layer. This would lead to a 1:1:29:1 split for Llama 3-8B, which makes prima.cpp slower than llama.cpp.~~
 > 
-> **New:** In the latest version (with device selection), we will have a 0:0:32:0 split and weak devices removed, then prima.cpp would become llama.cpp when serving small models.
+> In the current version (with device selection), we will have a 32:0:0:0 split and weak devices removed, then prima.cpp would become llama.cpp when serving small models.
 
 ## 🔑 Key Features
 
@@ -72,8 +72,10 @@ And, if your devices are more powerful, you could unlock even more possibilities
 - - **GPU & CPU Offloading:** If a device has a GPU, you can use both GPU and CPU for inference. For example, when VRAM is full, we can offload some model layers to RAM.
 - - **Piped-ring parallelism with prefetching:** Prefetch upcoming layer weights to overlap disk loading latency and use advanced piped-ring parallelism to prevent the "prefetch-release" effect. This new parallelism improves pipeline parallelism by using a ring structure and allows devices to run multiple cycles to predict a new token.
 - - **Heterogeneity-aware workload distribution:** A scheduler is designed to optimize workload distribution based on each device's computing power, disk speed, memory, and OS (the OS will affect the disk speed and the memory management strategy). It decides how many model layers a device should handle and how many should run on GPU (if available). 
-- - **Automatic device selection:** If there are weak devices and removing them would speed up inference, prima.cpp will automatically discover and remove them.
+- - **Automatic device selection:** If there are weak devices and removing them would speed up inference, prima.cpp will automatically discover and remove them. This may retain some devices as proxy to prevent the socket connection from being blocked.
 - - **Quantization:** We now support Q4K, Q6K, Q80 and IQ1 quantization (GGUF format) and are exploring a Q4K-IQ1 hybrid for a better balance between performance and speed.
+- - **Speculative decoding:** We now support speculative decoding, which can [further speed up by up to 80%.](https://github.com/Lizonghang/prima.cpp/discussions/29)
+- **Dynamic batching**: We now support concurrent requests from multiple users and batch decoding. 
 - **Support Models:** We now support hot models like the **Llama, Qwen (and QwQ), and DeepSeek series**. More will be added in future updates.
 - **Cross-Platform:** The cluster can consist of devices with different OSs, including macOS, Linux, Android, HarmonyOS, etc. Now, Android and HarmonyOS devices require Termux, and Windows support will be added in future update.
 
@@ -120,6 +122,7 @@ Before using this project, ensure you have the following dependencies installed:
 **Linux (e.g., Ubuntu):**
 
 ```shell
+# Use apt in Linux and pkg in Termux
 sudo apt update -y && sudo apt install -y gcc-9 make cmake fio git wget libzmq3-dev
 ```
 
@@ -279,6 +282,8 @@ You can run prima.cpp in server mode, by launching `llama-server` on the rank 0 
 ./llama-cli -m download/qwq-32b-q4_k_m.gguf --world 2 --rank 1 --master 192.168.1.2 --next 192.168.1.2 --prefetch
 ```
 
+You can specify `-np 4 --cont-batching` when launching `llama-server` to enable concurrent requests.
+
 After that, you can interact with the rank 0 device by calling the Chat Completion API:
 
 ```shell
@@ -373,6 +378,9 @@ curl -X POST http://localhost:8080/v1/cancel \
      -H "Content-Type: application/json" \
      -d '{"task_id": 0}'
 ```
+
+**9. How to use speculative decoding?**
+Please see "[Power prima.cpp with speculative decoding: Further speeds up by up to 80%](https://github.com/Lizonghang/prima.cpp/discussions/29)".
 
 ## ❤️ Acknowledgment
 This project builds upon the incredible work from the open-source community, especially [ggml, gguf](https://github.com/ggml-org/ggml), and [llama.cpp](https://github.com/ggml-org/llama.cpp). We gratefully acknowledge their contributions.
