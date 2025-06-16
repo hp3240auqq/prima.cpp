@@ -2,6 +2,8 @@
 BUILD_TARGETS = \
 	llama-server \
 	llama-cli \
+	llama-speculative \
+	llama-gguf-split \
 	profile-tool
 
 # BUILD_TARGETS = \
