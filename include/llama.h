@@ -330,6 +330,8 @@ extern "C" {
         bool        keep_out_in_metal; // whether to keep output weights in metal memory
         char *      master_ip;         // ip address of the master node
         char *      next_node_ip;      // ip address of the next node
+        uint32_t    data_port;         // data port for distributed inference
+        uint32_t    signal_port;       // signal port for distributed inference
         uint32_t    n_ctx;             // text context, 0 = from model
         uint32_t    n_predict;         // number of tokens to predict
         uint32_t    n_batch;           // logical maximum batch size that can be submitted to llama_decode

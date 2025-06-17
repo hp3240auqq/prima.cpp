@@ -5,7 +5,7 @@
 #include <arpa/inet.h>
 #include <unistd.h>
 
-bool isPortOpen(const std::string& ip, uint32_t port, int timeout_sec) {
+bool is_port_open(const std::string& ip, uint32_t port, int timeout_sec) {
     int sock = socket(AF_INET, SOCK_STREAM, 0);
     if (sock < 0) return false;
     

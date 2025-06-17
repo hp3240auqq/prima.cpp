@@ -1810,9 +1810,10 @@ struct llama_init_result llama_init_from_gpt_params(gpt_params & params) {
         n_world         = update_n_world;
 
         llama_update_context_with_rankworld(lctx, update_rank, update_n_world, worker_rank, n_worker);
-                
-        if(node_type == NodeType::NODE_TYPE_FORWARDER){
+
+        if (node_type == NodeType::NODE_TYPE_FORWARDER) {
             //just forward
+            LOG_INF("No layer is assigned to me, and I serve as a network proxy.\n");
             std::atomic<bool> should_exit{false};
             auto t = std::thread([lctx, &should_exit]() {
                 while(!should_exit) {
@@ -2032,6 +2033,8 @@ struct llama_context_params llama_context_params_from_gpt_params(const gpt_param
     }
     cparams.master_ip         = new char[params.master_ip.length() + 1];
     std::strcpy(cparams.master_ip, params.master_ip.c_str());
+    cparams.data_port         = params.data_port;
+    cparams.signal_port       = params.signal_port;
 
     if (cparams.next_node_ip != nullptr) {
         delete[] cparams.next_node_ip;
