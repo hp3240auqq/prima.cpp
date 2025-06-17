@@ -11,6 +11,7 @@
 #include "ggml-backend.h"
 
 #include "profiler.h"
+#include "network-utils.h"
 
 #ifdef GGML_USE_RPC
 #  include "ggml-rpc.h"
@@ -173,12 +174,12 @@ static void zeros(std::ofstream & file, size_t n) {
 }
 
 // zmq helpers
-static std::vector<zmq::message_t> dev_infos_to_messages(const device_info* infos, 
-                                                                   uint32_t n_world){
+static std::vector<zmq::message_t> topohelper_to_messages(const TopoRebuildHelperInfo* infos, 
+                                                                uint32_t n_world){
     std::vector<zmq::message_t> res;
     for (uint32_t i = 0; i < n_world; ++i) {
         char * buffer = nullptr;
-        size_t buffer_size = serialize(&infos[i], &buffer);
+        size_t buffer_size = infos[i].serialize(&buffer);
         res.emplace_back(buffer, buffer_size);
         free(buffer);
     }
@@ -2596,6 +2597,9 @@ static_assert(std::is_trivially_copyable<llama_hparams>::value, "llama_hparams m
 struct llama_cparams {
     uint32_t  n_world;
     uint32_t  rank;
+    NodeType  node_type;
+    uint32_t  n_worker;
+    uint32_t  worker_rank;
     uint32_t  original_next_rank; // original rank of the next node
     uint32_t  n_layer_window[32];
     bool      prefetch;
@@ -3434,8 +3438,8 @@ struct llama_context {
     struct ggml_tensor * inp_KQ_mask_cross; // F32 [n_outputs_enc, n_batch]
 
     // sockets
-    std::string      master_ip     = "localhost";
-    std::string      next_node_ip  = "localhost";
+    std::string      master_ip     = "127.0.0.1";
+    std::string      next_node_ip  = "127.0.0.1";
     uint32_t         data_port     = 9000;
     uint32_t         signal_port   = 10000;
     zmq::context_t * sock_context  = nullptr;
@@ -18221,6 +18225,9 @@ static int llama_decode_internal(
     const uint32_t n_world = cparams.n_world;
     const uint32_t my_rank = cparams.rank;
 
+    const uint32_t n_worker    = cparams.n_worker;
+    const uint32_t worker_rank = cparams.worker_rank;
+
     lctx.is_encoding = false;
     const uint32_t n_tokens_all = batch_all.n_tokens;
     if (my_rank != 0) {
@@ -18276,7 +18283,7 @@ static int llama_decode_internal(
 
     sync_meta meta;
     meta.n_ctx = cparams.n_ctx;
-    bool is_last_dev = (my_rank == n_world - 1);
+    bool is_last_dev = (worker_rank == n_worker - 1);
 
     if (my_rank != 0) {
         if (llama_recv_meta(*lctx.recv_socket, &meta) == -1) {
@@ -20259,6 +20266,8 @@ struct llama_context_params llama_context_default_params() {
         /*.keep_out_in_metal           =*/ true,
         /*.master_ip                   =*/ nullptr,
         /*.next_node_ip                =*/ nullptr,
+        /*.data_port                   =*/ 9000,
+        /*.signal_port                 =*/ 10000,
         /*.n_ctx                       =*/ 512,
         /*.n_predict                   =*/ 512,
         /*.n_batch                     =*/ 2048,
@@ -20445,6 +20454,27 @@ static uint32_t map_rank_to_port(uint32_t rank, uint32_t data_port) {
     return data_port + rank;
 }
 
+static std::string try_connect(llama_context * ctx, uint32_t rank, TopoRebuildHelperInfo * infos, uint32_t n_world, zmq::socket_t ** socket){
+    auto prev_rank = (rank - 1 + n_world) % n_world;
+    std::string ip = infos[prev_rank].dev_info.next_ip;
+    auto port = map_rank_to_port(rank, ctx->data_port);
+    
+    if (!is_port_open(ip, port)) {
+        *socket = nullptr;
+        return "";
+    }
+    std::string send_endp = "tcp://" + ip + ":" + std::to_string(port);
+    *socket = new zmq::socket_t(*ctx->sock_context, zmq::socket_type::push);
+    try {
+        (*socket)->connect(send_endp);
+    } catch (const zmq::error_t& e) {
+        delete *socket;
+        *socket = nullptr;
+        return "";
+    }
+    return ip;
+}
+
 void llama_init_sockets(struct llama_context * ctx, uint32_t n_world, uint32_t my_rank) {
     if (n_world == 1) {
         return; 
@@ -20619,95 +20649,165 @@ int llama_bcast_layer_setup(struct llama_context * ctx, uint32_t * n_layer_windo
     return 0;
 }
 
-int llama_rebuild_topo(llama_context * ctx, uint32_t * n_layer_window, device_info * dev_info_set) {
+int llama_rebuild_topo(llama_context * ctx,
+                            uint32_t * n_layer_window,
+                         device_info * dev_info_set,
+                            NodeType * node_type,
+                            char     * is_forwarder) {
     uint32_t n_world = ctx->cparams.n_world;
     uint32_t my_rank = ctx->cparams.rank;
-    device_info * dev_info_ptr = nullptr;
+    TopoRebuildHelperInfo* topo_helper = new TopoRebuildHelperInfo[n_world];
 
-    if (dev_info_set == nullptr) {
+    if (dev_info_set == nullptr){
+        // for rank!=0, recv all devices info
         std::vector<zmq::message_t> msgs;
         if (!zmq::recv_multipart(*ctx->recv_socket, std::back_inserter(msgs))) {
             return -1;
         }
-        dev_info_ptr = new device_info[n_world];
         for (size_t i = 0; i < msgs.size(); i++) {
-            deserialize((const char *)msgs[i].data(), &dev_info_ptr[i]);
+            topo_helper[i].deserialize((char *)msgs[i].data());
         }
         GGML_ASSERT(msgs.size() == n_world);
     } else {
-        dev_info_ptr = dev_info_set;
+        for (size_t i = 0; i < n_world; i++) {
+            topo_helper[i].dev_info = dev_info_set[i];
+            topo_helper[i].is_forwarder =  0;
+        }
     }
 
     GGML_ASSERT(ctx != nullptr && ctx->send_socket != nullptr);
 
-    // notify next rank
     auto next_rank = (my_rank + 1) % n_world;
-    if (n_layer_window[next_rank] <= 0 && next_rank != 0) {
+    auto next_connect_rank = (my_rank + 1) % n_world;
+    zmq::socket_t* socket_to_close = nullptr;
+    bool is_not_exit = n_layer_window[my_rank] > 0 || topo_helper[my_rank].is_forwarder == 1;
+    if (is_not_exit) {
+        // reconstruct socket to the next valid rank
+        auto current_rank = my_rank;
+        std::vector<uint32_t> nodes;
+        auto next_rank_ = next_rank;
+        while (next_rank_ != my_rank) {
+            nodes.push_back(next_rank_);
+            if (n_layer_window[next_rank_] > 0) {
+                break;
+            }
+            next_rank_   = (next_rank_ + 1) % n_world;
+            current_rank = (current_rank + 1) % n_world;
+        }
+        if (next_rank_ == my_rank) {
+            // only one node
+            ctx->next_node_ip = "";
+            socket_to_close = ctx->send_socket;
+            ctx->send_socket = nullptr;
+        } else {
+            // iterate node reverse
+            zmq::socket_t* socket = nullptr;
+            std::string ip;
+            for (int i = nodes.size() - 1; i > 0; --i) {
+                auto rank = nodes[i];
+                ip = try_connect(ctx, rank, topo_helper, n_world, &socket);
+                if (!ip.empty()) {
+                    next_connect_rank = rank;
+                    break;
+                }
+            }
+            topo_helper[next_connect_rank].is_forwarder = 1;
+            if (next_connect_rank != next_rank) {
+                // reset socket
+                GGML_ASSERT(socket != nullptr);
+                GGML_ASSERT(!ip.empty());
+                socket_to_close = ctx->send_socket;
+                ctx->send_socket = socket;
+                ctx->next_node_ip = ip;
+                ctx->cparams.original_next_rank = next_connect_rank;
+            }
+        }
+    }else if (n_layer_window[next_rank] <= 0 && topo_helper[next_rank].is_forwarder == 0) {
+        socket_to_close = ctx->send_socket;
+    }
+
+    // notify next exiting node
+    if (socket_to_close != nullptr) {
+        GGML_ASSERT(n_layer_window[next_rank] <= 0 && topo_helper[next_rank].is_forwarder == 0);
         try {
-            auto msgs = dev_infos_to_messages(dev_info_ptr, n_world);
-            ctx->send_socket->set(zmq::sockopt::linger, 3500);
-            zmq::send_multipart(*ctx->send_socket, msgs);
+            auto msgs = topohelper_to_messages(topo_helper, n_world);
+            socket_to_close->set(zmq::sockopt::linger, 3500);
+            zmq::send_multipart(*socket_to_close, msgs);
         } catch (const zmq::error_t& e) {
             LLAMA_LOG_INFO("Failed to send data: %s\n", e.what());
-            if(!dev_info_set){
-                delete[] dev_info_ptr;
-            }
             return -1;
         }
     }
-
-    zmq::socket_t * socket_to_close = nullptr;
+    
+    // notify next connect node
+    if (!ctx->next_node_ip.empty() && is_not_exit) {
+        GGML_ASSERT(ctx->send_socket != nullptr);
+        try {
+            auto msgs = topohelper_to_messages(topo_helper, n_world);
+            zmq::send_multipart(*ctx->send_socket, msgs);
+        } catch (const zmq::error_t& e) {
+            LLAMA_LOG_INFO("Failed to send data: %s\n", e.what());
+            return -1;
+        }
+    }
+    
     if (n_layer_window[my_rank] > 0) {
-        // reconstruct socket to the next valid rank
-        std::string next_ip;
-        auto current_rank = my_rank;
-
-        while (next_rank != my_rank) {
-            if (n_layer_window[next_rank] > 0) {
-                next_ip = dev_info_ptr[current_rank].next_ip;
-                break;
-            }
-            next_rank    = (next_rank    + 1) % n_world;
-            current_rank = (current_rank + 1) % n_world;
-        }
-
-        if (!next_ip.empty()) {
-            if ((my_rank + 1) % n_world != next_rank) {   
-                socket_to_close = ctx->send_socket;  
-                ctx->send_socket = new zmq::socket_t(*ctx->sock_context, zmq::socket_type::push);
-                std::string send_endp = "tcp://" + next_ip + ":" + std::to_string(map_rank_to_port(next_rank, ctx->data_port));
-                ctx->send_socket->connect(send_endp);
-                ctx->next_node_ip = next_ip;
-                ctx->cparams.original_next_rank = next_rank;
-            }
-
-            if (next_rank != 0) {
-                try {
-                    auto msgs = dev_infos_to_messages(dev_info_ptr, n_world);
-                    zmq::send_multipart(*ctx->send_socket, msgs);
-                } catch (const zmq::error_t &e) {
-                    LLAMA_LOG_INFO("Error binding/connecting recv socket to endpoint: %s", e.what());
-                    if(!dev_info_set){
-                        delete[] dev_info_ptr;
-                    }
-                    return -1;
-                }
-            }
-        } else {
-            // only one node
-            ctx->next_node_ip = "";
-        }
+        *node_type = NodeType::NODE_TYPE_WORKER;
+    } else if (topo_helper[my_rank].is_forwarder == 1) {
+        *node_type = NodeType::NODE_TYPE_FORWARDER;
+    } else {
+        *node_type = NodeType::NODE_TYPE_EXIT;
     }
 
-    if (!dev_info_set) {
-        delete[] dev_info_ptr;
+    if (ctx->send_socket != nullptr && *node_type != NodeType::NODE_TYPE_EXIT) {
+        // recv the whole view of all nodes
+        std::vector<zmq::message_t> msgs;
+        if (!zmq::recv_multipart(*ctx->recv_socket, std::back_inserter(msgs))) {
+            return -1;
+        }
+        GGML_ASSERT(msgs.size() == n_world);
+        for (size_t i = 0; i < msgs.size(); i++) {
+            topo_helper[i].deserialize((char *)msgs[i].data());
+        }
+        // broadcast the whole view
+        if (next_connect_rank!=0) {
+            try {
+                zmq::send_multipart(*ctx->send_socket, msgs);
+            } catch (const zmq::error_t& e) {
+                LLAMA_LOG_INFO("Failed to send data: %s\n", e.what());
+                return -1;
+            }
+        }
     }
+    for (size_t i = 0; i < n_world; i++) {
+        is_forwarder[i] = topo_helper[i].is_forwarder;
+    }
+    ctx->cparams.node_type = *node_type;
 
-    if(socket_to_close != nullptr){
+    if (socket_to_close != nullptr) {
         socket_to_close->close();
         delete socket_to_close;
     }
+    delete [] topo_helper;
+    return 0;
+}
 
+int llama_forward_messages(llama_context *ctx) {
+    zmq::message_t message;
+    int more = true;
+    int timeout_ms = 10;
+    ctx->recv_socket->setsockopt(ZMQ_RCVTIMEO, &timeout_ms, sizeof(timeout_ms));
+    while (more) {
+        auto recv_result = ctx->recv_socket->recv(message, zmq::recv_flags::none);
+        if (!recv_result) {
+            return -1;
+        }
+        size_t more_size = sizeof(more);
+        ctx->recv_socket->getsockopt(ZMQ_RCVMORE, &more, &more_size);
+        
+        ctx->send_socket->send(message, 
+            more ? zmq::send_flags::sndmore : zmq::send_flags::none);
+    }
     return 0;
 }
 
@@ -20772,10 +20872,16 @@ void llama_free_sockets(struct llama_context * ctx, char ** msg) {
     }
 }
 
-void llama_update_context_with_rankworld(struct llama_context * ctx, uint32_t rank, uint32_t n_world) {
+void llama_update_context_with_rankworld(struct llama_context * ctx, 
+                                                       uint32_t rank, 
+                                                       uint32_t n_world, 
+                                                       uint32_t worker_rank, 
+                                                       uint32_t n_worker) {
     if (ctx) {
         ctx->cparams.rank    = rank;
         ctx->cparams.n_world = n_world;
+        ctx->cparams.worker_rank = worker_rank;
+        ctx->cparams.n_worker = n_worker;
     }
 }
 
@@ -20792,6 +20898,8 @@ struct llama_context * llama_new_context_with_model(
 
     ctx->master_ip       = params.master_ip;
     ctx->next_node_ip    = params.next_node_ip;
+    ctx->data_port       = params.data_port;
+    ctx->signal_port     = params.signal_port;
     ctx->cparams.n_world = params.n_world;
     ctx->cparams.rank    = params.rank;
     ctx->cparams.force   = params.force;

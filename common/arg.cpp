@@ -676,6 +676,20 @@ gpt_params_context gpt_params_parser_init(gpt_params & params, llama_example ex,
         }
     ).set_env("LLAMA_ARG_RANK"));
     add_opt(llama_arg(
+        {"--data-port"}, "N",
+        format("data port for distributed inference (default: %d)", params.data_port),
+        [](gpt_params & params, int value) {
+            params.data_port = value;
+        }
+    ).set_env("LLAMA_ARG_DATA_PORT"));
+    add_opt(llama_arg(
+        {"--signal-port"}, "N",
+        format("signal port for distributed inference (default: %d)", params.signal_port),
+        [](gpt_params & params, int value) {
+            params.signal_port = value;
+        }
+    ).set_env("LLAMA_ARG_SIGNAL_PORT"));
+    add_opt(llama_arg(
         {"-lw", "--layer-window", "--n-layer-window"}, "N",
         format("number of layers to process in each compute (e.g., 16,16)"),
         [](gpt_params & params, const std::string & value) {

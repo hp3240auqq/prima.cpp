@@ -28,6 +28,7 @@
 #include <unordered_set>
 #include <vector>
 #include <thread>
+#include <atomic>
 
 #if defined(__APPLE__) && defined(__MACH__)
 #include <sys/types.h>
@@ -1681,6 +1682,7 @@ struct llama_init_result llama_init_from_gpt_params(gpt_params & params) {
         cparams.n_layer_window[0] = n_layers;
         mparams.n_layer_window[0] = n_layers;
         llama_context_n_layer_window(lctx)[0] = n_layers;
+        llama_update_context_with_rankworld(lctx, 0, 1, 0, 1);
 
 #if defined(GGML_USE_METAL) || defined(GGML_USE_CUDA)
         params.n_gpu_layers = std::min((int32_t)n_layers, params.n_gpu_layers);
@@ -1722,6 +1724,8 @@ struct llama_init_result llama_init_from_gpt_params(gpt_params & params) {
         }
 
         // sychronize device profile to the master node
+        NodeType node_type = NodeType::NODE_TYPE_WORKER;
+        char is_forwarder[32] = {0};
         if (my_rank == 0) {
             if (auto_schedule) {
                 std::vector<device_info> dev_info_set(n_world);
@@ -1738,7 +1742,7 @@ struct llama_init_result llama_init_from_gpt_params(gpt_params & params) {
                     return iparams;
                 }
                 llama_bcast_layer_setup(lctx, n_layer_window, n_gpu_layers);
-                llama_rebuild_topo(lctx, n_layer_window, dev_info_set.data());
+                llama_rebuild_topo(lctx, n_layer_window, dev_info_set.data(), &node_type, is_forwarder);
             } else {
                 // use the user-defined n_layer_window
                 std::copy(std::begin(params.n_layer_window), std::end(params.n_layer_window), n_layer_window);
@@ -1748,14 +1752,14 @@ struct llama_init_result llama_init_from_gpt_params(gpt_params & params) {
             if (auto_schedule){
                 llama_send_device_info(lctx, &dev_info);
                 llama_recv_layer_setup(lctx, n_layer_window, n_gpu_layers);
-                llama_rebuild_topo    (lctx, n_layer_window, nullptr);
+                llama_rebuild_topo    (lctx, n_layer_window, nullptr, &node_type, is_forwarder);
             } else {
                 llama_recv_layer_setup(lctx, n_layer_window, n_gpu_layers);
             }
         }
 
         // if this is a weak device, then exit
-        if (n_layer_window[my_rank] <= 0) {
+        if (node_type == NodeType::NODE_TYPE_EXIT) {
             LOG_INF("No layer is assigned to me, exit.\n");
             llama_free(lctx);
             llama_free_model(model);
@@ -1764,10 +1768,11 @@ struct llama_init_result llama_init_from_gpt_params(gpt_params & params) {
 
         // update my rank and n_world
         uint32_t update_rank = 0, update_n_world = 1;
+        uint32_t worker_rank = 0, n_worker       = 1;
         std::vector<uint32_t> n_layer_window_temp = {n_layer_window[0]}, n_gpu_layers_temp = {n_gpu_layers[0]};
 
         for (uint32_t i = 1; i < n_world; i++) {
-            if (n_layer_window[i] <= 0) {
+            if (n_layer_window[i] <= 0 && is_forwarder[i] == 0) {
                 continue;
             }
             if (i <= my_rank) {
@@ -1776,6 +1781,13 @@ struct llama_init_result llama_init_from_gpt_params(gpt_params & params) {
             update_n_world++;
             n_layer_window_temp.push_back(n_layer_window[i]);
             n_gpu_layers_temp.push_back(n_gpu_layers[i]);
+
+            if (n_layer_window[i] > 0) {
+                if (i <= my_rank) {
+                    worker_rank++;
+                }
+                n_worker++;
+            }
         }
 
         memset(n_layer_window, 0, n_world * sizeof(uint32_t));
@@ -1798,8 +1810,26 @@ struct llama_init_result llama_init_from_gpt_params(gpt_params & params) {
         params.n_world  = update_n_world;
         n_world         = update_n_world;
 
-        llama_update_context_with_rankworld(lctx, update_rank, update_n_world);
-        
+        llama_update_context_with_rankworld(lctx, update_rank, update_n_world, worker_rank, n_worker);
+
+        if (node_type == NodeType::NODE_TYPE_FORWARDER) {
+            //just forward
+            LOG_INF("No layer is assigned to me, and I serve as a network proxy.\n");
+            std::atomic<bool> should_exit{false};
+            auto t = std::thread([lctx, &should_exit]() {
+                while(!should_exit) {
+                    llama_forward_messages(lctx);
+                }
+            });
+            char * stop_signal = nullptr;
+            llama_free_sockets(lctx, &stop_signal); // this will block until receive stop signal
+
+            should_exit = true;
+            t.join();
+
+            exit(0);
+        }
+
         // update n_layer_window and n_gpu_layers
         std::copy(std::begin(n_layer_window), std::end(n_layer_window), params.n_layer_window);
         std::copy(std::begin(n_layer_window), std::end(n_layer_window), cparams.n_layer_window);
@@ -2004,6 +2034,8 @@ struct llama_context_params llama_context_params_from_gpt_params(const gpt_param
     }
     cparams.master_ip         = new char[params.master_ip.length() + 1];
     std::strcpy(cparams.master_ip, params.master_ip.c_str());
+    cparams.data_port         = params.data_port;
+    cparams.signal_port       = params.signal_port;
 
     if (cparams.next_node_ip != nullptr) {
         delete[] cparams.next_node_ip;

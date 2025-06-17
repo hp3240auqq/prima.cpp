@@ -330,6 +330,8 @@ extern "C" {
         bool        keep_out_in_metal; // whether to keep output weights in metal memory
         char *      master_ip;         // ip address of the master node
         char *      next_node_ip;      // ip address of the next node
+        uint32_t    data_port;         // data port for distributed inference
+        uint32_t    signal_port;       // signal port for distributed inference
         uint32_t    n_ctx;             // text context, 0 = from model
         uint32_t    n_predict;         // number of tokens to predict
         uint32_t    n_batch;           // logical maximum batch size that can be submitted to llama_decode
@@ -448,6 +450,12 @@ extern "C" {
               struct llama_model_params   params);
 
     LLAMA_API void llama_free_model(struct llama_model * model);
+    
+    enum NodeType{
+        NODE_TYPE_WORKER,
+        NODE_TYPE_FORWARDER,
+        NODE_TYPE_EXIT,
+    };
 
     LLAMA_API void llama_init_sockets      (struct llama_context * ctx, uint32_t n_world, uint32_t my_rank);
     LLAMA_API void llama_free_sockets      (struct llama_context * ctx, char ** msg);
@@ -455,7 +463,12 @@ extern "C" {
     LLAMA_API int  llama_send_device_info  (struct llama_context * ctx, struct device_info * dev_info);
     LLAMA_API int  llama_bcast_startup_args(struct llama_context * ctx, uint32_t rank, struct startup_args * args);
     LLAMA_API int  llama_bcast_layer_setup (struct llama_context * ctx, uint32_t * n_layer_window, uint32_t * n_gpu_layers);
-    LLAMA_API int  llama_rebuild_topo      (struct llama_context * ctx, uint32_t * n_layer_window, struct device_info * dev_info_set);
+    LLAMA_API int  llama_rebuild_topo      (struct llama_context * ctx, 
+                                                        uint32_t * n_layer_window, 
+                                              struct device_info * desv_info_set, 
+                                                         NodeType* node_type,
+                                                         char    * is_forwarder);
+    LLAMA_API int  llama_forward_messages   (struct llama_context * ctx);
     LLAMA_API int  llama_recv_layer_setup  (struct llama_context * ctx, uint32_t * n_layer_window, uint32_t * n_gpu_layers);
 
     LLAMA_API int llm_load_tensors(
@@ -466,7 +479,9 @@ extern "C" {
     LLAMA_API void llama_update_context_with_rankworld(
                    struct llama_context * ctx, 
                                uint32_t   rank, 
-                               uint32_t   n_world);
+                               uint32_t   n_world,
+                               uint32_t   worker_rank,
+                               uint32_t   n_worker);
     
     LLAMA_API struct llama_context * llama_new_context_with_model(
                      struct llama_model * model,
