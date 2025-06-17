@@ -145,8 +145,10 @@ struct gpt_params {
     int32_t n_world               =     1; // number of devices to use
     int32_t rank                  =     0; // my rank for distributed inference
     uint32_t n_layer_window[32]   =   {0}; // layer window size on each node
-    std::string master_ip         = "localhost"; // ip address of the master node
-    std::string next_node_ip      = "localhost"; // ip address of my next node
+    std::string master_ip         = "127.0.0.1"; // ip address of the master node
+    std::string next_node_ip      = "127.0.0.1"; // ip address of my next node
+    uint32_t data_port            =  9000;  // data port for distributed inference
+    uint32_t signal_port          =  10000; // signal port for distributed inference
     bool    prefetch              = false; // prefetch layer weights
     bool    keep_out_in_metal     =  true; // whether to keep output weights in metal memory, true by default
     bool    force                 = false; // force to start prefetching after computation

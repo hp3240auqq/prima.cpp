@@ -20266,6 +20266,8 @@ struct llama_context_params llama_context_default_params() {
         /*.keep_out_in_metal           =*/ true,
         /*.master_ip                   =*/ nullptr,
         /*.next_node_ip                =*/ nullptr,
+        /*.data_port                   =*/ 9000,
+        /*.signal_port                 =*/ 10000,
         /*.n_ctx                       =*/ 512,
         /*.n_predict                   =*/ 512,
         /*.n_batch                     =*/ 2048,
@@ -20896,6 +20898,8 @@ struct llama_context * llama_new_context_with_model(
 
     ctx->master_ip       = params.master_ip;
     ctx->next_node_ip    = params.next_node_ip;
+    ctx->data_port       = params.data_port;
+    ctx->signal_port     = params.signal_port;
     ctx->cparams.n_world = params.n_world;
     ctx->cparams.rank    = params.rank;
     ctx->cparams.force   = params.force;
