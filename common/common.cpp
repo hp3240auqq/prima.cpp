@@ -1810,9 +1810,10 @@ struct llama_init_result llama_init_from_gpt_params(gpt_params & params) {
         n_world         = update_n_world;
 
         llama_update_context_with_rankworld(lctx, update_rank, update_n_world, worker_rank, n_worker);
-                
-        if(node_type == NodeType::NODE_TYPE_FORWARDER){
+
+        if (node_type == NodeType::NODE_TYPE_FORWARDER) {
             //just forward
+            LOG_INF("No layer is assigned to me, and I serve as a network proxy.\n");
             std::atomic<bool> should_exit{false};
             auto t = std::thread([lctx, &should_exit]() {
                 while(!should_exit) {
