@@ -1682,6 +1682,7 @@ struct llama_init_result llama_init_from_gpt_params(gpt_params & params) {
         cparams.n_layer_window[0] = n_layers;
         mparams.n_layer_window[0] = n_layers;
         llama_context_n_layer_window(lctx)[0] = n_layers;
+        llama_update_context_with_rankworld(lctx, 0, 1, 0, 1);
 
 #if defined(GGML_USE_METAL) || defined(GGML_USE_CUDA)
         params.n_gpu_layers = std::min((int32_t)n_layers, params.n_gpu_layers);
@@ -1723,7 +1724,7 @@ struct llama_init_result llama_init_from_gpt_params(gpt_params & params) {
         }
 
         // sychronize device profile to the master node
-        NodeType node_type;
+        NodeType node_type = NodeType::NODE_TYPE_WORKER;
         char is_forwarder[32] = {0};
         if (my_rank == 0) {
             if (auto_schedule) {
