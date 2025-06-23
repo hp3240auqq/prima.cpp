@@ -1,6 +1,6 @@
 # prima.cpp: Speeding up 70B-level LLM inference on low-resource everyday home clusters
 
-![prima](https://raw.githubusercontent.com/Lizonghang/prima.cpp/main/figures/prima-cpp-logo.png)
+![prima](https://raw.github.com/Lizonghang/prima.cpp/main/figures/prima-cpp-logo.png)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 
 prima.cpp is a **distributed implementation** of [llama.cpp](https://github.com/ggerganov/llama.cpp) that lets you **run 70B-level LLMs on your everyday devices**—💻 laptops, 🖥️ desktops, 📱 phones, and tablets (GPU or no GPU, it’s all good). With it, you can run **QwQ-32B, Qwen 2.5-72B, Llama 3-70B, or DeepSeek R1 70B** right from your local home cluster!
@@ -125,6 +125,18 @@ Before using this project, ensure you have the following dependencies installed:
 # Use apt in Linux and pkg in Termux
 sudo apt update -y && sudo apt install -y gcc-9 make cmake fio git wget libzmq3-dev
 ```
+备注：环境依赖还需要安装：
+#安装 g++ 编译器
+sudo apt update
+sudo apt install g++     # 安装默认版本
+或明确匹配 gcc 版本（推荐）：
+sudo apt install g++-11  # 对应 gcc 11.4.0
+如果安装了g++但名称不是g++（例如安装了g++-11），需手动创建链接：
+sudo ln -s /usr/bin/g++-11 /usr/bin/g++
+#安装完整开发工具集
+sudo apt install build-essential  # 包含gcc/g++/make等基础工具
+sudo apt install cmake            # 确保CMake版本≥3.16.3
+
 
 For HiGHS, download and install from [source](https://github.com/ERGO-Code/HiGHS):
 
@@ -136,7 +148,7 @@ cmake ..
 make -j$(nproc)
 sudo make install
 ```
-
+备注：若环境依赖安装了g++-11，则需要使用显式指定的编译器构建：make CXX=g++-11 -j$(nproc)
 **macOS:**
 
 ```shell
