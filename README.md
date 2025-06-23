@@ -311,6 +311,7 @@ curl http://127.0.0.1:8080/v1/chat/completions \
     "stream": true
   }'
 ```
+备注：
 
 You can also use third-party GUI clients like [AnythingLLM](https://anythingllm.com/) and set the API endpoint from prima.cpp, by default, `http://localhost:8080/v1`.
 
